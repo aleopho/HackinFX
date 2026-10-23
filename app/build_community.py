@@ -58,6 +58,6 @@ shutil.copytree(root/'Widget',source/'Widget',dirs_exist_ok=True,ignore=shutil.i
 repo=root.parent
 for folder in ['tools','vendor']:
     if (repo/folder).is_dir():shutil.copytree(repo/folder,source/folder,ignore=shutil.ignore_patterns('__pycache__'),dirs_exist_ok=True)
-subprocess.run(['/usr/bin/codesign','--force','--deep','--sign','-','--timestamp=none',str(app.parent)],check=True)
+subprocess.run(['/usr/bin/codesign','--force','--sign','-','--timestamp=none',str(app.parent)],check=True)
 subprocess.run(['/usr/bin/codesign','--verify','--deep','--strict',str(app.parent)],check=True)
 print(app.parent)

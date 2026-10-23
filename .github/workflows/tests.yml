@@ -27,7 +27,7 @@ jobs:
       - run: /tmp/hackinfx-profile-tests
       - run: python3 app/build_community.py
       - run: codesign --verify --deep --strict app/HackinFX.app
-      - run: test -d app/HackinFX.app/Contents/PlugIns/HackinFXWidget.appex
+      - run: python3 tools/check_app_bundle.py
       - run: python3 app/package_dmg.py
       - run: hdiutil verify HackinFX-aleopho-1.1.0-beta.1.dmg
       - uses: actions/upload-artifact@v4

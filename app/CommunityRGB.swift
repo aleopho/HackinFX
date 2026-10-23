@@ -660,7 +660,7 @@ struct Community: View {
                         HStack { Text(gpu.name).font(.headline); Spacer(); Tag(title:gpu.supported ? "TEST AVAILABLE" : gpu.catalogStatus.hasPrefix("upstream-known") ? "CATALOG MATCH" : "UNLISTED",tint:gpu.supported ? accent : .orange) }
                         Text("\(gpu.vendor) · \(gpu.gpuType)").font(.system(size: 11)).foregroundColor(muted)
                         Text("PCI \(gpu.pci) / \(gpu.subsystem)").font(.system(size: 12, design: .monospaced)).foregroundColor(accent)
-                        if !gpu.catalogStatus.isEmpty { Text(gpu.catalogStatus).font(.system(size:11)).foregroundColor(muted) }
+                        if !gpu.catalogStatus.isEmpty { Text(gpu.supported ? "Local lighting controller available" : gpu.catalogStatus.hasPrefix("upstream-known") ? "OpenRGB match · macOS lighting module not available" : "No match in the OpenRGB GPU catalog").font(.system(size:11)).foregroundColor(muted) }
                         Text(gpu.nvrm ? "NVRM binding found" : "No NVRM binding found").font(.system(size: 11)).foregroundColor(muted)
                     }
                 }
