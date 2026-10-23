@@ -20,7 +20,7 @@ class Profile:
         return tuple(device.get(key) for key in ('vendor-id', 'device-id', 'subsystem-vendor-id', 'subsystem-id')) == self.pci
 
 
-# This macOS transport implements PNY Lovelace and EVGA Pascal. Exact upstream
+# This macOS transport implements PNY Lovelace, EVGA Pascal and ASUS Aura. Exact upstream
 # registrations sharing that implementation can enter the visual test. Never
 # infer write compatibility from a board vendor or GPU generation alone.
 def controller_profiles():

@@ -35,7 +35,7 @@ shutil.copytree(root/'assets', source/'assets', dirs_exist_ok=True)
 shutil.copytree(root/'tests', source/'tests', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
 (app/'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleName='HackinFX',
     CFBundleDisplayName='HackinFX', CFBundleIdentifier='community.aleopho.hackinfx',
-    CFBundleVersion='1.1.0b1', CFBundleShortVersionString='1.1.0', CFBundleExecutable='HackinFX',
+    CFBundleVersion='1.1.0b2', CFBundleShortVersionString='1.1.0', CFBundleExecutable='HackinFX',
     CFBundlePackageType='APPL', LSMinimumSystemVersion='13.0', NSHighResolutionCapable=True, CFBundleIconFile='HackinFX', CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en'], CFBundleURLTypes=[dict(CFBundleURLName='HackinFX',CFBundleURLSchemes=['hackinfx'])])))
 # Build a real WidgetKit app-extension with Xcode when available. No Apple account
 # or App Group is needed for this read-only, narrowly scoped local snapshot mode.

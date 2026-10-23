@@ -33,3 +33,9 @@ test('preserves manual identity metadata while keeping public catalog minimal',(
  assert.equal(validateVerification({...value,identity_source:'audited'}),false);
  assert.equal(validateVerification({...value,detected_gpu_name:'x'.repeat(161)}),false);
 });
+
+test('limited controller submits only the three effects actually tested',()=>{
+ const value={...sample(),hardware:{...hardware,profile:'evga-pascal-10de-1b80-3842-6286',board_vendor:'EVGA'},confirmed_effects:['static','cycle','breath'],tested_steps:5};
+ assert.equal(validateVerification(value),true);
+ assert.equal(validateVerification({...value,confirmed_effects:['static','gradient','cycle','breath','wave']}),false);
+});

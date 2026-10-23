@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # PNY effect packet adaptation: OpenRGB / yufan (2023), GPL-2.0-or-later.
 # Python adaptation developed 2026-10-23; see LICENSE.md and COPYING.
-"""Experimental PNY RGB test. Defaults to metadata only; --apply sends one write per selected LED.
+"""NVIDIA controller lighting tests. Defaults to metadata only; --apply uses an exact PCI controller profile.
 
 Protocol evidence: SOURCES-RGB.md. NVIDIA ABI notice: NOTICE.txt.
 """

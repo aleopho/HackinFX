@@ -22,7 +22,7 @@ Rebuild offline: python3 tools/import_openrgb_catalog.py. It rejects changed ups
 
 app/Widget contains a real Xcode WidgetKit app-extension target, not an NSPanel substitute. Small/medium widgets show card/profile state and the last successful lighting command, labeled LAST SENT rather than live readback. Links open HackinFX Studio/Hardware; clicking a widget does not send GPU writes. A JSON snapshot in a dedicated Widget subdirectory excludes reports, notes, credentials and installation IDs.
 
-The extension uses App Sandbox with a narrow read-only home-relative exception for Library/Application Support/HackinFX/Widget. It does not request an App Group or invent a Team ID. The host writes an atomic snapshot and requests timeline reloads; WidgetKit controls refresh frequency. A timestamp makes stale data visible.
+The extension uses App Sandbox with a narrow read-only home-relative exception for Library/Application Support/HackinFX/Widget. It does not request an App Group or invent a Team ID. The host writes an atomic snapshot and requests timeline reloads; WidgetKit controls refresh frequency. A timestamp in the medium widget makes stale data visible.
 
 Building the compiled extension requires a full Xcode installation, but no Apple account is configured by the build script. Command-line-tools-only local builds include the source but omit the extension unless HACKINFX_WIDGET_PATH points to a separately Xcode-built .appex. CI verifies the real extension exists before producing the widget preview DMG. The widget targets macOS 14+, while the host app keeps a macOS 13 minimum.
 
@@ -45,3 +45,5 @@ Future roadmap (not this release): RAM RGB as a separate device type. AMD and In
 ### Additional NVIDIA vendor: ASUS
 
 21 exact NVIDIA ASUS Aura registrations at address 0x29 are test candidates. The transport requires a matching 0x1589 controller signature at registers 0x20/0x21 before any lighting write. Static, Spectrum and Breathing are offered. Off uses black Static (the upstream Off mode is not functional); the explicit save/apply register is never written. Speed and Spectrum brightness are controller-defined. This is an untested macOS port, not a physical compatibility confirmation. Other Aura variants/addresses are not inferred.
+
+Current preview: **1.1.0-beta.2**. The three implemented NVIDIA controller families cover 38 exact PCI configurations as test candidates, not 38 physically verified cards.
