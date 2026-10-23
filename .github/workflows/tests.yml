@@ -1,0 +1,29 @@
+name: Offline tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  core-and-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python3 -m unittest discover -s tests -v
+        working-directory: app
+      - run: node --test *.test.mjs
+        working-directory: report-inbox
+      - run: python3 -m unittest test_schema.py
+        working-directory: report-inbox
+  native-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests
+      - run: /tmp/hackinfx-profile-tests
+      - run: python3 app/build_community.py
+      - run: codesign --verify --deep --strict app/HackinFX.app

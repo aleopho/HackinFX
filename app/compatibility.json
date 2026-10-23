@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "hardware_key": "10de:2704:196e:13bc",
+      "gpu_name": "GeForce RTX 4080",
+      "gpu_vendor": "NVIDIA",
+      "board_vendor": "PNY",
+      "profile": "pny-4080-196e-13bc",
+      "confirmed_effects": [
+        "static",
+        "gradient",
+        "cycle",
+        "breath",
+        "wave"
+      ],
+      "reports": 1,
+      "source": "user-confirmed development device",
+      "last_confirmed": "2026-10-23"
+    }
+  ]
+}

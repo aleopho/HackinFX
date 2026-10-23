@@ -1,0 +1,22 @@
+# Generated apps and release assets
+*.app/
+*.dmg
+*.zip
+*.sha256
+.DS_Store
+__pycache__/
+*.py[cod]
+node_modules/
+.wrangler/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+# Never commit private runtime data or auth
+Reports/
+Scans/
+Troubleshooting/
+VerificationQueue/
+cloudflare-config/
+results/
+*.log

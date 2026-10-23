@@ -1,0 +1,1 @@
+{"name":"hackinfx-report-inbox","private":true,"type":"module","scripts":{"test":"node --test *.test.mjs","deploy":"wrangler deploy"},"devDependencies":{"wrangler":"^4"}}
