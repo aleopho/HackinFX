@@ -1022,6 +1022,7 @@ UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
 let app = NSApplication.shared
 if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes"].contains(CommandLine.arguments[1]) {
     app.setActivationPolicy(.prohibited)
+    app.appearance = NSAppearance(named: .darkAqua)
     let preview = Model(); preview.launching = false; preview.page = "Studio"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
@@ -1029,6 +1030,7 @@ if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-previ
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
     let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text("SAMPLE DATA · DESIGN CHECK").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
     let view = NSHostingView(rootView:labeled)
+    view.appearance = NSAppearance(named: .darkAqua)
     view.frame = NSRect(x:0,y:0,width:1200,height:900)
     view.layoutSubtreeIfNeeded()
     if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
