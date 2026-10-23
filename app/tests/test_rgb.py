@@ -32,6 +32,9 @@ class RGBFake(Fake):
                 req = rgb.Indexed.from_address(data.params)
                 if not req.write:
                     self.reads.append(req.index[0])
+                    if req.index_length == 0:
+                        if self.write_error: data.status = 0x56
+                        return 0, C.sizeof(data)
                     (rgb.U8 * 1).from_address(req.message)[0] = self.aura_magic[req.index[0]-0x20]
                     return 0, C.sizeof(data)
                 self.writes.append((bytes(req), C.string_at(req.message, req.length)))
@@ -215,3 +218,65 @@ class RGBTests(unittest.TestCase):
         profile = next(p for p in profiles.PROFILES if p.controller == 'AsusAuraGPUController')
         packets=rgb.controller_transactions(profile,'off',(255,255,255),'all')
         self.assertEqual(packets,[(0x29,4,(0,)),(0x29,5,(0,)),(0x29,6,(0,)),(0x29,7,(1,))])
+
+
+    def test_turing_unlock_apply_and_relock_omit_flash_commands(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'EVGATuringGPUController')
+        plans=rgb.controller_transactions(profile,'static',(255,128,0),'all',brightness=128)
+        self.assertEqual([(r,p[0]) for _,r,p in plans[:4]],[(14,229),(14,233),(14,245),(14,249)])
+        self.assertEqual([(r,p[0]) for _,r,p in plans[-3:]],[(8,1),(14,240),(14,224)])
+        self.assertEqual([(r,p[0]) for _,r,p in plans[5:9]],[(108,255),(109,128),(110,0),(111,50)])
+        self.assertFalse(any(r in (0x1f,0x23) for _,r,_ in plans))
+
+    def test_turing_failure_still_attempts_bounded_relock(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'EVGATuringGPUController')
+        fake,report=RGBFake(write_error=True),{}
+        with self.assertRaises(p.ProbeError): rgb.RGB(fake,report,port=1,apply=True,profile=profile).run()
+        self.assertEqual(len(fake.writes),4)
+        self.assertTrue(report['controller_relock_attempted'])
+        self.assertTrue(report['controller_relock_failed'])
+        self.assertFalse(report.get('write_completed',False))
+
+    def test_turing_speed_is_bounded_and_inputs_validated(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'EVGATuringGPUController')
+        plan=rgb.controller_transactions(profile,'breath',(1,2,3),'all',speed=100)
+        registers={r:p[0] for _,r,p in plan}
+        self.assertEqual(registers[0x74],250)
+        self.assertEqual(registers[0x75],0)
+        with self.assertRaises(p.ProbeError): rgb.controller_transactions(profile,'static',(1,2,3),'all',brightness=999)
+
+    def test_zotac_enables_controller_and_completes_required_readback(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'ZotacTuringGPUController')
+        fake,report=RGBFake(),{}
+        rgb.RGB(fake,report,port=1,apply=True,profile=profile,effect='wave').run()
+        self.assertEqual(fake.writes[0][1],bytes([0xf1,1,0,0,0,0,0]))
+        self.assertEqual(fake.writes[1][1][1],2)
+        self.assertTrue(report['controller_readback_completed'])
+        self.assertEqual(report['i2c_transactions_attempted'],3)
+
+    def test_zotac_off_uses_black_static_and_unsupported_gradient_fails(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'ZotacTuringGPUController')
+        plans=rgb.controller_transactions(profile,'off',(255,255,255),'all')
+        self.assertEqual(plans[-1][2][1:5],(0,0,0,0))
+        with self.assertRaises(p.ProbeError): rgb.controller_transactions(profile,'gradient',(1,2,3),'all')
+
+    def test_zotac_readback_failure_cannot_be_reported_as_success(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'ZotacTuringGPUController')
+        class ReadFailure(RGBFake):
+            def __call__(self,esc,data):
+                if isinstance(data,p.Control) and data.cmd == 0x402c0102:
+                    request=rgb.Indexed.from_address(data.params)
+                    if not request.write:
+                        data.status=0x56
+                        return 0,C.sizeof(data)
+                return super().__call__(esc,data)
+        fake,report=ReadFailure(),{}
+        with self.assertRaises(p.ProbeError): rgb.RGB(fake,report,port=1,apply=True,profile=profile).run()
+        self.assertFalse(report.get('write_completed',False))
+        self.assertEqual(len(fake.writes),2)

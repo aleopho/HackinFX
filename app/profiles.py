@@ -27,7 +27,7 @@ def controller_profiles():
     rows = gpu_catalog.load()[0]['pci_registrations']
     result = {}
     for row in rows:
-        if (row['controller'],row['address_7bit']) not in (('PNYLovelaceGPUController',0x60),('EVGAPascalGPUController',0x49),('AsusAuraGPUController',0x29)):
+        if (row['controller'],row['address_7bit']) not in (('PNYLovelaceGPUController',0x60),('EVGAPascalGPUController',0x49),('EVGATuringGPUController',0x49),('ZotacTuringGPUController',0x49),('AsusAuraGPUController',0x29)):
             continue
         pci = tuple(int(value, 16) for value in row['pci'])
         identity = gpu_catalog.identify(dict(zip(gpu_catalog.PCI_FIELDS,pci)))
@@ -38,6 +38,12 @@ def controller_profiles():
         if row['controller'] == 'AsusAuraGPUController':
             key = 'asus-aura-' + '-'.join(row['pci'])
             result[pci] = Profile(key,row['name'],pci,1,0x29,0x07,1,row['controller'],('static','cycle','breath'))
+        elif row['controller'] == 'ZotacTuringGPUController':
+            key = 'zotac-turing-' + '-'.join(row['pci'])
+            result[pci] = Profile(key,row['name'],pci,1,0x49,0xa0,1,row['controller'],('static','cycle','breath','wave'))
+        elif row['controller'] == 'EVGATuringGPUController':
+            key = 'evga-turing-' + '-'.join(row['pci'])
+            result[pci] = Profile(key,row['name'],pci,1,0x49,0x60,1,row['controller'],('static','cycle','breath'))
         elif row['controller'] == 'EVGAPascalGPUController':
             key = 'evga-pascal-' + '-'.join(row['pci'])
             result[pci] = Profile(key,row['name'],pci,1,0x49,0x0c,1,row['controller'],('static','cycle','breath'))
