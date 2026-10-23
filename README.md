@@ -4,13 +4,13 @@
 
 HackinFX is a native macOS menu-bar app for controlling a supported GPU's RGB lighting through a separately installed NullMoth NVRM driver. It combines a lighting studio, visible hardware detection, a guided visual test, local profiles and community compatibility reports.
 
-**Release 1.1.0 · macOS 15 or later.** Includes a refined native interface, genuine WidgetKit widget and OpenRGB-based NVIDIA controller matching.
+**Release 1.1.1 · macOS 15 or later.** Includes a refined native interface, genuine WidgetKit widget and OpenRGB-based NVIDIA controller matching.
 
 The OpenRGB catalog recognizes 752 exact GPU PCI tuples. Executable lighting-test paths currently cover **38 exact configurations across PNY Lovelace, EVGA Pascal and ASUS Aura**. These are test candidates; only cards with successful visual user confirmation are listed as user-tested. Other controller families remain identification-only. [Controller details](docs/RELEASE-1.1.md).
 
 ## Download and install
 
-Download [HackinFX 1.1.0 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.1.0/HackinFX-aleopho-1.1.0.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.
+Download [HackinFX 1.1.1 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.1.1/HackinFX-aleopho-1.1.1.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.
 
 Requirements:
 
@@ -49,9 +49,9 @@ The genuine WidgetKit widget shows GPU model, last successfully applied lighting
 
 ## Screenshots
 
-![HackinFX 1.0.0 Lighting Studio on the development Hackintosh](docs/images/lighting-studio-1.0.0.png)
+![HackinFX 1.1.0 Lighting Studio on the development Hackintosh](docs/images/lighting-studio-1.1.0.png)
 
-HackinFX 1.0.0 Lighting Studio with the confirmed PNY XLR8 RTX 4080 VERTO profile. Genuine desktop capture supplied by aleopho; the GPU illustration inside the app is a schematic, not LED-state feedback. [Screenshot details](docs/SCREENSHOTS.md).
+HackinFX 1.1.0 Lighting Studio with the confirmed PNY XLR8 RTX 4080 VERTO profile. Genuine desktop capture supplied by aleopho before the 1.1.1 corrections; the visible 1.1.0 PREVIEW footer is removed in the current release; the GPU illustration inside the app is a schematic, not LED-state feedback. [Screenshot details](docs/SCREENSHOTS.md).
 
 ## Documentation
 
@@ -80,7 +80,7 @@ Build locally with `python3 app/build_community.py`. Package with `python3 app/p
 
 Created by **aleopho**. HackinFX application/source: **GPL-2.0-or-later**, see [LICENSE](LICENSE) and [licensing notes](app/LICENSE.md).
 
-- **OpenRGB / yufan and contributors:** PNY Lovelace controller protocol and effect packet adaptation, GPL-2.0-or-later.
+- **OpenRGB / yufan, Adam Honse, Jan Rettig and contributors:** PNY Lovelace, EVGA Pascal and ASUS Aura controller adaptations, GPL-2.0-or-later.
 - **NullMoth Systems:** separately installed NVRM bridge; the reviewed v2.5.3 NVRM source declares PolyForm Noncommercial 1.0.0. Its driver is not bundled or relicensed by HackinFX.
 - **NVIDIA:** public RM SDK ABI definitions, with MIT notices preserved in [licenses/NVIDIA-MIT.txt](licenses/NVIDIA-MIT.txt).
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+- Preserve nested WidgetKit signing through native DMG creation; verify mounted and copied app signatures.
+- Replace the stale PREVIEW footer with the release number.
+- Add visible press/rebound/highlight animations and effect/navigation transitions, respecting Reduce Motion.
+- Update repository description and genuine 1.1.0 screenshot; preserve source/license credits.
+
+
 ## 1.0.0 — 2026-10-23
 
 Initial public community release by aleopho.

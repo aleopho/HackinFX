@@ -10,14 +10,29 @@ private let panel = Color(red: 0.075, green: 0.090, blue: 0.098)
 private let accent = Color(red: 0.77, green: 0.94, blue: 0.49)
 private let muted = Color(red: 0.56, green: 0.62, blue: 0.63)
 
-// Brief press feedback, respecting the system's reduced-motion preference.
+// Press, release rebound and a brief highlight remain visible after a click.
 struct PressFeedbackStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration:0.14),value:configuration.isPressed)
+        ButtonFeedback(label:configuration.label,pressed:configuration.isPressed)
+    }
+}
+private struct ButtonFeedback: View {
+    let label: ButtonStyleConfiguration.Label
+    let pressed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var highlighted = false
+    var body: some View {
+        label
+            .overlay(RoundedRectangle(cornerRadius:12).stroke(accent.opacity(highlighted ? 0.65 : 0),lineWidth:1.5).allowsHitTesting(false))
+            .shadow(color:accent.opacity(highlighted ? 0.22 : 0),radius:highlighted ? 9 : 0)
+            .scaleEffect(reduceMotion ? 1 : pressed ? 0.95 : highlighted ? 1.025 : 1)
+            .brightness(highlighted ? 0.05 : 0)
+            .animation(reduceMotion ? nil : .spring(duration:0.32,bounce:0.3),value:pressed)
+            .animation(reduceMotion ? nil : .easeOut(duration:0.26),value:highlighted)
+            .onChange(of:pressed) { _, down in
+                if down { highlighted = true }
+                else { DispatchQueue.main.asyncAfter(deadline:.now()+0.22) { highlighted = false } }
+            }
     }
 }
 
@@ -469,7 +484,7 @@ struct GPUPreview: View {
             }.clipShape(RoundedRectangle(cornerRadius:20))
             VStack(spacing:18) {
                 HStack {
-                    Label("CONTROLLER PREVIEW",systemImage:"square.stack.3d.up").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(1.4)
+                    Label("CONTROLLER VIEW",systemImage:"square.stack.3d.up").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(1.4)
                     Spacer();Text(model.effect.rawValue.uppercased()).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(1)
                 }.foregroundColor(muted)
                 HStack(spacing:28) {
@@ -490,11 +505,14 @@ struct GPUPreview: View {
     }
 }
 struct EffectTile: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let effect: Lighting
     let selected: Bool
     var body: some View {
         VStack(spacing:11) { Image(systemName:effect.symbol).font(.system(size:20,weight:.light));Text(effect.rawValue).font(.system(size:11,weight:.medium)).lineLimit(1).minimumScaleFactor(0.85) }
         .frame(maxWidth:.infinity).frame(height:78).foregroundColor(selected ? accent : muted).background(selected ? accent.opacity(0.075) : Color.white.opacity(0.015)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(selected ? accent.opacity(0.45) : .white.opacity(0.055),lineWidth:1)).contentShape(RoundedRectangle(cornerRadius:12))
+        .scaleEffect(selected && !reduceMotion ? 1.025 : 1)
+        .animation(reduceMotion ? nil : .spring(duration:0.34,bounce:0.22),value:selected)
     }
 }
 struct StudioFooter: View {
@@ -785,6 +803,8 @@ struct LaunchView: View {
 }
 
 struct Sidebar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var navigation
     @ObservedObject var model: Model
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
@@ -796,8 +816,8 @@ struct Sidebar: View {
             ForEach([("Studio","slider.horizontal.3"),("Hardware","cpu"),("Credits","heart")],id:\.0) { title,icon in
                 Button { model.page = title == "Studio" && !model.canControlLighting ? "Hardware" : title } label: {
                     HStack(spacing:12) { Image(systemName:icon).font(.system(size:15)).frame(width:20);Text(title).font(.system(size:13,weight:.medium)).lineLimit(1).fixedSize();Spacer(minLength:0);if model.page == title { Circle().fill(accent).frame(width:5,height:5) } }
-                    .foregroundColor(model.page == title ? accent : muted).padding(.horizontal,13).frame(height:46).background(model.page == title ? accent.opacity(0.07) : .clear).clipShape(RoundedRectangle(cornerRadius:10)).overlay(RoundedRectangle(cornerRadius:10).stroke(model.page == title ? accent.opacity(0.13) : .clear,lineWidth:1))
-                }.buttonStyle(PressFeedbackStyle()).padding(.bottom,6)
+                    .foregroundColor(model.page == title ? accent : muted).padding(.horizontal,13).frame(height:46).background { if model.page == title { RoundedRectangle(cornerRadius:10).fill(accent.opacity(0.10)).matchedGeometryEffect(id:"selected-page",in:navigation) } }.clipShape(RoundedRectangle(cornerRadius:10)).overlay(RoundedRectangle(cornerRadius:10).stroke(model.page == title ? accent.opacity(0.13) : .clear,lineWidth:1))
+                }.buttonStyle(PressFeedbackStyle()).padding(.bottom,6).animation(reduceMotion ? nil : .easeInOut(duration:0.25),value:model.page)
             }
             Spacer(minLength:24)
             VStack(alignment:.leading,spacing:12) {
@@ -806,7 +826,7 @@ struct Sidebar: View {
                 Text([model.currentGPUVendor,model.currentBoardVendor].filter { !$0.isEmpty }.joined(separator:" / ")).font(.system(size:10,design:.monospaced)).foregroundColor(muted).lineLimit(2)
                 Tag(title:model.canControlLighting ? "PROFILE READY" : "SETUP REQUIRED",tint:model.canControlLighting ? accent : .orange)
             }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.025)).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(.white.opacity(0.055),lineWidth:1))
-            HStack { Text("1.1.0 PREVIEW");Spacer();Image(systemName:"terminal") }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted).padding(.top,18)
+            HStack { Text("1.1.1");Spacer();Image(systemName:"terminal") }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted).padding(.top,18)
         }.padding(22).frame(width:232).frame(maxHeight:.infinity).background(LinearGradient(colors:[panel,ink],startPoint:.topLeading,endPoint:.bottomTrailing))
     }
 }

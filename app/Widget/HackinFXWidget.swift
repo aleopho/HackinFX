@@ -13,7 +13,7 @@ struct WidgetSnapshot: Codable {
     let updatedAt: Date
     var colors: [String]? = nil
     var brightness: Double? = nil
-    static let empty = WidgetSnapshot(schema:1,gpuName:"Open HackinFX",boardVendor:"Lighting controls",profileReady:false,lastCommand:"No command recorded",updatedAt:.distantPast)
+    static let empty = WidgetSnapshot(schema:1,gpuName:"Open HackinFX, then apply lighting",boardVendor:"Waiting for app status",profileReady:false,lastCommand:"No command recorded",updatedAt:.distantPast)
     static func read() -> WidgetSnapshot {
         guard let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir else { return .empty }
         let file=URL(fileURLWithPath:String(cString:home)).appendingPathComponent("Library/Application Support/HackinFX/Widget/snapshot.json")

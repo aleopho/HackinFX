@@ -17,7 +17,7 @@ import probe
 import profiles
 import gpu_catalog
 
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 DRIVER = re.compile(r'(com\.(?:nullmoth[\w.]*|nvidia[\w.]*|apple\.(?:GeForce|NVDA|AMD|ATI|AppleIntel)[\w.]*))\s+\(([^)]+)\)')
 
 

@@ -21,11 +21,12 @@ jobs:
       - run: python3 app/build_community.py
       - run: python3 tools/check_app_bundle.py
       - run: codesign --verify --deep --strict app/HackinFX.app
-      - run: python3 app/package_dmg.py && hdiutil verify HackinFX-aleopho-1.1.0.dmg
-      - name: Publish HackinFX 1.1.0
+      - run: python3 app/package_dmg.py && hdiutil verify HackinFX-aleopho-1.1.1.dmg
+      - run: python3 tools/verify_dmg.py HackinFX-aleopho-1.1.1.dmg
+      - name: Publish HackinFX 1.1.1
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git archive --format=zip --prefix=HackinFX-1.1.0/ -o HackinFX-1.1.0-source.zip HEAD
-          shasum -a 256 HackinFX-aleopho-1.1.0.dmg HackinFX-1.1.0-source.zip > SHA256SUMS.txt
-          gh release create v1.1.0 --target "$GITHUB_SHA" --title "HackinFX 1.1.0" --notes-file docs/RELEASE-NOTES-1.1.0.md --latest HackinFX-aleopho-1.1.0.dmg HackinFX-1.1.0-source.zip SHA256SUMS.txt
+          git archive --format=zip --prefix=HackinFX-1.1.1/ -o HackinFX-1.1.1-source.zip HEAD
+          shasum -a 256 HackinFX-aleopho-1.1.1.dmg HackinFX-1.1.1-source.zip > SHA256SUMS.txt
+          gh release create v1.1.1 --target "$GITHUB_SHA" --title "HackinFX 1.1.1" --notes-file docs/RELEASE-NOTES-1.1.1.md --latest HackinFX-aleopho-1.1.1.dmg HackinFX-1.1.1-source.zip SHA256SUMS.txt
