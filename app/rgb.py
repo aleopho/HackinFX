@@ -7,6 +7,8 @@
 Protocol evidence: SOURCES-RGB.md. NVIDIA ABI notice: NOTICE.txt.
 """
 import argparse
+import fcntl
+import os
 import ctypes as C
 import json
 import platform
@@ -188,8 +190,19 @@ class RGB(p.RM):
         self.report['rgb_controller_reachable'] = 'write accepted; visible color change requires observation'
 
 
+def acquire_write_lock(directory=None):
+    folder=Path(directory) if directory else Path.home()/'Library/Application Support/HackinFX/Core'
+    folder.mkdir(parents=True,exist_ok=True,mode=0o700)
+    fd=os.open(str(folder/'nvidia-write.lock'),os.O_RDWR|os.O_CREAT|getattr(os,'O_NOFOLLOW',0),0o600)
+    handle=os.fdopen(fd,'a')
+    try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except Exception:handle.close();raise p.ProbeError('Another native GPU request is active; wait for it to finish')
+    return handle
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--expected-profile',help='Refuse a different exact controller profile')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--port', type=int, choices=(1, 2))
     parser.add_argument('--color', default='200000', help='6-digit RGB hex; default dim red')
@@ -227,6 +240,7 @@ def main(argv=None):
     report = dict(tool_version='0.4.0', mode='rgb-test' if args.apply else 'dcb-metadata',
                   error=None, write_completed=False, i2c_transactions_attempted=0)
     native = None
+    write_lock = None
     try:
         if sys.platform != 'darwin' or platform.machine() != 'x86_64':
             raise p.ProbeError('x86-64 macOS required')
@@ -234,8 +248,11 @@ def main(argv=None):
         report['pci_devices'] = devices = p.inventory()
         profile = profiles.select(devices)
         report['profile'] = profile.key
+        if args.expected_profile and args.expected_profile != profile.key:
+            raise p.ProbeError('GPU controller changed since selection; rescan required')
         if args.apply and args.port != profile.port:
             raise p.ProbeError('Port does not match the exact controller profile')
+        if args.apply: write_lock = acquire_write_lock()
         native = p.Native()
         native.open()
         RGB(native, report, args.port, color, 'all' if args.led == 'all' else int(args.led), args.apply,
@@ -245,6 +262,7 @@ def main(argv=None):
     finally:
         if native:
             report['connection_close_errors'] = native.close()
+        if write_lock: write_lock.close()
         with handle:
             json.dump(report, handle, indent=2)
             handle.write('\n')

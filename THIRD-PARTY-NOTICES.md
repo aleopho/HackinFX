@@ -53,3 +53,7 @@ ASUS Aura signature checks and volatile register/mode handling are adapted from 
 ## Additional NVIDIA controller adaptations
 
 EVGA Turing volatile unlock/color/mode/relock sequences are adapted from TheRogueZeta, OpenRGB, 15 April 2021. Zotac Turing enable/mode/readback handling is adapted from David Henry, OpenRGB, 7 January 2023. Both are GPL-2.0-or-later. Exact implementations from pinned commit `817834cfab034c97927451e31c4a2deb60a44725` and hashes are in `vendor/openrgb/implementations/`. Original detector/header notices remain preserved. These macOS ports are unverified on physical EVGA/Zotac hardware. No upstream flash-save operation is implemented.
+
+## OpenRGB SDK protocol references
+
+The new Python SDK client is implemented from OpenRGB's network protocol and SDK-3 controller serialization. Original protocol/interface/serialization sources at commit `817834cfab034c97927451e31c4a2deb60a44725` are preserved with their original Adam Honse/OpenRGB author notices and per-file hashes under `vendor/openrgb/sdk/`. They remain GPL-2.0-or-later and are protocol references, not a bundled OpenRGB executable. HackinFX does not claim OpenRGB's entire catalog as working macOS hardware support.
