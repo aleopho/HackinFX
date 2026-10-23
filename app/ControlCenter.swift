@@ -24,7 +24,7 @@ struct CenterDevice: Codable, Identifiable {
     var modes:[CenterMode]? = nil
     var symbol: String {
         switch category {
-        case "gpu":return "pcicard"
+        case "gpu":return "cpu"
         case "dram":return "memorychip"
         case "keyboard","keypad":return "keyboard"
         case "mouse":return "computermouse"
@@ -204,7 +204,7 @@ struct CenterNavigation:View {
     @ObservedObject var center:CenterModel
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Namespace private var selection
-    private let pages=[("Overview","square.grid.2x2"),("Devices","externaldrive.connected.to.line.below"),("Scenes","slider.horizontal.3"),("Layout","rectangle.3.group"),("Connections","point.3.connected.trianglepath.dotted"),("Studio","pcicard"),("Hardware","waveform.path.ecg"),("Credits","heart")]
+    private let pages=[("Overview","square.grid.2x2"),("Devices","externaldrive.connected.to.line.below"),("Scenes","slider.horizontal.3"),("Layout","rectangle.3.group"),("Connections","point.3.connected.trianglepath.dotted"),("Studio","cpu"),("Hardware","waveform.path.ecg"),("Credits","heart")]
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:11) { Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:36,height:36);VStack(alignment:.leading,spacing:3) { Text("HackinFX").font(.system(size:21,weight:.semibold,design:.rounded));Text("CONTROL CENTER").font(.system(size:7,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted) } }.padding(.bottom,35)
@@ -327,7 +327,7 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Backend connections",title:"Connections",subtitle:"Hardware adapters stay separate from the shared engine. All Core API access remains on this Mac.")
             CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("OpenRGB bridge",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("127.0.0.1 : 6742").font(.system(size:20,weight:.medium,design:.monospaced));Text("Enable the SDK server in OpenRGB, then discover devices. Keyboards, mice, DRAM, USB coolers and controllers can be controlled when that server provides a working Direct-mode device. The OpenRGB device catalog alone does not prove macOS compatibility.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Connect & discover",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
-            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"pcicard").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other USB families need an adapter or OpenRGB bridge. DRAM host-SMBus access remains development work.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
+            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other USB families need an adapter or OpenRGB bridge. DRAM host-SMBus access remains development work.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
             CenterPanel { VStack(alignment:.leading,spacing:12) { Label("Private local Core",systemImage:"lock.shield").font(.headline);Text("The API uses a per-process credential and binds only to 127.0.0.1. No LAN listener, cloud account or Android access is enabled. Saved scenes stay in Documents/HackinFX. The engine stops when HackinFX quits.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
         }
     }
