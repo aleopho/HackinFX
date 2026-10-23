@@ -1,6 +1,6 @@
-# HackinFX 1.0.0 — by aleopho
+# HackinFX 1.1.0 — by aleopho
 
-Native GPU-lighting app for x86-64 Hackintosh systems (Intel or AMD CPU; AMD-CPU operation is not yet physically validated). Locally ad-hoc codesigned, not Developer ID
+Requires macOS 15 or later. Native GPU-lighting app for x86-64 Hackintosh systems (Intel or AMD CPU; AMD-CPU operation is not yet physically validated). Locally ad-hoc codesigned, not Developer ID
 signed or notarized. Local codesign does not guarantee warning-free launch of a
 downloaded app. No security settings or quarantine flags are modified.
 
@@ -18,8 +18,7 @@ No lighting packets are sent by startup inventory or by remote catalog downloads
 
 ## Setup
 
-Without a matching local confirmation, a known controller automatically starts a visible guided test after inventory. The test runs red, green, blue, Gradient, Spectrum, Breathing and
-Wave (roughly 30 seconds, depending on driver latency). It ends with Wave running.
+Without a matching local confirmation, a known controller automatically starts a visible guided test after inventory. The test runs red, green and blue, followed by each effect implemented for the detected controller. It ends with the final effect running.
 Use Apply to select another effect. Each lighting operation stops on driver failure.
 
 “All tests worked” requires completed transport calls plus the user's visual
@@ -87,9 +86,11 @@ No Apple Developer account or notarization step is used.
 
 App/source licenses and OpenRGB, NullMoth and NVIDIA credits are bundled. NullMoth
 is a separately installed dependency. See LICENSE.md, COPYING and NOTICE.txt.
-Native deployment target: macOS 13.0, x86_64. The icon and APIs do not depend on
+Native deployment target: macOS 15.0, x86_64. The icon and APIs do not depend on
 Tahoe-only rendering; interactive Sequoia validation has not been performed.
 
 Live Cloudflare tests passed for real storage receipts, duplicate retries, confirmation upserts, public aggregation and private report read rejection. Synthetic records were removed. The native UI compiles, but interactive first-run, visual test dialog and Sequoia installation still require a check outside Codex; the sandbox cannot render native AppKit windows.
 
 Missing board/model identity opens editable fields. User corrections are stored with the PCI identity, reported to the database as user-supplied, and retain the original detected model as additional private metadata. Remote confirmations never install a new RGB driver.
+
+Confirmed profiles are saved in the current user’s `~/Documents/HackinFX/` directory, one JSON file per hardware fingerprint. Existing matching profiles are migrated automatically.

@@ -46,6 +46,11 @@ import Foundation
         assert(decodedWidget.gpuName == "PNY RTX 4080")
         assert(decodedWidget.colors == ["ff0000","00ff00","0000ff"] && decodedWidget.brightness == 50)
         assert(!String(decoding:widgetBytes,as:UTF8.self).contains("installation_id"))
-        print("23 local-profile and compatibility-store assertions passed")
+        let profiles = SetupProfileStore(directory:folder.appendingPathComponent("Documents/HackinFX"))
+        let fp = String(repeating:"a",count:64)
+        try profiles.save(widgetBytes,fingerprint:fp)
+        assert(profiles.load(fp) == widgetBytes)
+        assert(profiles.file("../Desktop") == nil)
+        print("25 local-profile and compatibility-store assertions passed")
     }
 }

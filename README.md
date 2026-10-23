@@ -4,19 +4,17 @@
 
 HackinFX is a native macOS menu-bar app for controlling a supported GPU's RGB lighting through a separately installed NullMoth NVRM driver. It combines a lighting studio, visible hardware detection, a guided visual test, local profiles and community compatibility reports.
 
-**Initial release: 1.0.0.** This is an early community release with one verified hardware profile. It is not a universal GPU RGB driver. New device names in the community catalog do not enable unknown controllers.
+**Release 1.1.0 · macOS 15 or later.** Includes a refined native interface, genuine WidgetKit widget and OpenRGB-based NVIDIA controller matching.
 
-## Development preview
-
-The 1.1 development work adds a refined interface, an auditable OpenRGB GPU identity catalog and a real WidgetKit extension target. See [preview status and remaining controller/transport work](docs/PREVIEW-1.1.md). Catalog recognition does not mean RGB control is implemented. The download below remains stable 1.0.0.
+The OpenRGB catalog recognizes 752 exact GPU PCI tuples. Executable lighting-test paths currently cover **38 exact configurations across PNY Lovelace, EVGA Pascal and ASUS Aura**. These are test candidates; only cards with successful visual user confirmation are listed as user-tested. Other controller families remain identification-only. [Controller details](docs/RELEASE-1.1.md).
 
 ## Download and install
 
-Download [HackinFX 1.0.0 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.0.0/HackinFX-aleopho-1.0.0.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.
+Download [HackinFX 1.1.0 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.1.0/HackinFX-aleopho-1.1.0.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.
 
 Requirements:
 
-- macOS 13 or later on an x86-64 Hackintosh (Intel or AMD CPU); GPU/driver configuration already working. CPU vendor is not a software gate; AMD-CPU systems have not yet been physically validated by this project.
+- macOS 15 or later on an x86-64 Hackintosh (Intel or AMD CPU); GPU/driver configuration already working. CPU vendor is not a software gate; AMD-CPU systems have not yet been physically validated by this project.
 - A compatible, separately installed [NullMoth NVIDIA driver / NVRM service](https://github.com/nullmoth/nvidia-macos-driver).
 - A working `/usr/bin/python3` supplied with Apple's command line tools.
 - A matching RGB controller profile from the table below.
@@ -39,11 +37,15 @@ Other GPUs can be inventoried and reported, but lighting writes remain disabled 
 
 1. Shows a short launch animation, then visibly reads PCI identity and graphics-driver information.
 2. Loads a previously confirmed local profile when the hardware/driver/OS fingerprint matches. Older basic-only profiles require the complete test.
-3. Otherwise, for a supported controller, automatically runs red, green, blue, Gradient, Spectrum, Breathing and Wave. Watch the physical card and confirm complete, partial or no operation. The test can be stopped. It finishes on Wave.
+3. Otherwise, for an implemented controller, automatically tests red, green, blue and every available effect. PNY offers Gradient, Spectrum, Breathing and Wave; EVGA Pascal/ASUS Aura offer Spectrum and Breathing. Watch the card and confirm complete, partial or no operation. The test can be stopped.
 4. Saves a reusable local profile only after completed transport calls and your visual confirmation. Missing or incorrect board/model names can be supplied by the user; detected PCI IDs are preserved.
 5. With sharing enabled, queues a minimal compatibility confirmation for the community database. Offline submissions remain local and retry automatically. Private troubleshooting notes require a separate **Review / Send** action.
 
 Closing the window keeps HackinFX in the menu bar. Open Lighting restores it; **Quit HackinFX** exits. Static/zone colors, brightness and effect speed are available in the lighting studio. Gradients use three controller zones; physical placement depends on the card.
+
+## Desktop widget
+
+The genuine WidgetKit widget shows GPU model, last successfully applied lighting mode, a matching color strip and brightness where supported. Add HackinFX from the desktop’s **Edit Widgets** gallery after installing and launching the app. WidgetKit controls refresh timing; the colors are a schematic of the last command, not live LED feedback. Normal desktop registration and update behavior still need community validation with the ad-hoc-signed distribution.
 
 ## Screenshots
 
@@ -83,3 +85,5 @@ Created by **aleopho**. HackinFX application/source: **GPL-2.0-or-later**, see [
 - **NVIDIA:** public RM SDK ABI definitions, with MIT notices preserved in [licenses/NVIDIA-MIT.txt](licenses/NVIDIA-MIT.txt).
 
 [Full attribution and source references](THIRD-PARTY-NOTICES.md). Independent community project; no endorsement by Apple, NVIDIA, PNY, NullMoth or OpenRGB. Provided without warranty.
+
+Confirmed profiles are saved in the current user’s `~/Documents/HackinFX/` directory, one JSON file per hardware fingerprint. Existing matching profiles are migrated automatically.

@@ -8,8 +8,31 @@ struct VerifiedSetup: Codable {
     let successfulSteps: Int
     let userConfirmed: Bool
     var verifiedEffects: [String]? = nil
+    var gpuName: String? = nil
+    var boardVendor: String? = nil
+    var gpuVendor: String? = nil
+    var identitySource: String? = nil
     func matches(_ current: String, requiredEffects: [String] = ["static","gradient","cycle","breath","wave"]) -> Bool {
         schema == 1 && !current.isEmpty && fingerprint == current && successfulSteps == 3 && userConfirmed && Set(verifiedEffects ?? []).isSuperset(of:requiredEffects)
+    }
+}
+
+// Confirmed profiles live in the current user's Documents/HackinFX directory.
+final class SetupProfileStore {
+    let directory: URL
+    init(directory: URL) { self.directory = directory }
+    func file(_ fingerprint: String) -> URL? {
+        guard fingerprint.count == 64, fingerprint.allSatisfy({ $0.isHexDigit && $0.isASCII }) else { return nil }
+        return directory.appendingPathComponent("profile-" + fingerprint.lowercased() + ".json")
+    }
+    func load(_ fingerprint: String) -> Data? {
+        guard let url = file(fingerprint) else { return nil }
+        return try? Data(contentsOf:url)
+    }
+    func save(_ data: Data, fingerprint: String) throws {
+        guard let url = file(fingerprint) else { throw CocoaError(.fileWriteInvalidFileName) }
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        try data.write(to:url,options:.atomic)
     }
 }
 
@@ -57,7 +80,7 @@ struct HardwareVerification: Codable {
     var identity_source: String? = nil
     var detected_gpu_name: String? = nil
     let tested_steps: Int
-    var app_version = "1.1.0-beta.2"
+    var app_version = "1.1.0"
     let confirmed_at: String
 }
 final class VerificationStore {

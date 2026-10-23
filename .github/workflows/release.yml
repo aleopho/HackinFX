@@ -1,0 +1,31 @@
+name: Publish release
+on:
+  push:
+    branches: [main]
+    paths: [app/release-version.txt]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python3 -m unittest discover -s app/tests
+      - run: node --test report-inbox/*.test.mjs
+      - run: python3 -m unittest test_schema.py
+        working-directory: report-inbox
+      - run: swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests && /tmp/hackinfx-profile-tests
+      - run: python3 app/build_community.py
+      - run: python3 tools/check_app_bundle.py
+      - run: codesign --verify --deep --strict app/HackinFX.app
+      - run: python3 app/package_dmg.py && hdiutil verify HackinFX-aleopho-1.1.0.dmg
+      - name: Publish HackinFX 1.1.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git archive --format=zip --prefix=HackinFX-1.1.0/ -o HackinFX-1.1.0-source.zip HEAD
+          shasum -a 256 HackinFX-aleopho-1.1.0.dmg HackinFX-1.1.0-source.zip > SHA256SUMS.txt
+          gh release create v1.1.0 --target "$GITHUB_SHA" --title "HackinFX 1.1.0" --notes-file docs/RELEASE-NOTES-1.1.0.md --latest HackinFX-aleopho-1.1.0.dmg HackinFX-1.1.0-source.zip SHA256SUMS.txt

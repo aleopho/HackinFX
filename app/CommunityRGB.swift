@@ -10,6 +10,17 @@ private let panel = Color(red: 0.075, green: 0.090, blue: 0.098)
 private let accent = Color(red: 0.77, green: 0.94, blue: 0.49)
 private let muted = Color(red: 0.56, green: 0.62, blue: 0.63)
 
+// Brief press feedback, respecting the system's reduced-motion preference.
+struct PressFeedbackStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration:0.14),value:configuration.isPressed)
+    }
+}
+
 enum Lighting: String, CaseIterable, Identifiable {
     case solid = "Static", gradient = "Gradient", cycle = "Spectrum", breath = "Breathing", wave = "Wave"
     var id: String { rawValue }
@@ -79,6 +90,7 @@ final class Model: ObservableObject {
     @Published var communityStatus = ""
     @Published var uploadingCommunity = false
     var verifiedHardware: VerifiedHardware?
+    let setupProfiles = SetupProfileStore(directory:FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("HackinFX",isDirectory:true))
     let verificationStore = VerificationStore(directory: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX", isDirectory: true))
     @Published var controllerFamily = "PNYLovelaceGPUController"
     @Published var availableEffects = ["static","gradient","cycle","breath","wave"]
@@ -204,8 +216,10 @@ final class Model: ObservableObject {
         if outcome == "confirmed" {
             guard testTransportOK && configurationStatus == "supported" && saveIdentity() else { return }
             guard !fingerprint.isEmpty else { setupMessage = "Visual test passed, but inventory is incomplete. Rescan before saving a reusable profile."; return }
-            let profile = VerifiedSetup(fingerprint: fingerprint, confirmedAt: Date(), successfulSteps: 3, userConfirmed: true, verifiedEffects: availableEffects)
+            var profile = VerifiedSetup(fingerprint: fingerprint, confirmedAt: Date(), successfulSteps: 3, userConfirmed: true, verifiedEffects: availableEffects)
+            profile.gpuName = currentGPUName; profile.boardVendor = currentBoardVendor; profile.gpuVendor = currentGPUVendor; profile.identitySource = identitySource
             guard let data = try? JSONEncoder().encode(profile) else { return }
+            do { try setupProfiles.save(data,fingerprint:fingerprint) } catch { setupMessage = "Could not save the profile in Documents/HackinFX: \(error.localizedDescription)"; return }
             UserDefaults.standard.set(data, forKey: "VerifiedLightingSetup")
             UserDefaults.standard.removeObject(forKey: "FailedLightingSetupFingerprint")
             showSetupWizard = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Studio"
@@ -217,7 +231,8 @@ final class Model: ObservableObject {
         fingerprint = report["configuration_fingerprint"] as? String ?? ""
         confirmationSource = "none"; testStep = 0
         testTransportOK = false
-        if configurationStatus == "supported", let bytes = UserDefaults.standard.data(forKey: "VerifiedLightingSetup"), let saved = try? JSONDecoder().decode(VerifiedSetup.self, from: bytes), saved.matches(fingerprint,requiredEffects:availableEffects), UserDefaults.standard.string(forKey: "FailedLightingSetupFingerprint") != fingerprint {
+        if configurationStatus == "supported", let bytes = setupProfiles.load(fingerprint) ?? UserDefaults.standard.data(forKey: "VerifiedLightingSetup"), let saved = try? JSONDecoder().decode(VerifiedSetup.self, from: bytes), saved.matches(fingerprint,requiredEffects:availableEffects), UserDefaults.standard.string(forKey: "FailedLightingSetupFingerprint") != fingerprint {
+            do { try setupProfiles.save(bytes,fingerprint:fingerprint) } catch { setupMessage = "Profile loaded; Documents/HackinFX could not be updated: \(error.localizedDescription)" }
             setupState = "confirmed"; confirmationSource = "saved-profile"; testStep = saved.successfulSteps; setupMessage = "Saved lighting profile matches this configuration."; record("profile", "restored")
         } else { setupState = "required"; setupMessage = configurationStatus == "supported" ? "Known lighting controller. Run the short visual test to confirm your card." : "LED availability is unknown for this configuration. Submit an inventory for investigation." }
     }
@@ -262,6 +277,7 @@ final class Model: ObservableObject {
         currentBoardVendor = gpu["board_vendor"] as? String ?? "Unknown board vendor"
         manualVendor = currentBoardVendor.hasPrefix("PCI ") || currentBoardVendor == "Unknown board vendor" ? "" : currentBoardVendor
         manualModel = currentGPUName == "Display adapter" ? "" : currentGPUName
+        if let fp = report["configuration_fingerprint"] as? String, let bytes = setupProfiles.load(fp), let saved = try? JSONDecoder().decode(VerifiedSetup.self,from:bytes), saved.matches(fp,requiredEffects:availableEffects), let name = saved.gpuName, let vendor = saved.boardVendor { currentGPUName = name; currentBoardVendor = vendor; identitySource = saved.identitySource ?? "user-supplied"; manualVendor = vendor; manualModel = name }
         if let saved = UserDefaults.standard.dictionary(forKey: "HardwareIdentity"), saved["fingerprint"] as? String == report["configuration_fingerprint"] as? String, let name = saved["name"] as? String, let vendor = saved["vendor"] as? String { currentGPUName = name; currentBoardVendor = vendor; identitySource = saved["source"] as? String ?? "user-supplied"; manualVendor = vendor; manualModel = name }
         if let ids = gpu["pci_hex"] as? [String: String], let profile = gpu["verified_profile"] as? String,
            let vendor = ids["vendor-id"], let device = ids["device-id"], let subvendor = ids["subsystem-vendor-id"], let subdevice = ids["subsystem-id"] {
@@ -489,13 +505,13 @@ struct StudioFooter: View {
                 Image(systemName:model.lastSuccess == false ? "exclamationmark.circle" : "circle.dotted").foregroundColor(model.lastSuccess == false ? .orange : muted)
                 Text(model.message).font(.system(size:11)).foregroundColor(muted).lineLimit(2)
                 Spacer(minLength:8)
-                Button(action:model.revealReport) { Image(systemName:"doc.text.magnifyingglass") }.buttonStyle(.plain).disabled(model.lastReport == nil).help("Reveal latest lighting report")
+                Button(action:model.revealReport) { Image(systemName:"doc.text.magnifyingglass") }.buttonStyle(PressFeedbackStyle()).disabled(model.lastReport == nil).help("Reveal latest lighting report")
             }
             HStack(spacing:12) {
-                Button { model.apply(off:true) } label: { Label("Lights off",systemImage:"power").font(.system(size:12,weight:.medium)).padding(.horizontal,16).frame(height:40).background(.white.opacity(0.045)).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(.plain)
+                Button { model.apply(off:true) } label: { Label("Lights off",systemImage:"power").font(.system(size:12,weight:.medium)).padding(.horizontal,16).frame(height:40).background(.white.opacity(0.045)).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle())
                 Spacer()
                 Text("CHANGES APPLY ON REQUEST").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted)
-                Button { model.apply() } label: { HStack(spacing:10) { if model.busy { ProgressView().controlSize(.small) }; Text(model.busy ? "Applying…" : "Apply lighting");Image(systemName:"arrow.up.right") }.font(.system(size:12,weight:.semibold)).foregroundColor(ink).padding(.horizontal,20).frame(height:40).background(accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(.plain)
+                Button { model.apply() } label: { HStack(spacing:10) { if model.busy { ProgressView().controlSize(.small) }; Text(model.busy ? "Applying…" : "Apply lighting");Image(systemName:"arrow.up.right") }.font(.system(size:12,weight:.semibold)).foregroundColor(ink).padding(.horizontal,20).frame(height:40).background(accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle())
             }.disabled(model.working || !model.canControlLighting)
         }.padding(.horizontal,28).padding(.vertical,16).background(panel.opacity(0.9)).overlay(alignment:.top) { Rectangle().fill(.white.opacity(0.07)).frame(height:1) }
     }
@@ -520,7 +536,7 @@ struct Studio: View {
                         ForEach(Lighting.allCases.filter { model.availableEffects.contains($0.backend) }) { item in
                             Button { model.effect = item } label: {
                                 EffectTile(effect:item,selected:model.effect == item)
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(PressFeedbackStyle())
                         }
                     }
                     Text(model.effect.detail).font(.system(size:12)).foregroundColor(muted).fixedSize(horizontal:false,vertical:true)
@@ -609,7 +625,7 @@ struct SetupWizard: View {
                 HStack { Button("Partially working") { model.confirmSetup("partial") }; Button("No light") { model.confirmSetup("failed") } }
             } else if model.setupState == "failed" || model.setupState == "partial" {
                 Text(model.setupMessage).foregroundColor(.orange)
-                TextEditor(text:$model.observedBehavior).onChange(of:model.observedBehavior) { _ in model.feedbackChanged() }.frame(height:100)
+                TextEditor(text:$model.observedBehavior).onChange(of:model.observedBehavior) { model.feedbackChanged() }.frame(height:100)
                 Text("Tell us which colors, zones or effects failed. Review the report before sending.").font(.caption).foregroundColor(muted)
                 HStack { Button("Review report…") { model.showSetupWizard = false; DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { model.reviewReport() } }; Spacer(); Button("Close") { model.showSetupWizard = false } }
             } else {
@@ -694,10 +710,10 @@ struct Community: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Community report").font(.headline)
                     if model.needsIdentity {
-                        TextField("Board manufacturer",text:$model.manualVendor).onChange(of:model.manualVendor) { _ in model.feedbackChanged() }
-                        TextField("Exact card model / board revision",text:$model.manualModel).onChange(of:model.manualModel) { _ in model.feedbackChanged() }
-                    } else { TextField("Board revision or additional model details (optional)", text: $model.boardLabel).onChange(of:model.boardLabel) { _ in model.feedbackChanged() } }
-                    TextEditor(text: $model.observedBehavior).onChange(of: model.observedBehavior) { _ in model.feedbackChanged() }.frame(height: 90).overlay(RoundedRectangle(cornerRadius: 4).stroke(muted.opacity(0.3)))
+                        TextField("Board manufacturer",text:$model.manualVendor).onChange(of:model.manualVendor) { model.feedbackChanged() }
+                        TextField("Exact card model / board revision",text:$model.manualModel).onChange(of:model.manualModel) { model.feedbackChanged() }
+                    } else { TextField("Board revision or additional model details (optional)", text: $model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() } }
+                    TextEditor(text: $model.observedBehavior).onChange(of: model.observedBehavior) { model.feedbackChanged() }.frame(height: 90).overlay(RoundedRectangle(cornerRadius: 4).stroke(muted.opacity(0.3)))
                     Text("Describe missing colors, unlit zones, errors, or no response at all. Notes are exported as entered.").font(.system(size: 10)).foregroundColor(muted)
                     Button("Review / send report…", action: model.reviewReport).disabled(model.scanJSON.isEmpty || model.working)
                     Text("These reports help identify boards and compare drivers. They do not reveal the RGB protocol, controller address or physical LED mapping. Those still need source research and targeted hardware tests.").font(.system(size: 11)).foregroundColor(muted)
@@ -781,7 +797,7 @@ struct Sidebar: View {
                 Button { model.page = title == "Studio" && !model.canControlLighting ? "Hardware" : title } label: {
                     HStack(spacing:12) { Image(systemName:icon).font(.system(size:15)).frame(width:20);Text(title).font(.system(size:13,weight:.medium)).lineLimit(1).fixedSize();Spacer(minLength:0);if model.page == title { Circle().fill(accent).frame(width:5,height:5) } }
                     .foregroundColor(model.page == title ? accent : muted).padding(.horizontal,13).frame(height:46).background(model.page == title ? accent.opacity(0.07) : .clear).clipShape(RoundedRectangle(cornerRadius:10)).overlay(RoundedRectangle(cornerRadius:10).stroke(model.page == title ? accent.opacity(0.13) : .clear,lineWidth:1))
-                }.buttonStyle(.plain).padding(.bottom,6)
+                }.buttonStyle(PressFeedbackStyle()).padding(.bottom,6)
             }
             Spacer(minLength:24)
             VStack(alignment:.leading,spacing:12) {

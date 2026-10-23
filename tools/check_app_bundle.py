@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Verify that the beta really ships an entitled WidgetKit extension."""
+"""Verify that the release really ships an entitled WidgetKit extension."""
 import json
 import plistlib
 from pathlib import Path
