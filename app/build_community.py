@@ -43,7 +43,7 @@ widget_product = os.environ.get('HACKINFX_WIDGET_PATH')
 developer = subprocess.run(['/usr/bin/xcode-select','-p'],capture_output=True,text=True).stdout.strip()
 if not widget_product and (Path(developer)/'usr/bin/xcodebuild').is_file():
     widget_output = cache/'widget-product'
-    subprocess.run([str(Path(developer)/'usr/bin/xcodebuild'),'-project',str(root/'Widget/HackinFXWidget.xcodeproj'),'-target','HackinFXWidget','-configuration','Release','-sdk','macosx','ARCHS=x86_64','ONLY_ACTIVE_ARCH=NO','CODE_SIGNING_ALLOWED=NO','CONFIGURATION_BUILD_DIR='+str(widget_output)],cwd=root/'Widget',check=True,stdout=subprocess.DEVNULL)
+    subprocess.run([str(Path(developer)/'usr/bin/xcodebuild'),'-project',str(root/'Widget/HackinFXWidget.xcodeproj'),'-target','HackinFXWidget','-configuration','Release','-sdk','macosx','ARCHS=x86_64','ONLY_ACTIVE_ARCH=NO','CODE_SIGNING_ALLOWED=NO','CONFIGURATION_BUILD_DIR='+str(widget_output),'OBJROOT='+str(cache/'widget-intermediates')],cwd=root/'Widget',check=True,stdout=subprocess.DEVNULL)
     widget_product = str(widget_output/'HackinFXWidget.appex')
 plugins=app/'PlugIns'
 shutil.rmtree(plugins,ignore_errors=True)
@@ -54,7 +54,7 @@ if widget_product:
     subprocess.run(['/usr/bin/codesign','--force','--sign','-','--timestamp=none','--entitlements',str(root/'Widget/Widget.entitlements'),str(target)],check=True)
 else:
     print('WidgetKit source included; compiled extension requires Xcode or HACKINFX_WIDGET_PATH.')
-shutil.copytree(root/'Widget',source/'Widget',dirs_exist_ok=True)
+shutil.copytree(root/'Widget',source/'Widget',dirs_exist_ok=True,ignore=shutil.ignore_patterns('build','DerivedData','xcuserdata','*.xcuserstate'))
 repo=root.parent
 for folder in ['tools','vendor']:
     if (repo/folder).is_dir():shutil.copytree(repo/folder,source/folder,ignore=shutil.ignore_patterns('__pycache__'),dirs_exist_ok=True)

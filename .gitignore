@@ -20,3 +20,9 @@ VerificationQueue/
 cloudflare-config/
 results/
 *.log
+
+# Xcode intermediates
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
