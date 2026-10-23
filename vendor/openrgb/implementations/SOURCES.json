@@ -11,6 +11,16 @@
       "file": "AsusAuraGPUController.cpp",
       "path": "Controllers/AsusAuraGPUController/AsusAuraGPUController.cpp",
       "sha256": "573a6fa21f0aab376fe81ab00fe74c99659dc71e805d4272e383688e4329d26c"
+    },
+    {
+      "file": "EVGAGPUv2Controller.cpp",
+      "path": "Controllers/EVGATuringGPUController/EVGAGPUv2Controller.cpp",
+      "sha256": "8869dd990bc5f44a37f269b63fcef64f9d38453ec2758289b811167757c22318"
+    },
+    {
+      "file": "ZotacTuringGPUController.cpp",
+      "path": "Controllers/ZotacTuringGPUController/ZotacTuringGPUController.cpp",
+      "sha256": "59b4ddbc0f672f732974d9ffd7d29d8d3b4aecda20c97ad8a8e0759b815839cf"
     }
   ]
 }

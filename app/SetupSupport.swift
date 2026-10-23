@@ -80,7 +80,7 @@ struct HardwareVerification: Codable {
     var identity_source: String? = nil
     var detected_gpu_name: String? = nil
     let tested_steps: Int
-    var app_version = "1.1.1"
+    var app_version = "1.2.0"
     let confirmed_at: String
 }
 final class VerificationStore {

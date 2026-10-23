@@ -49,3 +49,7 @@ The volatile EVGA Pascal RGB register/mode implementation is adapted from Adam H
 ## ASUS Aura controller adaptation
 
 ASUS Aura signature checks and volatile register/mode handling are adapted from Jan Rettig (Klapstuhl), OpenRGB, 14 February 2020, GPL-2.0-or-later. The exact upstream implementation at commit `817834cfab034c97927451e31c4a2deb60a44725` is preserved in `vendor/openrgb/implementations/AsusAuraGPUController.cpp`, with its detector and header. No flash-save/apply register is written by HackinFX. Physical macOS testing remains pending.
+
+## Additional NVIDIA controller adaptations
+
+EVGA Turing volatile unlock/color/mode/relock sequences are adapted from TheRogueZeta, OpenRGB, 15 April 2021. Zotac Turing enable/mode/readback handling is adapted from David Henry, OpenRGB, 7 January 2023. Both are GPL-2.0-or-later. Exact implementations from pinned commit `817834cfab034c97927451e31c4a2deb60a44725` and hashes are in `vendor/openrgb/implementations/`. Original detector/header notices remain preserved. These macOS ports are unverified on physical EVGA/Zotac hardware. No upstream flash-save operation is implemented.

@@ -124,6 +124,8 @@ final class Model: ObservableObject {
     var pendingWidgetColors: [String] = []
     var pendingWidgetBrightness: Double? = 0
     var lightingEvidence: [[String: Any]] = []
+    @Published var widgetCheckRunning = false
+    @Published var widgetCheckStatus = "Widget diagnostics have not been collected."
     var reportPreview: String { String(data: (try? JSONSerialization.data(withJSONObject: diagnosticPayload(), options: [.prettyPrinted, .sortedKeys])) ?? Data(), encoding: .utf8) ?? "" }
     var canControlLighting: Bool { configurationStatus == "supported" && setupState == "confirmed" }
     var reportEndpoint: URL? {
@@ -162,6 +164,7 @@ final class Model: ObservableObject {
         pendingWidgetColors = testEffect != nil ? (selected == "gradient" ? ["ff0000","00ff00","0000ff"] : [testHex ?? "ff0000"]) : [hex(colorA),hex(colorB),hex(colorC)]
         pendingWidgetBrightness = selected == "off" ? 0 : (testEffect != nil ? 50 : brightness)
         if ["EVGAPascalGPUController","AsusAuraGPUController"].contains(controllerFamily) && selected == "cycle" { pendingWidgetBrightness = nil }
+        if controllerFamily == "ZotacTuringGPUController" && ["cycle","wave"].contains(selected) { pendingWidgetBrightness = nil }
         message = "Applying \(off ? "Off" : effect.rawValue) …"
         let resource = Bundle.main.resourceURL!
         let reports = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX/Reports", isDirectory: true)
@@ -340,6 +343,38 @@ final class Model: ObservableObject {
             }.resume()
         }
         send(0)
+    }
+    func checkWidget() {
+        guard !widgetCheckRunning else { return }
+        widgetCheckRunning = true
+        let snapshot = verificationStore.directory.appendingPathComponent("Widget/snapshot.json")
+        let snapshotReadable = (try? Data(contentsOf:snapshot)) != nil
+        let root = Bundle.main.bundleURL
+        DispatchQueue.global(qos:.utility).async {
+            var results: [[String:String]] = []
+            for (label, executable, args) in [
+                ("signature","/usr/bin/codesign",["--verify","--deep","--strict",root.path]),
+                ("registration","/usr/bin/pluginkit",["-m","-v","-i","community.aleopho.hackinfx.widget"]),
+                ("runtime","/usr/bin/log",["show","--last","10m","--style","compact","--predicate","(subsystem == \"community.aleopho.hackinfx.widget\" OR eventMessage CONTAINS \"community.aleopho.hackinfx.widget\" OR process == \"HackinFXWidget\")","--info"])
+            ] {
+                let task=Process();let pipe=Pipe();task.executableURL=URL(fileURLWithPath:executable);task.arguments=args;task.standardOutput=pipe;task.standardError=pipe
+                do {
+                    try task.run()
+                    let timeout=DispatchWorkItem { if task.isRunning { task.terminate() } }
+                    DispatchQueue.global().asyncAfter(deadline:.now()+15,execute:timeout)
+                    let bytes=pipe.fileHandleForReading.readDataToEndOfFile();task.waitUntilExit();timeout.cancel()
+                    var text=String(decoding:bytes,as:UTF8.self)
+                    text=text.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~")
+                    results.append(["time":ISO8601DateFormatter().string(from:Date()),"action":"widget-"+label,"outcome":"exit=\(task.terminationStatus); \(String(text.prefix(6000)))"])
+                } catch { results.append(["time":ISO8601DateFormatter().string(from:Date()),"action":"widget-"+label,"outcome":"Could not start diagnostic command"]) }
+            }
+            let captured=results
+            DispatchQueue.main.async {
+                self.sessionEvents = Array((self.sessionEvents + captured).suffix(99))
+                self.widgetCheckStatus = "Snapshot \(snapshotReadable ? "available" : "missing"). Signature, registration and runtime checks added to the report. Review before submitting."
+                self.widgetCheckRunning = false;self.record("widget-check","completed");self.saveTroubleshooting()
+            }
+        }
     }
     func diagnosticPayload() -> [String: Any] {
         var report = (scanJSON.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
@@ -566,10 +601,10 @@ struct Studio: View {
                             Text("#" + model.hex(model.colorA).uppercased()).font(.system(size: 11, design: .monospaced)).foregroundColor(muted)
                         }.font(.system(size: 11))
                     }
-                    if !["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) || model.effect != .cycle {
+                    if (!["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) || model.effect != .cycle) && (model.controllerFamily != "ZotacTuringGPUController" || ![Lighting.cycle,.wave].contains(model.effect)) {
                     HStack { Text("Brightness").frame(width: 80, alignment: .leading); Slider(value: $model.brightness, in: 0...100); Text("\(Int(model.brightness)) %").monospacedDigit().frame(width: 45) }.font(.system(size: 11)).foregroundColor(muted)
                     }
-                    if !["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) && model.effect != .solid && model.effect != .gradient {
+                    if !["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) && !(model.controllerFamily == "EVGATuringGPUController" && model.effect == .cycle) && model.effect != .solid && model.effect != .gradient {
                         HStack { Text("Speed").frame(width: 80, alignment: .leading); Slider(value: $model.speed, in: 0...100); Text("\(Int(model.speed)) %").monospacedDigit().frame(width: 45) }.font(.system(size: 11)).foregroundColor(muted)
                     }
                 }
@@ -697,6 +732,7 @@ struct Community: View {
                     HStack {
                         Button(model.scanning ? "Scanning…" : "Scan hardware", action: model.scanHardware).disabled(model.working)
                         Button("Export diagnostics…", action: model.exportDiagnostics).disabled(model.scanJSON.isEmpty || model.scanning)
+                        Button("Submit diagnostics…", action:model.reviewReport).buttonStyle(.borderedProminent).disabled(model.scanJSON.isEmpty || model.working)
                         Spacer()
                     }
                     Text("Exports PCI IDs, model labels, driver versions and query logs. No serial numbers, hostname, raw device tree or kernel addresses. No automatic uploads.").font(.system(size: 10)).foregroundColor(muted)
@@ -733,8 +769,16 @@ struct Community: View {
                     } else { TextField("Board revision or additional model details (optional)", text: $model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() } }
                     TextEditor(text: $model.observedBehavior).onChange(of: model.observedBehavior) { model.feedbackChanged() }.frame(height: 90).overlay(RoundedRectangle(cornerRadius: 4).stroke(muted.opacity(0.3)))
                     Text("Describe missing colors, unlit zones, errors, or no response at all. Notes are exported as entered.").font(.system(size: 10)).foregroundColor(muted)
-                    Button("Review / send report…", action: model.reviewReport).disabled(model.scanJSON.isEmpty || model.working)
+                    Button("Submit diagnostics…", action: model.reviewReport).disabled(model.scanJSON.isEmpty || model.working)
                     Text("These reports help identify boards and compare drivers. They do not reveal the RGB protocol, controller address or physical LED mapping. Those still need source research and targeted hardware tests.").font(.system(size: 11)).foregroundColor(muted)
+                }
+            }
+            Card {
+                VStack(alignment:.leading,spacing:12) {
+                    Text("Widget troubleshooting").font(.headline)
+                    Text(model.widgetCheckStatus).font(.system(size:11)).foregroundColor(muted)
+                    Button(model.widgetCheckRunning ? "Collecting…" : "Collect widget diagnostics",action:model.checkWidget).disabled(model.widgetCheckRunning || model.working)
+                    Text("Includes widget-specific system log entries. Review and export or submit the report yourself.").font(.caption).foregroundColor(muted)
                 }
             }
             Text("Compatibility database").font(.system(size: 16, weight: .semibold))
@@ -751,7 +795,7 @@ struct Community: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Additional hardware").font(.headline)
-                    Text("Exact OpenRGB PNY Lovelace, EVGA Pascal and ASUS Aura matches can run the NVIDIA lighting test. Only controller-supported effects are offered. Community-tested status follows visual confirmation; further NVIDIA families are being ported.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
+                    Text("Exact OpenRGB PNY Lovelace, EVGA Pascal/Turing, ASUS Aura and Zotac Turing matches can run the NVIDIA lighting test. Only controller-supported effects are offered. Community-tested status follows visual confirmation; further NVIDIA families are being ported.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
                 }
             }
             Text("This is the verified profile, not a live connection indicator.").font(.system(size: 11)).foregroundColor(muted)
@@ -826,7 +870,7 @@ struct Sidebar: View {
                 Text([model.currentGPUVendor,model.currentBoardVendor].filter { !$0.isEmpty }.joined(separator:" / ")).font(.system(size:10,design:.monospaced)).foregroundColor(muted).lineLimit(2)
                 Tag(title:model.canControlLighting ? "PROFILE READY" : "SETUP REQUIRED",tint:model.canControlLighting ? accent : .orange)
             }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.025)).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(.white.opacity(0.055),lineWidth:1))
-            HStack { Text("1.1.1");Spacer();Image(systemName:"terminal") }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted).padding(.top,18)
+            HStack { Text("1.2.0");Spacer();Image(systemName:"terminal") }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted).padding(.top,18)
         }.padding(22).frame(width:232).frame(maxHeight:.infinity).background(LinearGradient(colors:[panel,ink],startPoint:.topLeading,endPoint:.bottomTrailing))
     }
 }

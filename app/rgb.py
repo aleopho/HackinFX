@@ -65,10 +65,39 @@ def effect_packets(effect, color, led, speed=50, brightness=255, colors=None):
 
 
 def controller_transactions(profile, effect, color, led, speed=50, brightness=255, colors=None):
+    effect_packets('static',color,0,speed,brightness)  # Validate inputs before controller-specific conversion.
     if effect != 'off' and effect not in profile.effects:
         raise p.ProbeError('Effect unavailable on this controller')
     if profile.controller == 'PNYLovelaceGPUController':
         return [(profile.address,profile.register,packet) for packet in effect_packets(effect,color,led,speed,brightness,colors)]
+    if profile.controller == 'ZotacTuringGPUController':
+        scaled = effect_packets('static',color,0,speed,brightness)[0][-3:]
+        mode = {'off':0,'static':0,'cycle':4,'breath':3,'wave':2}[effect]
+        if effect == 'off' or brightness == 0:
+            mode,scaled = 0,(0,0,0)
+        elif effect in ('cycle','wave'): scaled = (0,0,0)
+        return [(profile.address,0xa0,(0xf1,1,0,0,0,0,0)),(profile.address,0xa0,(0,mode,*scaled,0,9-round(speed*9/100)))]
+    if profile.controller == 'EVGATuringGPUController':
+        # OpenRGB EVGA v2: volatile unlock/mode/color/apply/relock sequence.
+        # Never issue SaveSettings (registers 0x1f/0x23).
+        scaled = effect_packets('static',color,0,speed,255)[0][-3:]
+        percent = max(1,round(brightness*100/255))
+        pairs = [(0x0e,v) for v in (0xe5,0xe9,0xf5,0xf9)]
+        mode = 0 if effect == 'off' or brightness == 0 else {'static':1,'cycle':15,'breath':34}[effect]
+        pairs.append((0x60,mode))
+        if mode == 1:
+            pairs += list(zip(range(0x6c,0x70),(*scaled,percent)))
+        elif mode == 15:
+            pairs += [(0x6f,percent),(0x19,0x11)]
+        elif mode == 34:
+            pairs += list(zip(range(0x6c,0x70),(*scaled,percent)))
+            pairs += list(zip(range(0x70,0x74),(0,0,0,percent)))
+            period = (125-round(speed))*10
+            for register in (0x74,0x64,0x68,0x62,0x66):
+                pairs += [(register,period & 255),(register+1,period >> 8)]
+            pairs += [(0x61,1),(0x6a,0),(0x6b,0)]
+        pairs += [(0x08,1),(0x0e,0xf0),(0x0e,0xe0)]
+        return [(profile.address,register,(value,)) for register,value in pairs]
     if profile.controller == 'AsusAuraGPUController':
         scaled = effect_packets('static',color,0,speed,0 if effect == 'off' else brightness)[0][-3:]
         mode = {'off':1,'static':1,'cycle':4,'breath':2}[effect]
@@ -124,7 +153,7 @@ class RGB(p.RM):
                 raise p.ProbeError('ASUS Aura controller signature mismatch; no lighting writes sent')
         self.report['write_plans'] = []
         self.report['writes_completed'] = 0
-        for address, register, packet in self.transactions:
+        def transfer(address,register,packet):
             payload = (U8 * len(packet))(*packet)
             request = Indexed(port=self.port, write=1, address=address << 1, flags=0,
                               index_length=1, index=(U8 * 4)(register, 0, 0, 0),
@@ -137,6 +166,24 @@ class RGB(p.RM):
             req = p.Control(self.client, obj, 0x402c0102, 0, C.addressof(request), C.sizeof(request), 0xffffffff)
             self.call(0x2a, req)
             self.report['writes_completed'] += 1
+        try:
+            for address,register,packet in self.transactions:
+                transfer(address,register,packet)
+        except Exception:
+            if self.profile and self.profile.controller == 'EVGATuringGPUController':
+                self.report['controller_relock_attempted'] = True
+                for register,value in ((0x08,1),(0x0e,0xf0),(0x0e,0xe0)):
+                    try: transfer(self.profile.address,register,(value,))
+                    except Exception: self.report['controller_relock_failed'] = True
+            raise
+        if self.profile and self.profile.controller == 'ZotacTuringGPUController':
+            # Upstream requires a readback after SetMode to avoid controller hangs.
+            payload = (U8 * 32)()
+            request = Indexed(port=self.port,write=0,address=self.profile.address << 1,flags=0,index_length=0,index=(U8 * 4)(),length=32,message=C.addressof(payload))
+            req = p.Control(self.client,obj,0x402c0102,0,C.addressof(request),C.sizeof(request),0xffffffff)
+            self.report['i2c_transactions_attempted'] = self.report.get('i2c_transactions_attempted',0) + 1
+            self.call(0x2a,req)
+            self.report['controller_readback_completed'] = True
         self.report['write_completed'] = True
         self.report['rgb_controller_reachable'] = 'write accepted; visible color change requires observation'
 

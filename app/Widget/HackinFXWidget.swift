@@ -3,6 +3,8 @@ import Foundation
 import SwiftUI
 import WidgetKit
 import Darwin
+import os
+private let widgetLog = Logger(subsystem:"community.aleopho.hackinfx.widget",category:"snapshot")
 
 struct WidgetSnapshot: Codable {
     let schema: Int
@@ -15,11 +17,13 @@ struct WidgetSnapshot: Codable {
     var brightness: Double? = nil
     static let empty = WidgetSnapshot(schema:1,gpuName:"Open HackinFX, then apply lighting",boardVendor:"Waiting for app status",profileReady:false,lastCommand:"No command recorded",updatedAt:.distantPast)
     static func read() -> WidgetSnapshot {
-        guard let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir else { return .empty }
+        widgetLog.notice("Widget snapshot read requested")
+        guard let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir else { widgetLog.error("Cannot resolve the widget user home"); return .empty }
         let file=URL(fileURLWithPath:String(cString:home)).appendingPathComponent("Library/Application Support/HackinFX/Widget/snapshot.json")
-        guard let size = try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize,size <= 16384,let data=try? Data(contentsOf:file) else { return .empty }
+        guard let size = try? file.resourceValues(forKeys:[.fileSizeKey]).fileSize,size <= 16384,let data=try? Data(contentsOf:file) else { widgetLog.error("Snapshot missing, inaccessible, or larger than allowed"); return .empty }
         let decoder=JSONDecoder();decoder.dateDecodingStrategy = .iso8601
-        guard let snapshot=try? decoder.decode(Self.self,from:data),snapshot.schema == 1 else { return .empty }
+        guard let snapshot=try? decoder.decode(Self.self,from:data),snapshot.schema == 1 else { widgetLog.error("Snapshot decoding or schema validation failed"); return .empty }
+        widgetLog.notice("Widget snapshot decoded successfully")
         return snapshot
     }
 }
@@ -76,4 +80,23 @@ struct HackinFXWidget: Widget {
             .configurationDisplayName("HackinFX").description("Your GPU, last applied lighting mode, colors and brightness. Open HackinFX to change lighting; this is not a live LED readback.").supportedFamilies([.systemSmall,.systemMedium])
     }
 }
-@main struct HackinFXWidgets: WidgetBundle { var body: some Widget { HackinFXWidget() } }
+// Isolates extension launch/rendering from the shared-file snapshot path.
+private struct RuntimeEntry: TimelineEntry { let date: Date }
+private struct RuntimeProvider: TimelineProvider {
+    func placeholder(in context:Context) -> RuntimeEntry { RuntimeEntry(date:Date()) }
+    func getSnapshot(in context:Context,completion:@escaping(RuntimeEntry)->Void) { widgetLog.notice("Runtime-check snapshot requested"); completion(RuntimeEntry(date:Date())) }
+    func getTimeline(in context:Context,completion:@escaping(Timeline<RuntimeEntry>)->Void) { widgetLog.notice("Runtime-check timeline requested"); completion(Timeline(entries:[RuntimeEntry(date:Date())],policy:.never)) }
+}
+struct WidgetRuntimeCheck: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind:"HackinFXRuntimeCheck",provider:RuntimeProvider()) { _ in
+            VStack(alignment:.leading,spacing:12) {
+                Text("HackinFX").font(.headline)
+                Image(systemName:"checkmark.circle.fill").font(.largeTitle).foregroundStyle(.green)
+                Text("Widget engine active").font(.headline)
+                Text("Static check · no GPU data").font(.caption)
+            }.foregroundStyle(.white).containerBackground(for:.widget) { Color.black }
+        }.configurationDisplayName("HackinFX widget check").description("Troubleshooting: verifies extension rendering without reading GPU status.").supportedFamilies([.systemSmall])
+    }
+}
+@main struct HackinFXWidgets: WidgetBundle { var body: some Widget { HackinFXWidget(); WidgetRuntimeCheck() } }
