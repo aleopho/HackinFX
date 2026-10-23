@@ -2,7 +2,7 @@ name: Publish release
 on:
   push:
     branches: [main]
-    paths: [app/release-version.txt]
+    paths: [app/release-version.txt, .github/workflows/release.yml]
 permissions:
   contents: write
 jobs:

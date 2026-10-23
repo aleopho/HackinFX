@@ -87,9 +87,11 @@ class ScannerTests(unittest.TestCase):
     def test_fingerprint_stable_across_scans_but_changes_with_driver(self):
         def fake(version):
             return lambda command,**kwargs: types.SimpleNamespace(returncode=0,stdout=plistlib.dumps([gpu()]) if command[0].endswith('ioreg') else ('com.nullmoth.NVRM (%s)'%version).encode())
-        first=scanner.collect(fake('2.5.2'))
-        second=scanner.collect(fake('2.5.2'))
-        changed=scanner.collect(fake('2.5.3'))
+        from unittest.mock import patch
+        with patch.object(scanner.platform,"machine",return_value="x86_64"):
+            first=scanner.collect(fake('2.5.2'))
+            second=scanner.collect(fake('2.5.2'))
+            changed=scanner.collect(fake('2.5.3'))
         self.assertEqual(first['configuration_fingerprint'],second['configuration_fingerprint'])
         self.assertNotEqual(first['configuration_fingerprint'],changed['configuration_fingerprint'])
         self.assertIn('visual test required',first['led_availability'])
