@@ -62,7 +62,7 @@ def lighting_configuration(adapters, inventory_failed=False, arch=None):
     if inventory_failed:
         return dict(status='unknown', reason='PCI inventory failed; lighting remains disabled')
     if (arch or platform.machine()) != 'x86_64':
-        return dict(status='unsupported', reason='Lighting transport requires Intel macOS')
+        return dict(status='unsupported', reason='Lighting transport requires x86-64 macOS')
     bound = [adapter for adapter in adapters if adapter['nvrm_bound']]
     if len(bound) != 1:
         return dict(status='unsupported', reason='Exactly one NVRM-bound display adapter is required')

@@ -152,7 +152,7 @@ def main(argv=None):
     native = None
     try:
         if sys.platform != 'darwin' or platform.machine() != 'x86_64':
-            raise p.ProbeError('Intel macOS required')
+            raise p.ProbeError('x86-64 macOS required')
         check_abi()
         report['pci_devices'] = devices = p.inventory()
         profile = profiles.select(devices)

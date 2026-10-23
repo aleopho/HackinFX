@@ -1,5 +1,13 @@
 # Compatibility and new hardware
 
+## CPU platform and GPU support
+
+HackinFX targets **Hackintosh systems**, with an x86-64 macOS binary. The code checks architecture, not CPU manufacturer: an AMD CPU is not rejected simply for being AMD. AMD-CPU systems are not yet physically validated by this project; a compatible driver/GPU environment is still required. Apple Silicon is outside this Hackintosh target.
+
+CPU compatibility must not be confused with RGB GPU support. Passive inventory can identify display adapters from NVIDIA, AMD, Intel and other vendors. Known vendor IDs are labeled; model strings come from the exact local profile, limited lookup or macOS registry, with manual correction when incomplete. Actual RGB writes currently require the one included PNY profile and working NVRM transport.
+
+HackinFX does not run the full OpenRGB application or all its GPU controllers. Its PNY packet implementation is adapted from OpenRGB. That adaptation is separate from the generic passive scanner; no automatic vendor-wide controller discovery is implemented.
+
 ## Included profile
 
 | Field | Value |

@@ -13,6 +13,6 @@ Initial public community release by aleopho.
 - Durable optional community-confirmation queue with retry and automatic public catalog aggregation.
 - Reviewed private troubleshooting uploads and local diagnostics export.
 - Cloudflare Worker/D1 source, tests, schemas and retention policy.
-- Ad-hoc signed Intel app and drag-and-drop DMG, corresponding source and license notices.
+- Ad-hoc signed x86-64 app and drag-and-drop DMG, corresponding source and license notices.
 
 Limits: one supported RGB profile, no universal controller discovery or remote driver installation; Off not separately visually confirmed; native first-run/install and Sequoia/Tahoe desktop checks remain outstanding. This release does not have Developer ID/notarization or email report notifications.

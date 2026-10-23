@@ -1,6 +1,6 @@
 # HackinFX 1.0.0 — by aleopho
 
-Native Intel macOS GPU-lighting app. Locally ad-hoc codesigned, not Developer ID
+Native GPU-lighting app for x86-64 Hackintosh systems (Intel or AMD CPU; AMD-CPU operation is not yet physically validated). Locally ad-hoc codesigned, not Developer ID
 signed or notarized. Local codesign does not guarantee warning-free launch of a
 downloaded app. No security settings or quarantine flags are modified.
 

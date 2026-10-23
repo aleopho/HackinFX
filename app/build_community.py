@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Rebuild the local Intel macOS preview; no downloads or hardware calls."""
+"""Rebuild the x86-64 Hackintosh app; no downloads or hardware calls."""
 from pathlib import Path
 import plistlib
 import shutil

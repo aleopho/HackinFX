@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/images/hackinfx.svg" width="144" alt="HackinFX GPU line icon"></p>
 <h1 align="center">HackinFX</h1>
-<p align="center">GPU lighting for Intel Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
+<p align="center">GPU lighting for Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
 
 HackinFX is a native macOS menu-bar app for controlling a supported GPU's RGB lighting through a separately installed NullMoth NVRM driver. It combines a lighting studio, visible hardware detection, a guided visual test, local profiles and community compatibility reports.
 
@@ -12,7 +12,7 @@ Download [HackinFX 1.0.0 DMG](https://github.com/aleopho/HackinFX/releases/downl
 
 Requirements:
 
-- Intel macOS 13 or later; Hackintosh GPU/driver configuration already working.
+- macOS 13 or later on an x86-64 Hackintosh (Intel or AMD CPU); GPU/driver configuration already working. CPU vendor is not a software gate; AMD-CPU systems have not yet been physically validated by this project.
 - A compatible, separately installed [NullMoth NVIDIA driver / NVRM service](https://github.com/nullmoth/nvidia-macos-driver).
 - A working `/usr/bin/python3` supplied with Apple's command line tools.
 - A matching RGB controller profile from the table below.
@@ -24,6 +24,8 @@ The app is locally ad-hoc signed. It is not Developer ID signed or notarized; do
 | Card | GPU vendor | Board vendor | PCI / subsystem | Confirmed functions |
 | --- | --- | --- | --- | --- |
 | PNY XLR8 RTX 4080 VERTO | NVIDIA | PNY | `10de:2704 / 196e:13bc` | Static, Gradient, Spectrum, Breathing, Wave |
+
+CPU vendor and GPU vendor are separate: an AMD CPU is not an AMD graphics card. The x86-64 build is not restricted to Intel CPUs; actual operation still depends on the macOS/NullMoth/GPU configuration. AMD-CPU compatibility has not been physically verified.
 
 These lighting effects were visually confirmed by aleopho on the development card. Off is implemented but has not been separately visually confirmed. A successful driver return value does not prove that LEDs changed.
 
@@ -41,7 +43,9 @@ Closing the window keeps HackinFX in the menu bar. Open Lighting restores it; **
 
 ## Screenshots
 
-The line GPU graphic above is the app logo. A genuine desktop screenshot of the native app is still pending; no mockup is presented as a hardware screenshot. [Screenshot capture guide](docs/SCREENSHOTS.md).
+![HackinFX 1.0.0 Lighting Studio on the development Hackintosh](docs/images/lighting-studio-1.0.0.png)
+
+HackinFX 1.0.0 Lighting Studio with the confirmed PNY XLR8 RTX 4080 VERTO profile. Genuine desktop capture supplied by aleopho; the GPU illustration inside the app is a schematic, not LED-state feedback. [Screenshot details](docs/SCREENSHOTS.md).
 
 ## Documentation
 

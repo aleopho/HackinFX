@@ -242,7 +242,7 @@ def run_diagnostic(args, output_handle):
     native = None
     try:
         if sys.platform != 'darwin' or platform.machine() != 'x86_64':
-            raise ProbeError('Run this diagnostic on Intel macOS with NullMoth, not on Windows/Apple Silicon')
+            raise ProbeError('Run this diagnostic on x86-64 macOS with NullMoth, not on Windows/Apple Silicon')
         check_abi()
         report['pci_devices'] = inventory()
         versions = subprocess.run(['/usr/sbin/kextstat', '-b', 'com.nullmoth.NVRM'],

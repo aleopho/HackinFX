@@ -1,7 +1,7 @@
 # Native app screenshots
 
-A genuine desktop screenshot is pending. The README's GPU line image is a logo, not an app screenshot.
+![HackinFX Lighting Studio](images/lighting-studio-1.0.0.png)
 
-To contribute one: open the installed release in a normal desktop session, finish setup or load a confirmed profile, then capture the Lighting Studio. A second useful capture is Hardware/profile summary or the final visual-confirmation dialog. Hide unrelated windows, personal paths/notes and account information. Use PNG and keep text readable.
+Actual HackinFX 1.0.0 desktop screenshot supplied by aleopho on 2026-10-23, showing the Lighting Studio and confirmed PNY XLR8 RTX 4080 VERTO profile. Published with the user's instruction to add it to the project. The illustration inside the app is a schematic, not live LED feedback. The capture is preserved as supplied.
 
-Place approved captures in `docs/images/` and embed them in README with captions specifying the release and view. If a capture uses sample data rather than a real scan, explicitly say so. Do not substitute a generated mockup for proof of hardware operation.
+The README's small GPU line graphic is the app logo. Additional useful captures include the Hardware/profile summary and the final visual-confirmation dialog. Hide unrelated windows, personal paths/notes and account information. Use PNG and keep text readable. If future captures use sample data, explicitly label them.
