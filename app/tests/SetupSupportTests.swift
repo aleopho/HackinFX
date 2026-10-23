@@ -8,6 +8,9 @@ import Foundation
         assert(!saved.matches(""))
         assert(!VerifiedSetup(fingerprint: "a", confirmedAt: Date(), successfulSteps: 2, userConfirmed: true).matches("a"))
         assert(!VerifiedSetup(fingerprint: "a", confirmedAt: Date(), successfulSteps: 3, userConfirmed: false).matches("a"))
+        let limited = VerifiedSetup(fingerprint:"evga",confirmedAt:Date(),successfulSteps:3,userConfirmed:true,verifiedEffects:["static","cycle","breath"])
+        assert(limited.matches("evga",requiredEffects:["static","cycle","breath"]))
+        assert(!limited.matches("evga"))
         var future = saved; future.schema = 2
         assert(!future.matches("hardware-a"))
         let decoded = try JSONDecoder().decode(VerifiedSetup.self, from: JSONEncoder().encode(saved))
@@ -43,6 +46,6 @@ import Foundation
         assert(decodedWidget.gpuName == "PNY RTX 4080")
         assert(decodedWidget.colors == ["ff0000","00ff00","0000ff"] && decodedWidget.brightness == 50)
         assert(!String(decoding:widgetBytes,as:UTF8.self).contains("installation_id"))
-        print("21 local-profile and compatibility-store assertions passed")
+        print("23 local-profile and compatibility-store assertions passed")
     }
 }

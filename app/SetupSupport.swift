@@ -8,8 +8,8 @@ struct VerifiedSetup: Codable {
     let successfulSteps: Int
     let userConfirmed: Bool
     var verifiedEffects: [String]? = nil
-    func matches(_ current: String) -> Bool {
-        schema == 1 && !current.isEmpty && fingerprint == current && successfulSteps == 3 && userConfirmed && Set(verifiedEffects ?? []).isSuperset(of:["static","gradient","cycle","breath","wave"])
+    func matches(_ current: String, requiredEffects: [String] = ["static","gradient","cycle","breath","wave"]) -> Bool {
+        schema == 1 && !current.isEmpty && fingerprint == current && successfulSteps == 3 && userConfirmed && Set(verifiedEffects ?? []).isSuperset(of:requiredEffects)
     }
 }
 

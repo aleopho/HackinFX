@@ -62,6 +62,7 @@ struct WidgetView: View {
             HStack {
                 Text("LAST APPLIED").font(.system(size:8,weight:.semibold,design:.monospaced))
                 Spacer()
+                if family == .systemMedium && entry.snapshot.updatedAt != .distantPast { Text(entry.snapshot.updatedAt,style:.relative).font(.system(size:8)) }
                 if let brightness=entry.snapshot.brightness { Text("\(Int(brightness))%").font(.system(size:10,design:.monospaced)) }
             }.foregroundStyle(.secondary)
         }.foregroundStyle(Color(red:0.90,green:0.93,blue:0.91))

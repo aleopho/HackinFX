@@ -9,10 +9,12 @@ import rgb
 
 
 class RGBFake(Fake):
-    def __init__(self, flags=17, write_error=False, table_error=False):
+    def __init__(self, flags=17, write_error=False, table_error=False, aura_magic=(0x15,0x89)):
         super().__init__()
         self.flags, self.write_error, self.table_error = flags, write_error, table_error
         self.writes = []
+        self.aura_magic = aura_magic
+        self.reads = []
 
     def __call__(self, esc, data):
         if isinstance(data, p.Control) and data.cmd in (0x402c0104, 0x402c0102):
@@ -28,6 +30,10 @@ class RGBFake(Fake):
                     table.entries[0].port = 1
             else:
                 req = rgb.Indexed.from_address(data.params)
+                if not req.write:
+                    self.reads.append(req.index[0])
+                    (rgb.U8 * 1).from_address(req.message)[0] = self.aura_magic[req.index[0]-0x20]
+                    return 0, C.sizeof(data)
                 self.writes.append((bytes(req), C.string_at(req.message, req.length)))
                 if self.write_error:
                     data.status = 0x56
@@ -154,5 +160,58 @@ class RGBTests(unittest.TestCase):
     def test_other_nvidia_controller_does_not_inherit_pny_packets(self):
         import profiles
         device = dict(zip(('vendor-id','device-id','subsystem-vendor-id','subsystem-id'), (0x10de,0x1b80,0x3842,0x6286)))
-        with self.assertRaises(ValueError):
-            profiles.select([device])
+        profile = profiles.select([device])
+        self.assertEqual(profile.controller, 'EVGAPascalGPUController')
+        self.assertEqual(rgb.controller_transactions(profile,'static',(255,128,0),'all',brightness=128),[(0x49,9,(128,)),(0x49,10,(64,)),(0x49,11,(0,)),(0x49,12,(1,))])
+        with self.assertRaises(p.ProbeError):
+            rgb.controller_transactions(profile,'wave',(255,0,0),'all')
+
+
+    def test_evga_wire_uses_evga_address_and_stops_on_error(self):
+        import profiles
+        profile = next(profile for profile in profiles.PROFILES if profile.controller == 'EVGAPascalGPUController')
+        fake, report = RGBFake(), {}
+        rgb.RGB(fake,report,port=1,apply=True,color=(255,0,0),profile=profile).run()
+        self.assertEqual(len(fake.writes),4)
+        requests = [rgb.Indexed.from_buffer_copy(wire) for wire,payload in fake.writes]
+        self.assertEqual([request.address for request in requests],[0x92]*4)
+        self.assertEqual([request.index[0] for request in requests],[9,10,11,12])
+        self.assertEqual([request.length for request in requests],[1]*4)
+        fake = RGBFake(write_error=True)
+        with self.assertRaises(p.ProbeError):
+            rgb.RGB(fake,{},port=1,apply=True,profile=profile).run()
+        self.assertEqual(len(fake.writes),1)
+
+    def test_evga_hardware_modes_never_save_flash(self):
+        import profiles
+        profile = next(profile for profile in profiles.PROFILES if profile.controller == 'EVGAPascalGPUController')
+        self.assertEqual(rgb.controller_transactions(profile,'cycle',(0,0,0),'all'),[(0x49,12,(2,))])
+        self.assertEqual(rgb.controller_transactions(profile,'off',(0,0,0),'all'),[(0x49,12,(0,))])
+        self.assertNotIn(0x23,[register for _,register,_ in rgb.controller_transactions(profile,'breath',(4,5,6),'all')])
+
+
+    def test_asus_requires_signature_before_any_lighting_write(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'AsusAuraGPUController')
+        fake, report = RGBFake(aura_magic=(0,0)), {}
+        with self.assertRaisesRegex(p.ProbeError,'signature mismatch'):
+            rgb.RGB(fake,report,port=1,apply=True,profile=profile).run()
+        self.assertEqual(fake.reads,[0x20,0x21])
+        self.assertEqual(fake.writes,[])
+        self.assertEqual(report['i2c_transactions_attempted'],2)
+
+    def test_asus_signature_then_volatile_rgb_and_mode(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'AsusAuraGPUController')
+        fake, report = RGBFake(), {}
+        rgb.RGB(fake,report,port=1,apply=True,profile=profile,effect='breath').run()
+        self.assertEqual(fake.reads,[0x20,0x21])
+        self.assertEqual([rgb.Indexed.from_buffer_copy(w).index[0] for w,p in fake.writes],[4,5,6,7])
+        self.assertEqual(fake.writes[-1][1],b'\x02')
+        self.assertEqual(report['i2c_transactions_attempted'],6)
+
+    def test_asus_off_is_black_static_never_flash_save(self):
+        import profiles
+        profile = next(p for p in profiles.PROFILES if p.controller == 'AsusAuraGPUController')
+        packets=rgb.controller_transactions(profile,'off',(255,255,255),'all')
+        self.assertEqual(packets,[(0x29,4,(0,)),(0x29,5,(0,)),(0x29,6,(0,)),(0x29,7,(1,))])

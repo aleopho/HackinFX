@@ -80,10 +80,12 @@ final class Model: ObservableObject {
     @Published var uploadingCommunity = false
     var verifiedHardware: VerifiedHardware?
     let verificationStore = VerificationStore(directory: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX", isDirectory: true))
-    let testPlan: [(String, String, String?, Double)] = [
+    @Published var controllerFamily = "PNYLovelaceGPUController"
+    @Published var availableEffects = ["static","gradient","cycle","breath","wave"]
+    var testPlan: [(String, String, String?, Double)] { [
         ("RED", "static", "ff0000", 2), ("GREEN", "static", "00ff00", 2), ("BLUE", "static", "0000ff", 2),
         ("GRADIENT", "gradient", nil, 4), ("SPECTRUM", "cycle", nil, 5), ("BREATHING", "breath", nil, 5), ("WAVE", "wave", nil, 5)
-    ]
+    ].filter { availableEffects.contains($0.1) } }
     init() { reloadCompatibility(); let count = verificationStore.pending().count; if count > 0 { communityStatus = "\(count) community confirmation(s) queued locally." } }
     var fingerprint = ""
     var confirmationSource = "none"
@@ -93,7 +95,7 @@ final class Model: ObservableObject {
     var testStep = 0
     var pendingCommand = "Not applied"
     var pendingWidgetColors: [String] = []
-    var pendingWidgetBrightness: Double = 0
+    var pendingWidgetBrightness: Double? = 0
     var lightingEvidence: [[String: Any]] = []
     var reportPreview: String { String(data: (try? JSONSerialization.data(withJSONObject: diagnosticPayload(), options: [.prettyPrinted, .sortedKeys])) ?? Data(), encoding: .utf8) ?? "" }
     var canControlLighting: Bool { configurationStatus == "supported" && setupState == "confirmed" }
@@ -126,11 +128,13 @@ final class Model: ObservableObject {
     func apply(off: Bool = false, testHex: String? = nil, testEffect: String? = nil) {
         guard !busy && !scanning && !submitting && (!setupTesting || testEffect != nil) else { return }
         guard canControlLighting || (testEffect != nil && configurationStatus == "supported") else { page = "Hardware"; message = configurationReason; return }
+        guard off || availableEffects.contains(testEffect ?? effect.backend) else { message = "This effect is unavailable on the detected controller."; return }
         busy = true; lastSuccess = nil
         let selected = testEffect ?? (off ? "off" : effect.backend)
         pendingCommand = testEffect != nil ? testPlan[min(testStep,testPlan.count-1)].0 : (off ? "Off" : effect.rawValue)
         pendingWidgetColors = testEffect != nil ? (selected == "gradient" ? ["ff0000","00ff00","0000ff"] : [testHex ?? "ff0000"]) : [hex(colorA),hex(colorB),hex(colorC)]
         pendingWidgetBrightness = selected == "off" ? 0 : (testEffect != nil ? 50 : brightness)
+        if ["EVGAPascalGPUController","AsusAuraGPUController"].contains(controllerFamily) && selected == "cycle" { pendingWidgetBrightness = nil }
         message = "Applying \(off ? "Off" : effect.rawValue) …"
         let resource = Bundle.main.resourceURL!
         let reports = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX/Reports", isDirectory: true)
@@ -173,11 +177,11 @@ final class Model: ObservableObject {
             if !success { setupTesting = false; setupState = "failed"; UserDefaults.standard.set(fingerprint, forKey: "FailedLightingSetupFingerprint"); setupMessage = "The lighting command failed. Describe what happened below."; saveTroubleshooting(); return }
             testStep += 1
             if testStep == testPlan.count {
-                setupMessage = "Observe Wave for a few seconds…"
+                setupMessage = "Observe the final effect for a few seconds…"
                 DispatchQueue.main.asyncAfter(deadline: .now() + testPlan[testStep - 1].3) {
                     guard self.setupTesting else { return }
                     self.setupTesting = false; self.testTransportOK = true; self.setupState = "awaiting-confirmation"
-                    self.setupMessage = "Did RGB, Gradient, Spectrum, Breathing and Wave all work? Wave keeps running until you apply another mode."
+                    self.setupMessage = "Did all displayed test stages work? The final effect keeps running until you apply another mode."
                     self.saveTroubleshooting()
                 }
             }
@@ -200,7 +204,7 @@ final class Model: ObservableObject {
         if outcome == "confirmed" {
             guard testTransportOK && configurationStatus == "supported" && saveIdentity() else { return }
             guard !fingerprint.isEmpty else { setupMessage = "Visual test passed, but inventory is incomplete. Rescan before saving a reusable profile."; return }
-            let profile = VerifiedSetup(fingerprint: fingerprint, confirmedAt: Date(), successfulSteps: 3, userConfirmed: true, verifiedEffects: ["static", "gradient", "cycle", "breath", "wave"])
+            let profile = VerifiedSetup(fingerprint: fingerprint, confirmedAt: Date(), successfulSteps: 3, userConfirmed: true, verifiedEffects: availableEffects)
             guard let data = try? JSONEncoder().encode(profile) else { return }
             UserDefaults.standard.set(data, forKey: "VerifiedLightingSetup")
             UserDefaults.standard.removeObject(forKey: "FailedLightingSetupFingerprint")
@@ -213,7 +217,7 @@ final class Model: ObservableObject {
         fingerprint = report["configuration_fingerprint"] as? String ?? ""
         confirmationSource = "none"; testStep = 0
         testTransportOK = false
-        if configurationStatus == "supported", let bytes = UserDefaults.standard.data(forKey: "VerifiedLightingSetup"), let saved = try? JSONDecoder().decode(VerifiedSetup.self, from: bytes), saved.matches(fingerprint), UserDefaults.standard.string(forKey: "FailedLightingSetupFingerprint") != fingerprint {
+        if configurationStatus == "supported", let bytes = UserDefaults.standard.data(forKey: "VerifiedLightingSetup"), let saved = try? JSONDecoder().decode(VerifiedSetup.self, from: bytes), saved.matches(fingerprint,requiredEffects:availableEffects), UserDefaults.standard.string(forKey: "FailedLightingSetupFingerprint") != fingerprint {
             setupState = "confirmed"; confirmationSource = "saved-profile"; testStep = saved.successfulSteps; setupMessage = "Saved lighting profile matches this configuration."; record("profile", "restored")
         } else { setupState = "required"; setupMessage = configurationStatus == "supported" ? "Known lighting controller. Run the short visual test to confirm your card." : "LED availability is unknown for this configuration. Submit an inventory for investigation." }
     }
@@ -250,6 +254,9 @@ final class Model: ObservableObject {
             currentGPUName = "No display adapter detected"; currentGPUVendor = ""; currentBoardVendor = ""; return
         }
         currentGPUName = gpu["profile_name"] as? String ?? gpu["catalog_name"] as? String ?? gpu["gpu_name"] as? String ?? gpu["model"] as? String ?? "Display adapter"
+        controllerFamily = gpu["controller"] as? String ?? ""
+        availableEffects = gpu["available_effects"] as? [String] ?? []
+        if !availableEffects.contains(effect.backend) { effect = .solid }
         detectedGPUName = currentGPUName; identitySource = "detected"
         currentGPUVendor = gpu["vendor_name"] as? String ?? "Unknown vendor"
         currentBoardVendor = gpu["board_vendor"] as? String ?? "Unknown board vendor"
@@ -269,7 +276,7 @@ final class Model: ObservableObject {
         let scan = diagnosticPayload()
         let runtime = scan["runtime"] as? [String: String] ?? [:]
         let drivers = scan["driver_bundles"] as? [[String: String]] ?? []
-        let verification = HardwareVerification(verification_id: UUID().uuidString, installation_id: installationID!, hardware: hardware, macos: runtime["macos"] ?? "unknown", arch: runtime["arch"] ?? "unknown", driver_version: drivers.first(where: { $0["identifier"] == "com.nullmoth.NVRM" })?["version"] ?? "unknown", confirmed_effects: ["static","gradient","cycle","breath","wave"], identity_source: identitySource, detected_gpu_name: detectedGPUName, tested_steps: testPlan.count, confirmed_at: ISO8601DateFormatter().string(from: Date()))
+        let verification = HardwareVerification(verification_id: UUID().uuidString, installation_id: installationID!, hardware: hardware, macos: runtime["macos"] ?? "unknown", arch: runtime["arch"] ?? "unknown", driver_version: drivers.first(where: { $0["identifier"] == "com.nullmoth.NVRM" })?["version"] ?? "unknown", confirmed_effects: availableEffects, identity_source: identitySource, detected_gpu_name: detectedGPUName, tested_steps: testPlan.count, confirmed_at: ISO8601DateFormatter().string(from: Date()))
         do {
             try verificationStore.remember(verification)
             reloadCompatibility()
@@ -510,7 +517,7 @@ struct Studio: View {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack { Text("Effect").font(.system(size: 15, weight: .semibold)); Spacer(); Tag(title: model.effectIsConfirmed(model.effect) ? "USER CONFIRMED" : "EXPERIMENTAL", tint: model.effectIsConfirmed(model.effect) ? accent : .orange) }
                     HStack(spacing: 8) {
-                        ForEach(Lighting.allCases) { item in
+                        ForEach(Lighting.allCases.filter { model.availableEffects.contains($0.backend) }) { item in
                             Button { model.effect = item } label: {
                                 EffectTile(effect:item,selected:model.effect == item)
                             }.buttonStyle(.plain)
@@ -525,8 +532,10 @@ struct Studio: View {
                             Text("#" + model.hex(model.colorA).uppercased()).font(.system(size: 11, design: .monospaced)).foregroundColor(muted)
                         }.font(.system(size: 11))
                     }
+                    if !["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) || model.effect != .cycle {
                     HStack { Text("Brightness").frame(width: 80, alignment: .leading); Slider(value: $model.brightness, in: 0...100); Text("\(Int(model.brightness)) %").monospacedDigit().frame(width: 45) }.font(.system(size: 11)).foregroundColor(muted)
-                    if model.effect != .solid && model.effect != .gradient {
+                    }
+                    if !["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) && model.effect != .solid && model.effect != .gradient {
                         HStack { Text("Speed").frame(width: 80, alignment: .leading); Slider(value: $model.speed, in: 0...100); Text("\(Int(model.speed)) %").monospacedDigit().frame(width: 45) }.font(.system(size: 11)).foregroundColor(muted)
                     }
                 }
@@ -589,7 +598,7 @@ struct SetupWizard: View {
             if model.setupTesting {
                 ProgressView(value:Double(model.testStep),total:Double(model.testPlan.count)).tint(accent)
                 Text(model.setupMessage).font(.headline)
-                Text("Watch the card: red, green, blue, Gradient, Spectrum, Breathing, then Wave. The test takes about 30 seconds.").foregroundColor(muted)
+                Text("Watch the card: " + model.testPlan.map { $0.0.capitalized }.joined(separator:", ") + ". Confirm every displayed stage.").foregroundColor(muted)
                 Button("Stop test") { model.setupTesting = false; model.testTransportOK = false; model.setupState = "partial"; model.setupMessage = "Test stopped. No profile was confirmed."; model.record("setup-test","cancelled") }
             } else if model.testTransportOK && model.setupState == "awaiting-confirmation" {
                 Text("Did every color and effect work on the physical card?").font(.headline)
@@ -604,7 +613,7 @@ struct SetupWizard: View {
                 Text("Tell us which colors, zones or effects failed. Review the report before sending.").font(.caption).foregroundColor(muted)
                 HStack { Button("Review report…") { model.showSetupWizard = false; DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { model.reviewReport() } }; Spacer(); Button("Close") { model.showSetupWizard = false } }
             } else {
-                Text("The guided test checks three primary colors and all four effects. Wave remains active afterwards.").foregroundColor(muted)
+                Text("The guided test checks three primary colors and every effect offered by this controller. The final effect remains active afterwards.").foregroundColor(muted)
                 HStack { Button("Run lighting test",action:model.startSetupTest).buttonStyle(.borderedProminent); Spacer(); Button("Close") { model.showSetupWizard = false } }
             }
         }.padding(28).frame(width:540).background(ink).foregroundColor(.white).preferredColorScheme(.dark).tint(accent).interactiveDismissDisabled(model.setupTesting).onAppear { editIdentity = model.needsIdentity }
@@ -708,7 +717,7 @@ struct Community: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Additional hardware").font(.headline)
-                    Text("Exact OpenRGB PNY Lovelace matches can run the lighting test through the NVIDIA transport. Community-tested status is added only after visual confirmation. Other NVIDIA controller families are still being ported.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
+                    Text("Exact OpenRGB PNY Lovelace, EVGA Pascal and ASUS Aura matches can run the NVIDIA lighting test. Only controller-supported effects are offered. Community-tested status follows visual confirmation; further NVIDIA families are being ported.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
                 }
             }
             Text("This is the verified profile, not a live connection indicator.").font(.system(size: 11)).foregroundColor(muted)
@@ -728,7 +737,7 @@ struct Credits: View {
                     Link("NullMoth / project and license", destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
                     Divider()
                     Text("OpenRGB").font(.headline)
-                    Text("PNY Lovelace protocol and effect packets adapted from yufan and the OpenRGB contributors. The source is GPL-2.0-or-later. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. The source is GPL-2.0-or-later. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
                     Link("OpenRGB / PNY controller", destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
                     Divider()
                     Text("NVIDIA").font(.headline)
@@ -878,7 +887,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let item = menu.addItem(withTitle:title, action:selector, keyEquivalent:key); item.target = self; return item
     }
     func menuWillOpen(_ menu: NSMenu) {
-        for item in actionItems { item.isEnabled = !model.working && model.canControlLighting }
+        for item in actionItems { item.isEnabled = !model.working && model.canControlLighting && (item.action != #selector(selectEffect) || model.availableEffects.contains(Lighting.allCases[item.tag].backend)) }
         scanItem.isEnabled = !model.working
         exportItem.isEnabled = !model.scanJSON.isEmpty && !model.scanning
     }

@@ -56,7 +56,7 @@ def adapters_from_tree(roots):
                            class_code=class_code, openrgb=upstream, catalog_name=upstream['name'], catalog_status=upstream['status'], gpu_name={0x2704:'GeForce RTX 4080'}.get(device) if vendor==0x10de else clean_text(node.get('model')), board_vendor=upstream['board_vendor'] or ('PNY' if pci['subsystem-vendor-id']==0x196e else ('PCI %04x' % pci['subsystem-vendor-id'] if pci['subsystem-vendor-id'] is not None else 'Unknown')), profile_name=matches[0].name if len(matches)==1 else None, vendor_name={0x10de:'NVIDIA',0x1002:'AMD',0x8086:'Intel'}.get(vendor,'Other'), gpu_type={0:'VGA-compatible display controller',1:'XGA display controller',2:'3D controller'}.get((class_code >> 8) & 255 if class_code is not None else -1,'Display controller'), model=clean_text(node.get('model')),
                            registry_name=clean_text(node.get('IORegistryEntryName')),
                            nvrm_bound=bound, verified_profile=matches[0].key if len(matches)==1 else None,
-                           rgb_support='verified-profile' if matches and bound else 'not-verified'))
+                           available_effects=list(matches[0].effects) if len(matches)==1 else [], controller=matches[0].controller if len(matches)==1 else None, rgb_support='verified-profile' if matches and bound else 'not-verified'))
     return result
 
 

@@ -41,3 +41,11 @@ AppKit, SwiftUI, Foundation and IOKit are platform frameworks; their binaries ar
 ## Branding and independence
 
 HackinFX name/icon are project assets by aleopho. Product/vendor names identify compatibility and source credits. No affiliation, endorsement or partnership with Apple, PNY, NVIDIA, NullMoth or OpenRGB is claimed. No third-party logo is used as the HackinFX logo.
+
+## EVGA Pascal controller adaptation
+
+The volatile EVGA Pascal RGB register/mode implementation is adapted from Adam Honse (CalcProgrammer1), OpenRGB, 11 September 2020, GPL-2.0-or-later. The exact upstream implementation at commit `817834cfab034c97927451e31c4a2deb60a44725` is preserved in `vendor/openrgb/implementations/EVGAGPUv1Controller.cpp`; its corresponding header and detector are also included. The adaptation never calls the controller flash-save command. Physical macOS testing on EVGA hardware remains pending.
+
+## ASUS Aura controller adaptation
+
+ASUS Aura signature checks and volatile register/mode handling are adapted from Jan Rettig (Klapstuhl), OpenRGB, 14 February 2020, GPL-2.0-or-later. The exact upstream implementation at commit `817834cfab034c97927451e31c4a2deb60a44725` is preserved in `vendor/openrgb/implementations/AsusAuraGPUController.cpp`, with its detector and header. No flash-save/apply register is written by HackinFX. Physical macOS testing remains pending.

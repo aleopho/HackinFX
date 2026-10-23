@@ -1,0 +1,16 @@
+{
+  "commit": "817834cfab034c97927451e31c4a2deb60a44725",
+  "license": "GPL-2.0-or-later",
+  "files": [
+    {
+      "file": "EVGAGPUv1Controller.cpp",
+      "path": "Controllers/EVGAPascalGPUController/EVGAGPUv1Controller.cpp",
+      "sha256": "46bff031365d5e663c15b75938eb08134bbf2944db9f0f10cf98936ff0b05658"
+    },
+    {
+      "file": "AsusAuraGPUController.cpp",
+      "path": "Controllers/AsusAuraGPUController/AsusAuraGPUController.cpp",
+      "sha256": "573a6fa21f0aab376fe81ab00fe74c99659dc71e805d4272e383688e4329d26c"
+    }
+  ]
+}

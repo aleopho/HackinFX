@@ -14,7 +14,7 @@ This covers the selected upstream GPU detector families, not every peripheral su
 
 Exact tuples resolve to upstream names and candidate controllers. Reused PCI tuples retain all aliases/controllers and are marked ambiguous; an arbitrary precise marketing name is not invented. Unknown subsystem IDs do not inherit a close model. Known entries are displayed as catalog matches when a local macOS lighting module is missing.
 
-**NVIDIA-first controller work:** exact, unambiguous OpenRGB PNY Lovelace registrations can now enter the existing NVIDIA/NullMoth lighting test with the shared PNY protocol. Only the original PNY card has been physically tested by the author; other entries are candidates until the user confirms the visible test. This is not yet cross-vendor NVIDIA RGB support. Upstream names/address registrations do not prove a working macOS transport, RM port mapping, controller identity or effects. Broad automatic testing needs controller modules and suitable native transports. A catalog match never bypasses those guards. This preview establishes broader identification and auditability; it is not the completed universal-light-test feature.
+**NVIDIA-first controller work:** exact, unambiguous OpenRGB PNY Lovelace registrations can now enter the existing NVIDIA/NullMoth lighting test with the shared PNY protocol. Only the original PNY card has been physically tested by the author; other entries are candidates until the user confirms the visible test. EVGA Pascal is also implemented below; other NVIDIA families remain pending. Upstream names/address registrations do not prove a working macOS transport, RM port mapping, controller identity or effects. Broad automatic testing needs controller modules and suitable native transports. A catalog match never bypasses those guards. This preview establishes broader identification and auditability; it is not the completed universal-light-test feature.
 
 Rebuild offline: python3 tools/import_openrgb_catalog.py. It rejects changed upstream inputs and unresolved numeric symbols instead of silently omitting registrations. It never executes C++ or downloads anything.
 
@@ -30,6 +30,18 @@ Ad-hoc WidgetKit gallery registration, snapshot access, timeline updates, deep l
 
 ## Checks
 
-48 Python tests cover transport/scanner and the catalog importer/lookup. 20 Swift assertions include profile/queue and widget snapshot handling. Backend tests remain separate. Native app/widget packaging is checked in GitHub Actions. No new GPU writes or physical controller tests were performed by this change.
+53 Python tests cover transport/scanner and the catalog importer/lookup. 23 Swift assertions include profile/queue and widget snapshot handling. Backend tests remain separate. Native app/widget packaging is checked in GitHub Actions. No new GPU writes or physical controller tests were performed by this change.
 
 The widget now displays the last successfully applied mode, its color palette, brightness and GPU model. Unapplied UI changes and failed commands do not change the snapshot. Spectrum/Wave use a schematic rainbow; this is not an animation or live LED readback.
+
+
+### Additional NVIDIA vendor: EVGA
+
+Exact OpenRGB EVGA Pascal PCI registrations now use the EVGA GPU v1 volatile register protocol over the existing NVIDIA/NullMoth transport. Static, Spectrum and Breathing are available; Gradient/Wave and hardware speed are not offered. Spectrum brightness is controller-defined. The start test and confirmation payload contain only that controller's effects. No EVGA hardware has been physically tested yet, so these remain test candidates, not author-verified cards. Other NVIDIA families still require their own controller ports.
+
+Future roadmap (not this release): RAM RGB as a separate device type. AMD and Intel GPU transports follow the NVIDIA work.
+
+
+### Additional NVIDIA vendor: ASUS
+
+21 exact NVIDIA ASUS Aura registrations at address 0x29 are test candidates. The transport requires a matching 0x1589 controller signature at registers 0x20/0x21 before any lighting write. Static, Spectrum and Breathing are offered. Off uses black Static (the upstream Off mode is not functional); the explicit save/apply register is never written. Speed and Spectrum brightness are controller-defined. This is an untested macOS port, not a physical compatibility confirmation. Other Aura variants/addresses are not inferred.

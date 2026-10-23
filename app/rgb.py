@@ -64,15 +64,34 @@ def effect_packets(effect, color, led, speed=50, brightness=255, colors=None):
     return [(6, 255, index, 0, *scale(color)) for index in ((0, 1, 2) if led == 'all' else (led,))]
 
 
+def controller_transactions(profile, effect, color, led, speed=50, brightness=255, colors=None):
+    if effect != 'off' and effect not in profile.effects:
+        raise p.ProbeError('Effect unavailable on this controller')
+    if profile.controller == 'PNYLovelaceGPUController':
+        return [(profile.address,profile.register,packet) for packet in effect_packets(effect,color,led,speed,brightness,colors)]
+    if profile.controller == 'AsusAuraGPUController':
+        scaled = effect_packets('static',color,0,speed,0 if effect == 'off' else brightness)[0][-3:]
+        mode = {'off':1,'static':1,'cycle':4,'breath':2}[effect]
+        return [(profile.address,register,(value,)) for register,value in zip((4,5,6),scaled)] + [(profile.address,7,(mode,))]
+    if profile.controller != 'EVGAPascalGPUController':
+        raise p.ProbeError('Controller implementation unavailable')
+    # OpenRGB EVGAGPUv1: three volatile RGB registers and mode. Never call
+    # SaveSettings (0x23/0xe5); testing must not write controller flash.
+    scaled = effect_packets('static',color,0,speed,brightness)[0][-3:]
+    mode = {'off':0,'static':1,'cycle':2,'breath':5}[effect]
+    return ([(profile.address,register,(value,)) for register,value in zip((9,10,11),scaled)] if effect in ('static','breath') else []) + [(profile.address,12,(mode,))]
+
+
 class RGB(p.RM):
-    def __init__(self, transport, report, port=None, color=(32, 0, 0), led=0, apply=False, effect='static', speed=50, brightness=255, colors=None):
+    def __init__(self, transport, report, port=None, color=(32, 0, 0), led=0, apply=False, effect='static', speed=50, brightness=255, colors=None, profile=None):
         super().__init__(transport, report)
         if port is not None and port not in (1, 2):
             raise p.ProbeError('Only experimental candidate ports 1 and 2 are supported')
         if led not in (0, 1, 2, 'all') or len(color) != 3 or any(type(v) is not int or not 0 <= v <= 255 for v in color):
             raise p.ProbeError('Invalid LED or RGB color')
+        self.profile = profile
         self.port, self.color, self.led, self.apply = port, color, led, apply
-        self.packets = effect_packets(effect, color, led, speed, brightness, colors)
+        self.transactions = controller_transactions(profile,effect,color,led,speed,brightness,colors) if profile else [(0x60,2,packet) for packet in effect_packets(effect,color,led,speed,brightness,colors)]
         self.report['effect'] = effect
 
     def after_ports(self, obj, ports):
@@ -92,14 +111,25 @@ class RGB(p.RM):
         flags = ports[self.port]
         if flags & 0x15 != 0x11:
             raise p.ProbeError('Selected port must be implemented, validated and non-DDC')
+        if self.profile and self.profile.controller == 'AsusAuraGPUController':
+            magic = []
+            for register in (0x20,0x21):
+                payload = (U8 * 1)()
+                request = Indexed(port=self.port,write=0,address=self.profile.address << 1,flags=0,index_length=1,index=(U8 * 4)(register,0,0,0),length=1,message=C.addressof(payload))
+                req = p.Control(self.client,obj,0x402c0102,0,C.addressof(request),C.sizeof(request),0xffffffff)
+                self.report['i2c_transactions_attempted'] = self.report.get('i2c_transactions_attempted',0) + 1
+                self.call(0x2a,req)
+                magic.append(payload[0])
+            if magic != [0x15,0x89]:
+                raise p.ProbeError('ASUS Aura controller signature mismatch; no lighting writes sent')
         self.report['write_plans'] = []
         self.report['writes_completed'] = 0
-        for packet in self.packets:
-            payload = (U8 * 7)(*packet)
-            request = Indexed(port=self.port, write=1, address=0xc0, flags=0,
-                              index_length=1, index=(U8 * 4)(2, 0, 0, 0),
-                              length=7, message=C.addressof(payload))
-            plan = dict(port=self.port, address_7bit='0x60', register='0x02',
+        for address, register, packet in self.transactions:
+            payload = (U8 * len(packet))(*packet)
+            request = Indexed(port=self.port, write=1, address=address << 1, flags=0,
+                              index_length=1, index=(U8 * 4)(register, 0, 0, 0),
+                              length=len(packet), message=C.addressof(payload))
+            plan = dict(port=self.port, address_7bit='0x%02x' % address, register='0x%02x' % register,
                         payload=list(payload), speed_khz=100)
             self.report['write_plan'] = plan
             self.report['write_plans'].append(plan)
@@ -157,10 +187,12 @@ def main(argv=None):
         report['pci_devices'] = devices = p.inventory()
         profile = profiles.select(devices)
         report['profile'] = profile.key
+        if args.apply and args.port != profile.port:
+            raise p.ProbeError('Port does not match the exact controller profile')
         native = p.Native()
         native.open()
         RGB(native, report, args.port, color, 'all' if args.led == 'all' else int(args.led), args.apply,
-            args.effect, args.speed, args.brightness, colors).run()
+            args.effect, args.speed, args.brightness, colors, profile=profile).run()
     except Exception as exc:
         report['error'] = str(exc)
     finally:
