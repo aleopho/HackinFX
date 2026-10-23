@@ -6,6 +6,10 @@ HackinFX is a native macOS menu-bar app for controlling a supported GPU's RGB li
 
 **Initial release: 1.0.0.** This is an early community release with one verified hardware profile. It is not a universal GPU RGB driver. New device names in the community catalog do not enable unknown controllers.
 
+## Development preview
+
+The 1.1 development work adds a refined interface, an auditable OpenRGB GPU identity catalog and a real WidgetKit extension target. See [preview status and remaining controller/transport work](docs/PREVIEW-1.1.md). Catalog recognition does not mean RGB control is implemented. The download below remains stable 1.0.0.
+
 ## Download and install
 
 Download [HackinFX 1.0.0 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.0.0/HackinFX-aleopho-1.0.0.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.

@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 root = Path(__file__).resolve().parent
 app = root/'HackinFX.app'
-output = root.parent/'HackinFX-aleopho-1.0.0.dmg'
+output = root.parent/'HackinFX-aleopho-1.1.0-beta.1.dmg'
 if not (app/'Contents/MacOS/HackinFX').is_file():
     raise SystemExit('Build HackinFX.app first with build_community.py')
 with tempfile.TemporaryDirectory(prefix='hackinfx-dmg-') as temporary:

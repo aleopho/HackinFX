@@ -15,6 +15,8 @@ PNY lighting packet/effect construction in `app/rgb.py` is adapted from the Open
 - [Controller header](https://gitlab.com/CalcProgrammer1/OpenRGB/-/blob/master/Controllers/PNYLovelaceGPUController/PNYLovelaceGPUController.h)
 - [PNY RGB controller](https://gitlab.com/CalcProgrammer1/OpenRGB/-/blob/master/Controllers/PNYLovelaceGPUController/RGBController_PNYLovelaceGPU.cpp)
 
+The 1.1 development catalog also vendors pinned OpenRGB GPU detector/header source inputs with original author/license notices preserved under vendor/openrgb. tools/import_openrgb_catalog.py derives passive identity metadata from those files; they are not executed as a universal macOS driver.
+
 The adaptation is acknowledged in the Python file, the app's Credits page, this document and README. OpenRGB itself is not bundled as an executable. Upstream master links are moving references; they do not imply all later upstream changes are in HackinFX.
 
 ## NullMoth

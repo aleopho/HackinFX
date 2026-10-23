@@ -37,6 +37,11 @@ import Foundation
         var identified = item; identified.identity_source = "user-supplied"; identified.detected_gpu_name = "Generic adapter"
         let roundtrip = try JSONDecoder().decode(HardwareVerification.self,from:JSONEncoder().encode(identified))
         assert(roundtrip.identity_source == "user-supplied" && roundtrip.detected_gpu_name == "Generic adapter")
-        print("18 local-profile and compatibility-store assertions passed")
+        let snapshot = WidgetStatusSnapshot(gpuName:"PNY RTX 4080",boardVendor:"PNY",profileReady:true,lastCommand:"Wave",updatedAt:Date())
+        let widgetBytes = try JSONEncoder().encode(snapshot)
+        let decodedWidget = try JSONDecoder().decode(WidgetStatusSnapshot.self,from:widgetBytes)
+        assert(decodedWidget.gpuName == "PNY RTX 4080")
+        assert(!String(decoding:widgetBytes,as:UTF8.self).contains("installation_id"))
+        print("20 local-profile and compatibility-store assertions passed")
     }
 }

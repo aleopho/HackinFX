@@ -3,11 +3,12 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import WidgetKit
 
-private let ink = Color(red: 0.075, green: 0.08, blue: 0.075)
-private let panel = Color(red: 0.105, green: 0.115, blue: 0.105)
-private let accent = Color(red: 0.73, green: 0.84, blue: 0.48)
-private let muted = Color(red: 0.57, green: 0.60, blue: 0.53)
+private let ink = Color(red: 0.043, green: 0.055, blue: 0.063)
+private let panel = Color(red: 0.075, green: 0.090, blue: 0.098)
+private let accent = Color(red: 0.77, green: 0.94, blue: 0.49)
+private let muted = Color(red: 0.56, green: 0.62, blue: 0.63)
 
 enum Lighting: String, CaseIterable, Identifiable {
     case solid = "Static", gradient = "Gradient", cycle = "Spectrum", breath = "Breathing", wave = "Wave"
@@ -90,6 +91,7 @@ final class Model: ObservableObject {
     var draftURL: URL?
     var feedbackSave: DispatchWorkItem?
     var testStep = 0
+    var pendingCommand = "Not applied"
     var lightingEvidence: [[String: Any]] = []
     var reportPreview: String { String(data: (try? JSONSerialization.data(withJSONObject: diagnosticPayload(), options: [.prettyPrinted, .sortedKeys])) ?? Data(), encoding: .utf8) ?? "" }
     var canControlLighting: Bool { configurationStatus == "supported" && setupState == "confirmed" }
@@ -98,9 +100,21 @@ final class Model: ObservableObject {
         return url
     }
     var working: Bool { busy || scanning || setupTesting || submitting || launching }
+    func writeWidgetSnapshot() {
+        let last = !fingerprint.isEmpty && UserDefaults.standard.string(forKey:"LastLightingFingerprint") == fingerprint ? (UserDefaults.standard.string(forKey:"LastLightingCommand") ?? "Not applied") : "Not applied"
+        let folder = verificationStore.directory.appendingPathComponent("Widget",isDirectory:true)
+        let value = WidgetStatusSnapshot(gpuName:currentGPUName,boardVendor:currentBoardVendor,profileReady:canControlLighting,lastCommand:last,updatedAt:Date())
+        do {
+            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+            let encoder=JSONEncoder();encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(value).write(to:folder.appendingPathComponent("snapshot.json"),options:.atomic)
+            WidgetCenter.shared.reloadTimelines(ofKind:"HackinFXStatus")
+        } catch { /* Widget export must not block lighting or claim success. */ }
+    }
     func record(_ action: String, _ outcome: String) {
         sessionEvents.append(["time": ISO8601DateFormatter().string(from: Date()), "action": action, "outcome": outcome])
         if sessionEvents.count > 100 { sessionEvents.removeFirst() }
+        writeWidgetSnapshot()
     }
     func hex(_ color: Color) -> String {
         let c = NSColor(color).usingColorSpace(.sRGB) ?? .white
@@ -111,6 +125,7 @@ final class Model: ObservableObject {
         guard canControlLighting || (testEffect != nil && configurationStatus == "supported") else { page = "Hardware"; message = configurationReason; return }
         busy = true; lastSuccess = nil
         let selected = testEffect ?? (off ? "off" : effect.backend)
+        pendingCommand = testEffect != nil ? testPlan[min(testStep,testPlan.count-1)].0 : (off ? "Off" : effect.rawValue)
         message = "Applying \(off ? "Off" : effect.rawValue) …"
         let resource = Bundle.main.resourceURL!
         let reports = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX/Reports", isDirectory: true)
@@ -143,6 +158,7 @@ final class Model: ObservableObject {
     }
     func finish(_ success: Bool, _ text: String) {
         busy = false; lastSuccess = success; message = text
+        if success { UserDefaults.standard.set(pendingCommand,forKey:"LastLightingCommand"); UserDefaults.standard.set(fingerprint,forKey:"LastLightingFingerprint") }
         record("lighting", success ? "accepted" : "failed")
         if let url = lastReport, let bytes = try? Data(contentsOf: url), let report = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] {
             lightingEvidence.append(report)
@@ -228,7 +244,7 @@ final class Model: ObservableObject {
         guard let all = report["adapters"] as? [[String: Any]], let gpu = all.first(where: { $0["nvrm_bound"] as? Bool == true }) ?? all.first else {
             currentGPUName = "No display adapter detected"; currentGPUVendor = ""; currentBoardVendor = ""; return
         }
-        currentGPUName = gpu["profile_name"] as? String ?? gpu["gpu_name"] as? String ?? gpu["model"] as? String ?? "Display adapter"
+        currentGPUName = gpu["profile_name"] as? String ?? gpu["catalog_name"] as? String ?? gpu["gpu_name"] as? String ?? gpu["model"] as? String ?? "Display adapter"
         detectedGPUName = currentGPUName; identitySource = "detected"
         currentGPUVendor = gpu["vendor_name"] as? String ?? "Unknown vendor"
         currentBoardVendor = gpu["board_vendor"] as? String ?? "Unknown board vendor"
@@ -364,7 +380,7 @@ final class Model: ObservableObject {
                 let rawAdapters = report["adapters"] as? [[String: Any]] ?? []
                 let found = rawAdapters.enumerated().map { index, adapter -> GPUInfo in
                     let ids = adapter["pci_hex"] as? [String: Any] ?? [:]
-                    return GPUInfo(id: index, name: adapter["profile_name"] as? String ?? adapter["gpu_name"] as? String ?? adapter["model"] as? String ?? "Display adapter", pci: "\(ids["vendor-id"] as? String ?? "????"):\(ids["device-id"] as? String ?? "????")", subsystem: "\(ids["subsystem-vendor-id"] as? String ?? "????"):\(ids["subsystem-id"] as? String ?? "????")", vendor: adapter["vendor_name"] as? String ?? "Unknown vendor", gpuType: adapter["gpu_type"] as? String ?? "Display controller", supported: adapter["rgb_support"] as? String == "verified-profile", nvrm: adapter["nvrm_bound"] as? Bool ?? false)
+                    return GPUInfo(id: index, name: adapter["profile_name"] as? String ?? adapter["catalog_name"] as? String ?? adapter["gpu_name"] as? String ?? adapter["model"] as? String ?? "Display adapter", pci: "\(ids["vendor-id"] as? String ?? "????"):\(ids["device-id"] as? String ?? "????")", subsystem: "\(ids["subsystem-vendor-id"] as? String ?? "????"):\(ids["subsystem-id"] as? String ?? "????")", vendor: adapter["vendor_name"] as? String ?? "Unknown vendor", gpuType: adapter["gpu_type"] as? String ?? "Display controller", supported: adapter["rgb_support"] as? String == "verified-profile", nvrm: adapter["nvrm_bound"] as? Bool ?? false, catalogStatus: adapter["catalog_status"] as? String ?? "")
                 }
                 let compatibility = report["lighting_configuration"] as? [String: Any] ?? [:]
                 let configStatus = compatibility["status"] as? String ?? "unknown"
@@ -398,42 +414,78 @@ final class Model: ObservableObject {
 struct Tag: View {
     var title: String
     var tint: Color = accent
-    var body: some View { Text(title).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1).foregroundColor(tint).padding(.horizontal, 9).padding(.vertical, 5).background(tint.opacity(0.09)).clipShape(RoundedRectangle(cornerRadius: 2)) }
+    var body: some View {
+        HStack(spacing:6) { Circle().fill(tint).frame(width:4,height:4); Text(title).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(0.8).lineLimit(1).fixedSize() }
+        .foregroundColor(tint).padding(.horizontal,10).padding(.vertical,7).background(tint.opacity(0.07)).clipShape(Capsule()).overlay(Capsule().stroke(tint.opacity(0.18),lineWidth:1))
+    }
 }
 struct Card<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
-    var body: some View { content.padding(22).frame(maxWidth: .infinity, alignment: .leading).background(panel).cornerRadius(6).overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.065), lineWidth: 1)) }
+    var body: some View {
+        content.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(LinearGradient(colors:[panel,ink.opacity(0.75)],startPoint:.topLeading,endPoint:.bottomTrailing)).clipShape(RoundedRectangle(cornerRadius:16)).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.white.opacity(0.07),lineWidth:1))
+    }
 }
 struct GPUPreview: View {
     @ObservedObject var model: Model
-    var colors: [Color] { model.effect == .solid || model.effect == .breath ? [model.colorA, model.colorA, model.colorA] : [model.colorA, model.colorB, model.colorC] }
+    var colors: [Color] { model.effect == .solid || model.effect == .breath ? [model.colorA,model.colorA,model.colorA] : [model.colorA,model.colorB,model.colorC] }
     var body: some View {
         ZStack {
-            Canvas { context, size in
-                var grid = Path()
-                for x in stride(from: CGFloat(0), to: size.width, by: 24) { grid.move(to: CGPoint(x: x, y: 0)); grid.addLine(to: CGPoint(x: x, y: size.height)) }
-                for y in stride(from: CGFloat(0), to: size.height, by: 24) { grid.move(to: CGPoint(x: 0, y: y)); grid.addLine(to: CGPoint(x: size.width, y: y)) }
-                context.stroke(grid, with: .color(.white.opacity(0.025)), lineWidth: 1)
-            }
-            LinearGradient(colors: colors.map { $0.opacity(0.08) }, startPoint: .leading, endPoint: .trailing)
-            VStack(spacing: 18) {
+            RoundedRectangle(cornerRadius:20).fill(LinearGradient(colors:[panel,ink],startPoint:.topLeading,endPoint:.bottomTrailing))
+            Ellipse().fill(colors[0].opacity(0.12)).frame(width:380,height:120).blur(radius:35).offset(y:34)
+            Canvas { context,size in
+                var grid=Path()
+                for x in stride(from:CGFloat(0),to:size.width,by:28) { grid.move(to:CGPoint(x:x,y:0));grid.addLine(to:CGPoint(x:x,y:size.height)) }
+                for y in stride(from:CGFloat(0),to:size.height,by:28) { grid.move(to:CGPoint(x:0,y:y));grid.addLine(to:CGPoint(x:size.width,y:y)) }
+                context.stroke(grid,with:.color(.white.opacity(0.022)),lineWidth:0.5)
+            }.clipShape(RoundedRectangle(cornerRadius:20))
+            VStack(spacing:18) {
                 HStack {
-                    Text(model.currentBoardVendor.uppercased()).font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(3).foregroundColor(muted)
-                    Spacer(); Text(model.currentGPUName.uppercased()).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(muted)
-                }
-                HStack(spacing: 30) {
+                    Label("CONTROLLER PREVIEW",systemImage:"square.stack.3d.up").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(1.4)
+                    Spacer();Text(model.effect.rawValue.uppercased()).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(1)
+                }.foregroundColor(muted)
+                HStack(spacing:28) {
                     ForEach(0..<3) { i in
                         ZStack {
-                            Circle().stroke(colors[i].opacity(0.15), lineWidth: 12)
-                            ForEach(0..<9) { blade in Capsule().fill(Color.white.opacity(0.06)).frame(width: 13, height: 42).offset(y: -23).rotationEffect(.degrees(Double(blade)*40)) }
-                            Circle().fill(panel).frame(width: 27, height: 27).overlay(Circle().stroke(colors[i].opacity(0.5), lineWidth: 1))
-                        }.frame(width: 94, height: 94)
+                            Circle().fill(LinearGradient(colors:[Color.white.opacity(0.04),Color.clear],startPoint:.topLeading,endPoint:.bottomTrailing))
+                            Circle().stroke(colors[i].opacity(0.20),lineWidth:1)
+                            Circle().stroke(.white.opacity(0.035),lineWidth:10).padding(7)
+                            ForEach(0..<9) { blade in RoundedRectangle(cornerRadius:5).fill(.white.opacity(0.07)).frame(width:10,height:30).offset(y:-21).rotationEffect(.degrees(Double(blade)*40)) }
+                            Circle().fill(ink).frame(width:29,height:29).overlay(Circle().stroke(colors[i].opacity(0.35),lineWidth:1))
+                        }.frame(width:88,height:88)
                     }
-                }
-                RoundedRectangle(cornerRadius: 3).fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)).frame(height: 5).shadow(color: colors[0].opacity(0.45), radius: 6)
-            }.padding(26).background(ink.opacity(0.8)).cornerRadius(6).padding(.horizontal, 42).padding(.vertical, 32)
-        }.frame(height: 230).cornerRadius(6).overlay(RoundedRectangle(cornerRadius:6).stroke(Color.white.opacity(0.05)))
+                }.padding(.vertical,5)
+                RoundedRectangle(cornerRadius:4).fill(LinearGradient(colors:colors,startPoint:.leading,endPoint:.trailing)).frame(height:4).shadow(color:colors[0].opacity(0.6),radius:10)
+                HStack { Text("SCHEMATIC · NO LIVE LED READBACK");Spacer();Text("#"+model.hex(model.colorA).uppercased()) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(0.7).foregroundColor(muted)
+            }.padding(.horizontal,30).padding(.vertical,22)
+        }.frame(height:238).overlay(RoundedRectangle(cornerRadius:20).stroke(LinearGradient(colors:[.white.opacity(0.14),.white.opacity(0.025)],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:1))
+    }
+}
+struct EffectTile: View {
+    let effect: Lighting
+    let selected: Bool
+    var body: some View {
+        VStack(spacing:11) { Image(systemName:effect.symbol).font(.system(size:20,weight:.light));Text(effect.rawValue).font(.system(size:11,weight:.medium)).lineLimit(1).minimumScaleFactor(0.85) }
+        .frame(maxWidth:.infinity).frame(height:78).foregroundColor(selected ? accent : muted).background(selected ? accent.opacity(0.075) : Color.white.opacity(0.015)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(selected ? accent.opacity(0.45) : .white.opacity(0.055),lineWidth:1)).contentShape(RoundedRectangle(cornerRadius:12))
+    }
+}
+struct StudioFooter: View {
+    @ObservedObject var model: Model
+    var body: some View {
+        VStack(spacing:12) {
+            HStack(spacing:14) {
+                Image(systemName:model.lastSuccess == false ? "exclamationmark.circle" : "circle.dotted").foregroundColor(model.lastSuccess == false ? .orange : muted)
+                Text(model.message).font(.system(size:11)).foregroundColor(muted).lineLimit(2)
+                Spacer(minLength:8)
+                Button(action:model.revealReport) { Image(systemName:"doc.text.magnifyingglass") }.buttonStyle(.plain).disabled(model.lastReport == nil).help("Reveal latest lighting report")
+            }
+            HStack(spacing:12) {
+                Button { model.apply(off:true) } label: { Label("Lights off",systemImage:"power").font(.system(size:12,weight:.medium)).padding(.horizontal,16).frame(height:40).background(.white.opacity(0.045)).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(.plain)
+                Spacer()
+                Text("CHANGES APPLY ON REQUEST").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted)
+                Button { model.apply() } label: { HStack(spacing:10) { if model.busy { ProgressView().controlSize(.small) }; Text(model.busy ? "Applying…" : "Apply lighting");Image(systemName:"arrow.up.right") }.font(.system(size:12,weight:.semibold)).foregroundColor(ink).padding(.horizontal,20).frame(height:40).background(accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(.plain)
+            }.disabled(model.working || !model.canControlLighting)
+        }.padding(.horizontal,28).padding(.vertical,16).background(panel.opacity(0.9)).overlay(alignment:.top) { Rectangle().fill(.white.opacity(0.07)).frame(height:1) }
     }
 }
 struct Studio: View {
@@ -442,25 +494,24 @@ struct Studio: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("01 / LIGHTING STUDIO").font(.system(size: 10, weight: .medium, design: .monospaced)).tracking(3).foregroundColor(accent)
-                    Text("Lighting").font(.system(size: 29, weight: .semibold))
+                    Text("LIGHTING / CONTROL SURFACE").font(.system(size: 10, weight: .medium, design: .monospaced)).tracking(3).foregroundColor(accent)
+                    Text("Lighting Studio").font(.system(size:30,weight:.semibold,design:.rounded))
                     Text(model.currentGPUName).font(.system(size:12)).foregroundColor(muted)
                 }
                 Spacer(); Tag(title: model.scanning ? "CHECKING" : model.canControlLighting ? "PROFILE READY" : "SCAN REQUIRED")
             }
             GPUPreview(model: model)
-            HStack { Text("SCHEMATIC PREVIEW").font(.system(size: 9, design: .monospaced)).tracking(1.5); Spacer(); Text("No live GPU feedback") .font(.system(size: 10)) }.foregroundColor(muted)
             Card {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack { Text("Effect").font(.system(size: 15, weight: .semibold)); Spacer(); Tag(title: model.effectIsConfirmed(model.effect) ? "USER CONFIRMED" : "EXPERIMENTAL", tint: model.effectIsConfirmed(model.effect) ? accent : .orange) }
                     HStack(spacing: 8) {
                         ForEach(Lighting.allCases) { item in
                             Button { model.effect = item } label: {
-                                VStack(spacing: 9) { Image(systemName: item.symbol).font(.system(size: 18)); Text(item.rawValue).font(.system(size: 10, weight: .medium)) }.frame(maxWidth: .infinity).padding(.vertical, 15).foregroundColor(model.effect == item ? accent : muted).background(model.effect == item ? accent.opacity(0.09) : ink).cornerRadius(4).overlay(RoundedRectangle(cornerRadius: 4).stroke(model.effect == item ? accent.opacity(0.5) : Color.clear))
+                                EffectTile(effect:item,selected:model.effect == item)
                             }.buttonStyle(.plain)
                         }
                     }
-                    Text(model.effect.detail).font(.system(size: 11)).foregroundColor(muted).frame(height: 28, alignment: .topLeading)
+                    Text(model.effect.detail).font(.system(size:12)).foregroundColor(muted).fixedSize(horizontal:false,vertical:true)
                     if model.effect == .solid || model.effect == .breath || model.effect == .gradient {
                         HStack(spacing: 18) {
                             ColorPicker(model.effect == .gradient ? "Zone 01" : "Color", selection: $model.colorA, supportsOpacity: false)
@@ -475,17 +526,7 @@ struct Studio: View {
                     }
                 }
             }
-            HStack(spacing: 12) {
-                Button { model.apply(off: true) } label: { Label("Off", systemImage: "power").frame(width: 68).padding(.vertical, 11) }.buttonStyle(.plain).background(panel).cornerRadius(4)
-                Spacer()
-                Button { model.apply() } label: { HStack { if model.busy { ProgressView().controlSize(.small) }; Text(model.busy ? "Applying …" : "Apply"); Image(systemName: "arrow.up.right") }.font(.system(size: 12, weight: .semibold)).foregroundColor(ink).padding(.horizontal, 24).padding(.vertical, 13).background(accent).cornerRadius(4) }.buttonStyle(.plain)
-            }.disabled(model.working || !model.canControlLighting)
-            HStack(alignment: .top, spacing: 8) {
-                Circle().fill(model.lastSuccess == false ? Color.orange : accent).frame(width: 5, height: 5).padding(.top, 5)
-                Text(model.message).font(.system(size: 10)).foregroundColor(muted).textSelection(.enabled)
-                Spacer()
-                Button(action: model.revealReport) { Image(systemName: "doc.text.magnifyingglass") }.buttonStyle(.plain).disabled(model.lastReport == nil).help("Reveal latest lighting report in Finder")
-            }.frame(minHeight: 30)
+
         }
     }
 }
@@ -499,6 +540,7 @@ struct GPUInfo: Identifiable {
     let gpuType: String
     let supported: Bool
     let nvrm: Bool
+    var catalogStatus: String = ""
 }
 
 struct SetupCard: View {
@@ -615,9 +657,10 @@ struct Community: View {
             ForEach(model.adapters) { gpu in
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack { Text(gpu.name).font(.headline); Spacer(); Tag(title: gpu.supported ? "VERIFIED PROFILE" : "UNSUPPORTED", tint: gpu.supported ? accent : .orange) }
+                        HStack { Text(gpu.name).font(.headline); Spacer(); Tag(title:gpu.supported ? "TEST AVAILABLE" : gpu.catalogStatus.hasPrefix("upstream-known") ? "CATALOG MATCH" : "UNLISTED",tint:gpu.supported ? accent : .orange) }
                         Text("\(gpu.vendor) · \(gpu.gpuType)").font(.system(size: 11)).foregroundColor(muted)
                         Text("PCI \(gpu.pci) / \(gpu.subsystem)").font(.system(size: 12, design: .monospaced)).foregroundColor(accent)
+                        if !gpu.catalogStatus.isEmpty { Text(gpu.catalogStatus).font(.system(size:11)).foregroundColor(muted) }
                         Text(gpu.nvrm ? "NVRM binding found" : "No NVRM binding found").font(.system(size: 11)).foregroundColor(muted)
                     }
                 }
@@ -711,28 +754,57 @@ struct LaunchView: View {
     }
 }
 
+struct Sidebar: View {
+    @ObservedObject var model: Model
+    var body: some View {
+        VStack(alignment:.leading,spacing:0) {
+            HStack(spacing:12) {
+                Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:42,height:42)
+                VStack(alignment:.leading,spacing:4) { Text("HackinFX").font(.system(size:21,weight:.semibold,design:.rounded)).lineLimit(1).fixedSize(); Text("BY ALEOPHO").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(2.4).foregroundColor(muted).lineLimit(1) }
+            }.padding(.bottom,38)
+            Text("WORKSPACE").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(2).foregroundColor(muted).padding(.bottom,14)
+            ForEach([("Studio","slider.horizontal.3"),("Hardware","cpu"),("Credits","heart")],id:\.0) { title,icon in
+                Button { model.page = title == "Studio" && !model.canControlLighting ? "Hardware" : title } label: {
+                    HStack(spacing:12) { Image(systemName:icon).font(.system(size:15)).frame(width:20);Text(title).font(.system(size:13,weight:.medium)).lineLimit(1).fixedSize();Spacer(minLength:0);if model.page == title { Circle().fill(accent).frame(width:5,height:5) } }
+                    .foregroundColor(model.page == title ? accent : muted).padding(.horizontal,13).frame(height:46).background(model.page == title ? accent.opacity(0.07) : .clear).clipShape(RoundedRectangle(cornerRadius:10)).overlay(RoundedRectangle(cornerRadius:10).stroke(model.page == title ? accent.opacity(0.13) : .clear,lineWidth:1))
+                }.buttonStyle(.plain).padding(.bottom,6)
+            }
+            Spacer(minLength:24)
+            VStack(alignment:.leading,spacing:12) {
+                HStack { Image(systemName:"cpu").foregroundColor(accent);Text("LOCAL DEVICE").font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(1.6).foregroundColor(muted) }
+                Text(model.currentGPUName).font(.system(size:13,weight:.medium)).lineLimit(3).fixedSize(horizontal:false,vertical:true)
+                Text([model.currentGPUVendor,model.currentBoardVendor].filter { !$0.isEmpty }.joined(separator:" / ")).font(.system(size:10,design:.monospaced)).foregroundColor(muted).lineLimit(2)
+                Tag(title:model.canControlLighting ? "PROFILE READY" : "SETUP REQUIRED",tint:model.canControlLighting ? accent : .orange)
+            }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.025)).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(.white.opacity(0.055),lineWidth:1))
+            HStack { Text("1.1.0 PREVIEW");Spacer();Image(systemName:"terminal") }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted).padding(.top,18)
+        }.padding(22).frame(width:232).frame(maxHeight:.infinity).background(LinearGradient(colors:[panel,ink],startPoint:.topLeading,endPoint:.bottomTrailing))
+    }
+}
+struct StartupScanView: View {
+    var body: some View {
+        VStack(spacing:22) {
+            ZStack { Circle().stroke(accent.opacity(0.10),lineWidth:1).frame(width:108,height:108);Circle().stroke(accent.opacity(0.06),lineWidth:1).frame(width:138,height:138);ProgressView().controlSize(.large).tint(accent) }
+            Text("Detecting your hardware").font(.system(size:24,weight:.semibold,design:.rounded))
+            Text("PCI identity · driver interface · controller catalog").font(.system(size:11,design:.monospaced)).foregroundColor(muted)
+            Tag(title:"READ-ONLY INVENTORY")
+        }.frame(maxWidth:.infinity,maxHeight:.infinity).background(ink.opacity(0.985))
+    }
+}
 struct Root: View {
     @ObservedObject var model: Model
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    Image(nsImage: NSImage(contentsOf: Bundle.main.url(forResource: "hackinfx-logo", withExtension: "png")!) ?? NSImage()).resizable().scaledToFit().frame(width: 48, height: 48).background(Color.black).cornerRadius(4)
-                    VStack(alignment: .leading, spacing: 3) { Text("HackinFX").font(.system(size: 15, weight: .bold, design: .monospaced)); Text("BY ALEOPHO").font(.system(size: 8, weight: .medium, design: .monospaced)).tracking(2).foregroundColor(muted) }
-                }.padding(.bottom, 45)
-                Text("WORKSPACE / LOCAL").font(.system(size: 8, design: .monospaced)).tracking(2).foregroundColor(muted).padding(.bottom, 15)
-                ForEach([("Studio","slider.horizontal.3"),("Hardware","cpu"),("Credits","heart")], id: \.0) { title, icon in
-                    Button { model.page = title == "Studio" && !model.canControlLighting ? "Hardware" : title } label: { HStack(spacing: 12) { Image(systemName: icon).frame(width: 18); Text(title); Spacer() }.font(.system(size: 12, weight: .medium)).padding(12).foregroundColor(model.page == title ? accent : muted).background(model.page == title ? accent.opacity(0.08) : Color.clear).cornerRadius(4) }.buttonStyle(.plain).padding(.bottom, 5)
-                }
-                Spacer()
-                Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1).padding(.bottom, 18)
-                Text(model.canControlLighting ? "LIGHTING PROFILE" : "HARDWARE STATUS").font(.system(size: 8, design: .monospaced)).tracking(1.5).foregroundColor(muted)
-                Text(model.currentGPUName).font(.system(size: 12, weight: .medium)).padding(.top, 8)
-                Text("\(model.currentGPUVendor) / \(model.currentBoardVendor)").font(.system(size: 9)).foregroundColor(muted).padding(.top, 4)
-                Tag(title: "1.0.0 / COMMUNITY").padding(.top, 18)
-            }.padding(24).frame(width: 180).background(panel.opacity(0.6))
-            ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else { Credits() } }.padding(30).frame(maxWidth: .infinity, alignment: .leading) }.frame(width: 690)
-        }.frame(minHeight: 790).background(ink).foregroundColor(Color(red: 0.88, green: 0.87, blue: 0.81)).font(.system(size: 12, design: .monospaced)).preferredColorScheme(.dark).environment(\.locale, Locale(identifier: "en")).fontDesign(.monospaced).tint(accent).overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration: 0.2), value: model.launching).overlay { if model.scanning { VStack(spacing:18) { ProgressView().controlSize(.large); Text("Detecting your hardware").font(.title2); Text("Reading PCI identity, driver and lighting profile…").foregroundColor(muted) }.frame(maxWidth:.infinity,maxHeight:.infinity).background(ink.opacity(0.97)) } }.sheet(isPresented:$model.showSetupWizard) { SetupWizard(model:model) }.sheet(isPresented: $model.showReportPreview) { ReportPreview(model: model) }
+        HStack(spacing:0) {
+            Sidebar(model:model)
+            Rectangle().fill(.white.opacity(0.06)).frame(width:1)
+            VStack(spacing:0) {
+                HStack(spacing:8) { Text("HACKINFX").foregroundColor(muted);Text("/").foregroundColor(muted.opacity(0.4));Text(model.page.uppercased());Spacer();Text("HACKINTOSH").foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
+                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else { Credits() } }.padding(28).frame(maxWidth:.infinity,alignment:.leading) }
+                if model.page == "Studio" { StudioFooter(model:model) }
+            }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
+        }.frame(minWidth:940,minHeight:720).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
+        .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration:0.2),value:model.launching)
+        .overlay { if model.scanning { StartupScanView() } }
+        .sheet(isPresented:$model.showSetupWizard) { SetupWizard(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
     }
 }
 final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
@@ -752,7 +824,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }; image.isTemplate=true; image.accessibilityDescription="HackinFX GPU"; return image
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(contentRect: NSRect(x:0,y:0,width:918,height:790), styleMask:[.titled,.closable,.miniaturizable], backing:.buffered, defer:false)
+        window = NSWindow(contentRect: NSRect(x:0,y:0,width:1000,height:820), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
+        window.contentMinSize = NSSize(width:940,height:720)
         window.title = "HackinFX — by aleopho"
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
@@ -811,6 +884,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         NSApp.setActivationPolicy(.accessory)
         return false
     }
+    func application(_ application:NSApplication,open urls:[URL]) {
+        guard let url=urls.first,url.scheme == "hackinfx",["studio","hardware"].contains(url.host ?? "") else { return }
+        model.page = url.host == "hardware" || !model.canControlLighting ? "Hardware" : "Studio"
+        show()
+    }
     @objc func show() { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps:true); window.makeKeyAndOrderFront(nil) }
     @objc func applyCurrent() { model.apply() }
     @objc func turnOff() { model.apply(off:true) }
@@ -837,7 +915,7 @@ if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-previ
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
     let view = NSHostingView(rootView: content)
-    view.frame = NSRect(x: 0, y: 0, width: 918, height: 790)
+    view.frame = NSRect(x: 0, y: 0, width: 1000, height: 820)
     view.layoutSubtreeIfNeeded()
     if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
         view.cacheDisplay(in: view.bounds, to: bitmap)

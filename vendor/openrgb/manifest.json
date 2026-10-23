@@ -1,0 +1,367 @@
+{
+  "commit": "817834cfab034c97927451e31c4a2deb60a44725",
+  "files": [
+    {
+      "controller": "ASRockGPUSMBusController",
+      "path": "Controllers/ASRockSMBusController/ASRockGPUSMBusController/ASRockGPUSMBusControllerDetect.cpp",
+      "file": "ASRockGPUSMBusControllerDetect.cpp",
+      "local": "detectors/ASRockGPUSMBusControllerDetect.cpp",
+      "sha256": "0a9df9e3beb341fa4b6bc0b72515c0dcdb828f46e1bb83390cf5951abb5b954a"
+    },
+    {
+      "controller": "AsusAuraGPUController",
+      "path": "Controllers/AsusAuraGPUController/AsusAuraGPUControllerDetect.cpp",
+      "file": "AsusAuraGPUControllerDetect.cpp",
+      "local": "detectors/AsusAuraGPUControllerDetect.cpp",
+      "sha256": "06f2630826112c2734e2cbf9e8cf895827696787dd4e77cae083cd1b6c4514c8"
+    },
+    {
+      "controller": "ColorfulGPUController",
+      "path": "Controllers/ColorfulGPUController/ColorfulGPUControllerDetect.cpp",
+      "file": "ColorfulGPUControllerDetect.cpp",
+      "local": "detectors/ColorfulGPUControllerDetect.cpp",
+      "sha256": "d3d1ea48764df16cefd232a5b8ddfd255b6dd5aa2285b400e489e05cf05d0af8"
+    },
+    {
+      "controller": "ColorfulTuringGPUController",
+      "path": "Controllers/ColorfulTuringGPUController/ColorfulTuringGPUControllerDetect.cpp",
+      "file": "ColorfulTuringGPUControllerDetect.cpp",
+      "local": "detectors/ColorfulTuringGPUControllerDetect.cpp",
+      "sha256": "2bac51832f8fe75fa9293f720b68274a447a2440b0ebdb1ed5ab6b4a2cc86fd8"
+    },
+    {
+      "controller": "EVGAAmpereGPUController",
+      "path": "Controllers/EVGAAmpereGPUController/EVGAAmpereGPUControllerDetect.cpp",
+      "file": "EVGAAmpereGPUControllerDetect.cpp",
+      "local": "detectors/EVGAAmpereGPUControllerDetect.cpp",
+      "sha256": "d24d2b477546b075e80afb0302c1e335f6afbc663f227810c06fb52ba4955525"
+    },
+    {
+      "controller": "EVGAGP102GPUController",
+      "path": "Controllers/EVGAGP102GPUController/EVGAGP102GPUControllerDetect.cpp",
+      "file": "EVGAGP102GPUControllerDetect.cpp",
+      "local": "detectors/EVGAGP102GPUControllerDetect.cpp",
+      "sha256": "21a77dc624dfddd037a97314297a911574b19e26af334340835032e4f8134117"
+    },
+    {
+      "controller": "EVGAPascalGPUController",
+      "path": "Controllers/EVGAPascalGPUController/EVGAPascalGPUControllerDetect.cpp",
+      "file": "EVGAPascalGPUControllerDetect.cpp",
+      "local": "detectors/EVGAPascalGPUControllerDetect.cpp",
+      "sha256": "2524380464b71fc5d157e7b5d74957ff5fe8d1dfe07e13c727e862d08ea24e69"
+    },
+    {
+      "controller": "EVGATuringGPUController",
+      "path": "Controllers/EVGATuringGPUController/EVGATuringGPUControllerDetect.cpp",
+      "file": "EVGATuringGPUControllerDetect.cpp",
+      "local": "detectors/EVGATuringGPUControllerDetect.cpp",
+      "sha256": "6050740e55e506aab4db818f47fe68aa918c786d4a7b79250d4e676d1f395b36"
+    },
+    {
+      "controller": "GalaxGPUController",
+      "path": "Controllers/GalaxGPUController/GalaxGPUControllerDetect.cpp",
+      "file": "GalaxGPUControllerDetect.cpp",
+      "local": "detectors/GalaxGPUControllerDetect.cpp",
+      "sha256": "8b6f8dba5b158b6d18c22a137b0554a422ae440b3f03cf3d91e321b54db0605f"
+    },
+    {
+      "controller": "GigabyteRGBFusion2BlackwellGPUController",
+      "path": "Controllers/GigabyteRGBFusion2BlackwellGPUController/GigabyteRGBFusion2BlackwellGPUControllerDetect.cpp",
+      "file": "GigabyteRGBFusion2BlackwellGPUControllerDetect.cpp",
+      "local": "detectors/GigabyteRGBFusion2BlackwellGPUControllerDetect.cpp",
+      "sha256": "f4c4553d66596a5ea8dd23e2b3bc0d69970bafcb7cc45f0114917e45212ec61e"
+    },
+    {
+      "controller": "GigabyteRGBFusion2GPUController",
+      "path": "Controllers/GigabyteRGBFusion2GPUController/GigabyteRGBFusion2GPUControllerDetect.cpp",
+      "file": "GigabyteRGBFusion2GPUControllerDetect.cpp",
+      "local": "detectors/GigabyteRGBFusion2GPUControllerDetect.cpp",
+      "sha256": "efa358c58899791042c17b6def60c81af8d3ea079c895414a896b5fa4b34485c"
+    },
+    {
+      "controller": "GigabyteRGBFusionGPUController",
+      "path": "Controllers/GigabyteRGBFusionGPUController/GigabyteRGBFusionGPUControllerDetect.cpp",
+      "file": "GigabyteRGBFusionGPUControllerDetect.cpp",
+      "local": "detectors/GigabyteRGBFusionGPUControllerDetect.cpp",
+      "sha256": "54722442283ddbcdeb5bb8367542e08677b17993db956de2a8ed4979de578248"
+    },
+    {
+      "controller": "IntelArcA770LEController",
+      "path": "Controllers/IntelArcA770LEController/IntelArcA770LEControllerDetect.cpp",
+      "file": "IntelArcA770LEControllerDetect.cpp",
+      "local": "detectors/IntelArcA770LEControllerDetect.cpp",
+      "sha256": "a8ccd20162fc382b71924e97946ee39263fe583decf8ee389951db3dc27d00bb"
+    },
+    {
+      "controller": "MSIGPUController",
+      "path": "Controllers/MSIGPUController/MSIGPUController/MSIGPUControllerDetect.cpp",
+      "file": "MSIGPUControllerDetect.cpp",
+      "local": "detectors/MSIGPUControllerDetect.cpp",
+      "sha256": "a570d68db8b3e6279e52601dceea93ec577645d6fc2459a0f1768438241c8832"
+    },
+    {
+      "controller": "MSIGPUv2Controller",
+      "path": "Controllers/MSIGPUController/MSIGPUv2Controller/MSIGPUv2ControllerDetect.cpp",
+      "file": "MSIGPUv2ControllerDetect.cpp",
+      "local": "detectors/MSIGPUv2ControllerDetect.cpp",
+      "sha256": "15e399f5398ed20e86f96c5580a18e7d85aef065c75e75061a7b60de7c727e2c"
+    },
+    {
+      "controller": "ManliGPUController",
+      "path": "Controllers/ManliGPUController/ManliGPUControllerDetect.cpp",
+      "file": "ManliGPUControllerDetect.cpp",
+      "local": "detectors/ManliGPUControllerDetect.cpp",
+      "sha256": "e7653feb45b91288a1401fda67745a1e1c6f9beeb8ab571341c10880a9e070d7"
+    },
+    {
+      "controller": "NVIDIAIlluminationController",
+      "path": "Controllers/NVIDIAIlluminationController/NVIDIAIlluminationControllerDetect_Windows_Linux.cpp",
+      "file": "NVIDIAIlluminationControllerDetect_Windows_Linux.cpp",
+      "local": "detectors/NVIDIAIlluminationControllerDetect_Windows_Linux.cpp",
+      "sha256": "13c2f88ad006676fcbb6acc71ad50ce41135e0f9cb59ac1ba6cdeab835e7a178"
+    },
+    {
+      "controller": "PNYARGBEpicXGPUController",
+      "path": "Controllers/PNYARGBEpicXGPUController/PNYARGBEpicXGPUControllerDetect.cpp",
+      "file": "PNYARGBEpicXGPUControllerDetect.cpp",
+      "local": "detectors/PNYARGBEpicXGPUControllerDetect.cpp",
+      "sha256": "5a42ac9fc39746cc1378675c2afd4f37adcad0f7e9a933ae166d25a209d87f88"
+    },
+    {
+      "controller": "PNYLovelaceGPUController",
+      "path": "Controllers/PNYLovelaceGPUController/PNYLovelaceGPUControllerDetect.cpp",
+      "file": "PNYLovelaceGPUControllerDetect.cpp",
+      "local": "detectors/PNYLovelaceGPUControllerDetect.cpp",
+      "sha256": "548e0f5ded96e0ed3bed077fcfed6e29aa48f73429762780f6398f7966cc7f4b"
+    },
+    {
+      "controller": "PalitGPUController",
+      "path": "Controllers/PalitGPUController/PalitGPUControllerDetect.cpp",
+      "file": "PalitGPUControllerDetect.cpp",
+      "local": "detectors/PalitGPUControllerDetect.cpp",
+      "sha256": "804a807ba760c6f2f2d72c24516c5122a5a99355e5ac8a0e2bec85deacb73c1a"
+    },
+    {
+      "controller": "PowerColorGPUController",
+      "path": "Controllers/PowerColorGPUController/PowerColorGPUControllerDetect.cpp",
+      "file": "PowerColorGPUControllerDetect.cpp",
+      "local": "detectors/PowerColorGPUControllerDetect.cpp",
+      "sha256": "58d6921a3e7c7eee6a5edc6085b2dc11505fd5868dbc1119d160b3a9361d108f"
+    },
+    {
+      "controller": "SapphireGPUController",
+      "path": "Controllers/SapphireGPUController/SapphireGPUControllerDetect.cpp",
+      "file": "SapphireGPUControllerDetect.cpp",
+      "local": "detectors/SapphireGPUControllerDetect.cpp",
+      "sha256": "db15d654ff8abf6e443d8b5a456f83dbd1e6360c9a5763c2ed3507083823449b"
+    },
+    {
+      "controller": "ZotacBlackwellGPUController",
+      "path": "Controllers/ZotacBlackwellGPUController/ZotacBlackwellGPUControllerDetect.cpp",
+      "file": "ZotacBlackwellGPUControllerDetect.cpp",
+      "local": "detectors/ZotacBlackwellGPUControllerDetect.cpp",
+      "sha256": "8d3c990edead6b6dcdc8d35ee01f8666401bab5b200780126d99a06652fae2af"
+    },
+    {
+      "controller": "ZotacTuringGPUController",
+      "path": "Controllers/ZotacTuringGPUController/ZotacTuringGPUControllerDetect.cpp",
+      "file": "ZotacTuringGPUControllerDetect.cpp",
+      "local": "detectors/ZotacTuringGPUControllerDetect.cpp",
+      "sha256": "7d9610ec23708c8448a58011352e4acb1f78149551a6b7de39eca1da37545b20"
+    },
+    {
+      "controller": "ZotacV2GPUController",
+      "path": "Controllers/ZotacV2GPUController/ZotacV2GPUControllerDetect.cpp",
+      "file": "ZotacV2GPUControllerDetect.cpp",
+      "local": "detectors/ZotacV2GPUControllerDetect.cpp",
+      "sha256": "708b6f93c321882dbe4397a23c720445c138a807b302ea15aed7fa22f4790319"
+    },
+    {
+      "local": "pci_ids.h",
+      "path": "pci_ids/pci_ids.h",
+      "sha256": "80820d8643e23af41399565a1ca173be4bad7f6a47d94412696d34f94282e07e"
+    },
+    {
+      "controller": "ASRockGPUSMBusController",
+      "owner": "ASRockGPUSMBusControllerDetect.cpp",
+      "path": "Controllers/ASRockSMBusController/ASRockGPUSMBusController/ASRockGPUSMBusController.h",
+      "local": "headers/ASRockGPUSMBusControllerDetect.cpp/ASRockGPUSMBusController.h",
+      "sha256": "c24efb6477db64891c7566dab547a48cd637a11c7ed56b7159bdffb5bbd970f1"
+    },
+    {
+      "controller": "AsusAuraGPUController",
+      "owner": "AsusAuraGPUControllerDetect.cpp",
+      "path": "Controllers/AsusAuraGPUController/AsusAuraGPUController.h",
+      "local": "headers/AsusAuraGPUControllerDetect.cpp/AsusAuraGPUController.h",
+      "sha256": "8d616ee4a49b691c0a0b292dd56226e6633ac06c6c2325753f31affc3bf16b15"
+    },
+    {
+      "controller": "ColorfulGPUController",
+      "owner": "ColorfulGPUControllerDetect.cpp",
+      "path": "Controllers/ColorfulGPUController/ColorfulGPUController.h",
+      "local": "headers/ColorfulGPUControllerDetect.cpp/ColorfulGPUController.h",
+      "sha256": "8ae14caf2dd7eb9afd51be708b2530bdba1eca446202cd96f3b0f962223277d8"
+    },
+    {
+      "controller": "ColorfulTuringGPUController",
+      "owner": "ColorfulTuringGPUControllerDetect.cpp",
+      "path": "Controllers/ColorfulTuringGPUController/ColorfulTuringGPUController.h",
+      "local": "headers/ColorfulTuringGPUControllerDetect.cpp/ColorfulTuringGPUController.h",
+      "sha256": "50377eff6e52a78fd5535a30202adc27007663cb3b3a8487128a22707c742221"
+    },
+    {
+      "controller": "EVGAAmpereGPUController",
+      "owner": "EVGAAmpereGPUControllerDetect.cpp",
+      "path": "Controllers/EVGAAmpereGPUController/EVGAGPUv3Controller.h",
+      "local": "headers/EVGAAmpereGPUControllerDetect.cpp/EVGAGPUv3Controller.h",
+      "sha256": "b1ad5025daf39ffa2c2ac59bb310ef2ea573cc1cda9f690e0ea6515348a36973"
+    },
+    {
+      "controller": "EVGAGP102GPUController",
+      "owner": "EVGAGP102GPUControllerDetect.cpp",
+      "path": "Controllers/EVGAGP102GPUController/EVGAGP102Controller.h",
+      "local": "headers/EVGAGP102GPUControllerDetect.cpp/EVGAGP102Controller.h",
+      "sha256": "3309667e6c642dfc391f8138997a079162441c0d68eee57661034f5ce52ff47b"
+    },
+    {
+      "controller": "EVGAPascalGPUController",
+      "owner": "EVGAPascalGPUControllerDetect.cpp",
+      "path": "Controllers/EVGAPascalGPUController/EVGAGPUv1Controller.h",
+      "local": "headers/EVGAPascalGPUControllerDetect.cpp/EVGAGPUv1Controller.h",
+      "sha256": "75f1b77bd5361dca2df16f061df9e154552a52068f4bf5541a2bac8f9ae353a9"
+    },
+    {
+      "controller": "EVGATuringGPUController",
+      "owner": "EVGATuringGPUControllerDetect.cpp",
+      "path": "Controllers/EVGATuringGPUController/EVGAGPUv2Controller.h",
+      "local": "headers/EVGATuringGPUControllerDetect.cpp/EVGAGPUv2Controller.h",
+      "sha256": "f3fced0f2c60cfe09852ed7e0d034933821d9edf6de2b2f4e125747726b6ae1e"
+    },
+    {
+      "controller": "GigabyteRGBFusion2BlackwellGPUController",
+      "owner": "GigabyteRGBFusion2BlackwellGPUControllerDetect.cpp",
+      "path": "Controllers/GigabyteRGBFusion2BlackwellGPUController/GigabyteRGBFusion2BlackwellGPUController.h",
+      "local": "headers/GigabyteRGBFusion2BlackwellGPUControllerDetect.cpp/GigabyteRGBFusion2BlackwellGPUController.h",
+      "sha256": "acc0d278f57ac26253005764cf906bd2ff8a875fc201d299372a205c88983058"
+    },
+    {
+      "controller": "GigabyteRGBFusion2GPUController",
+      "owner": "GigabyteRGBFusion2GPUControllerDetect.cpp",
+      "path": "Controllers/GigabyteRGBFusion2GPUController/GigabyteRGBFusion2GPUController.h",
+      "local": "headers/GigabyteRGBFusion2GPUControllerDetect.cpp/GigabyteRGBFusion2GPUController.h",
+      "sha256": "3ed0c0446bccc83e0a80734c5b61f9b21d58e1fc77c59eae7b347a030dcad42a"
+    },
+    {
+      "controller": "GigabyteRGBFusionGPUController",
+      "owner": "GigabyteRGBFusionGPUControllerDetect.cpp",
+      "path": "Controllers/GigabyteRGBFusionGPUController/GigabyteRGBFusionGPUController.h",
+      "local": "headers/GigabyteRGBFusionGPUControllerDetect.cpp/GigabyteRGBFusionGPUController.h",
+      "sha256": "21a19e31a638abda8f0f6a44acfa97bb1e7bfe44501cd0ada97c77e7aba7052b"
+    },
+    {
+      "controller": "IntelArcA770LEController",
+      "owner": "IntelArcA770LEControllerDetect.cpp",
+      "path": "Controllers/IntelArcA770LEController/IntelArcA770LEController.h",
+      "local": "headers/IntelArcA770LEControllerDetect.cpp/IntelArcA770LEController.h",
+      "sha256": "36d1f79e24b20781e388aca5824743c0bfb840c1d7532c3e11d35b0561bec4a2"
+    },
+    {
+      "controller": "MSIGPUController",
+      "owner": "MSIGPUControllerDetect.cpp",
+      "path": "Controllers/MSIGPUController/MSIGPUController/MSIGPUController.h",
+      "local": "headers/MSIGPUControllerDetect.cpp/MSIGPUController.h",
+      "sha256": "e09f010bf3b9b660239f6cc986227042fb10df3a49e53cd011d5db3eca6899d9"
+    },
+    {
+      "controller": "MSIGPUv2Controller",
+      "owner": "MSIGPUv2ControllerDetect.cpp",
+      "path": "Controllers/MSIGPUController/MSIGPUv2Controller/MSIGPUv2Controller.h",
+      "local": "headers/MSIGPUv2ControllerDetect.cpp/MSIGPUv2Controller.h",
+      "sha256": "f2c2e620f451492eb12b2579e1c550a501a854f43038908d2a0cdc49f51db27c"
+    },
+    {
+      "controller": "ManliGPUController",
+      "owner": "ManliGPUControllerDetect.cpp",
+      "path": "Controllers/ManliGPUController/ManliGPUController.h",
+      "local": "headers/ManliGPUControllerDetect.cpp/ManliGPUController.h",
+      "sha256": "1384e4f1d6f6c014a9c4b52fbb5b7c28379276b05fc115f2fa5d8a902f3da35e"
+    },
+    {
+      "controller": "PNYARGBEpicXGPUController",
+      "owner": "PNYARGBEpicXGPUControllerDetect.cpp",
+      "path": "Controllers/PNYARGBEpicXGPUController/PNYARGBEpicXGPUController.h",
+      "local": "headers/PNYARGBEpicXGPUControllerDetect.cpp/PNYARGBEpicXGPUController.h",
+      "sha256": "8f641fce2e0ee7fc2a58509526ba50a61b269e095f30841e14491e59492b8ced"
+    },
+    {
+      "controller": "PNYLovelaceGPUController",
+      "owner": "PNYLovelaceGPUControllerDetect.cpp",
+      "path": "Controllers/PNYLovelaceGPUController/PNYLovelaceGPUController.h",
+      "local": "headers/PNYLovelaceGPUControllerDetect.cpp/PNYLovelaceGPUController.h",
+      "sha256": "c1360fcb81223eafa1bb955946abe15a01789d177a42130550b43272ecdf6822"
+    },
+    {
+      "controller": "PalitGPUController",
+      "owner": "PalitGPUControllerDetect.cpp",
+      "path": "Controllers/PalitGPUController/PalitGPUv1Controller.h",
+      "local": "headers/PalitGPUControllerDetect.cpp/PalitGPUv1Controller.h",
+      "sha256": "6096200cccd6b98945a200d14bdbbc155314b8a06c8b5b075125aabda25b84c7"
+    },
+    {
+      "controller": "PalitGPUController",
+      "owner": "PalitGPUControllerDetect.cpp",
+      "path": "Controllers/PalitGPUController/PalitGPUv2Controller.h",
+      "local": "headers/PalitGPUControllerDetect.cpp/PalitGPUv2Controller.h",
+      "sha256": "c07d908662f242aa9f14d142524a6a6ab4e11ba5069328b4da77b68fc8542ff7"
+    },
+    {
+      "controller": "PowerColorGPUController",
+      "owner": "PowerColorGPUControllerDetect.cpp",
+      "path": "Controllers/PowerColorGPUController/PowerColorRedDevilV1Controller/RGBController_PowerColorRedDevilV1.h",
+      "local": "headers/PowerColorGPUControllerDetect.cpp/PowerColorRedDevilV1Controller/RGBController_PowerColorRedDevilV1.h",
+      "sha256": "42070cfb2e5b891307e6906fac856a8dfc5bec3c3cffaf9f97587b796fd120e4"
+    },
+    {
+      "controller": "PowerColorGPUController",
+      "owner": "PowerColorGPUControllerDetect.cpp",
+      "path": "Controllers/PowerColorGPUController/PowerColorRedDevilV1Controller/PowerColorRedDevilV1Controller.h",
+      "local": "headers/PowerColorGPUControllerDetect.cpp/PowerColorRedDevilV1Controller/PowerColorRedDevilV1Controller.h",
+      "sha256": "cd66854586a6c4f236befff32c751208db33ac53cd60c9145f2c375349a7673f"
+    },
+    {
+      "controller": "PowerColorGPUController",
+      "owner": "PowerColorGPUControllerDetect.cpp",
+      "path": "Controllers/PowerColorGPUController/PowerColorRedDevilV2Controller/RGBController_PowerColorRedDevilV2.h",
+      "local": "headers/PowerColorGPUControllerDetect.cpp/PowerColorRedDevilV2Controller/RGBController_PowerColorRedDevilV2.h",
+      "sha256": "d5d43ad06e1f642e3b1026f1a333bb1342c83374440f81cc899a1479dee5b6d8"
+    },
+    {
+      "controller": "PowerColorGPUController",
+      "owner": "PowerColorGPUControllerDetect.cpp",
+      "path": "Controllers/PowerColorGPUController/PowerColorRedDevilV2Controller/PowerColorRedDevilV2Controller.h",
+      "local": "headers/PowerColorGPUControllerDetect.cpp/PowerColorRedDevilV2Controller/PowerColorRedDevilV2Controller.h",
+      "sha256": "28163df5df8967276bc470531621e18f0b87583a01ff53e4fb3a7f7222e5b4a6"
+    },
+    {
+      "controller": "ZotacBlackwellGPUController",
+      "owner": "ZotacBlackwellGPUControllerDetect.cpp",
+      "path": "Controllers/ZotacBlackwellGPUController/ZotacBlackwellGPUController.h",
+      "local": "headers/ZotacBlackwellGPUControllerDetect.cpp/ZotacBlackwellGPUController.h",
+      "sha256": "8dea7f28e0247df19cd2650211f79786d33ec084f636408f3f5af4cbe8f00997"
+    },
+    {
+      "controller": "ZotacTuringGPUController",
+      "owner": "ZotacTuringGPUControllerDetect.cpp",
+      "path": "Controllers/ZotacTuringGPUController/ZotacTuringGPUController.h",
+      "local": "headers/ZotacTuringGPUControllerDetect.cpp/ZotacTuringGPUController.h",
+      "sha256": "76049cb16400d74645c32731a2164e509f0b748a97f37cdf9e04319f9c9783db"
+    },
+    {
+      "controller": "ZotacV2GPUController",
+      "owner": "ZotacV2GPUControllerDetect.cpp",
+      "path": "Controllers/ZotacV2GPUController/ZotacV2GPUController.h",
+      "local": "headers/ZotacV2GPUControllerDetect.cpp/ZotacV2GPUController.h",
+      "sha256": "99a5ad9d2b95a0941635b3029dc16f9c7b4539ac83b7a98115aea2608a8f4569"
+    }
+  ]
+}

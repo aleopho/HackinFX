@@ -15,8 +15,9 @@ import time
 import uuid
 import probe
 import profiles
+import gpu_catalog
 
-VERSION = '1.0.0'
+VERSION = '1.1.0-beta.1'
 DRIVER = re.compile(r'(com\.(?:nullmoth[\w.]*|nvidia[\w.]*|apple\.(?:GeForce|NVDA|AMD|ATI|AppleIntel)[\w.]*))\s+\(([^)]+)\)')
 
 
@@ -49,9 +50,10 @@ def adapters_from_tree(roots):
         pci = {key: probe.pci_value(node, key) for key in
                ('vendor-id','device-id','subsystem-vendor-id','subsystem-id')}
         matches = [profile for profile in profiles.PROFILES if profile.matches(pci)]
+        upstream = gpu_catalog.identify(pci)
         bound = any(child.get('IOObjectClass') == 'NVRM' for child in probe.walk([node]))
         result.append(dict(pci=pci, pci_hex={key: '%04x' % value if value is not None else None for key,value in pci.items()},
-                           class_code=class_code, gpu_name={0x2704:'GeForce RTX 4080'}.get(device) if vendor==0x10de else clean_text(node.get('model')), board_vendor='PNY' if pci['subsystem-vendor-id']==0x196e else ('PCI %04x' % pci['subsystem-vendor-id'] if pci['subsystem-vendor-id'] is not None else 'Unknown'), profile_name=matches[0].name if len(matches)==1 else None, vendor_name={0x10de:'NVIDIA',0x1002:'AMD',0x8086:'Intel'}.get(vendor,'Other'), gpu_type={0:'VGA-compatible display controller',1:'XGA display controller',2:'3D controller'}.get((class_code >> 8) & 255 if class_code is not None else -1,'Display controller'), model=clean_text(node.get('model')),
+                           class_code=class_code, openrgb=upstream, catalog_name=upstream['name'], catalog_status=upstream['status'], gpu_name={0x2704:'GeForce RTX 4080'}.get(device) if vendor==0x10de else clean_text(node.get('model')), board_vendor=upstream['board_vendor'] or ('PNY' if pci['subsystem-vendor-id']==0x196e else ('PCI %04x' % pci['subsystem-vendor-id'] if pci['subsystem-vendor-id'] is not None else 'Unknown')), profile_name=matches[0].name if len(matches)==1 else None, vendor_name={0x10de:'NVIDIA',0x1002:'AMD',0x8086:'Intel'}.get(vendor,'Other'), gpu_type={0:'VGA-compatible display controller',1:'XGA display controller',2:'3D controller'}.get((class_code >> 8) & 255 if class_code is not None else -1,'Display controller'), model=clean_text(node.get('model')),
                            registry_name=clean_text(node.get('IORegistryEntryName')),
                            nvrm_bound=bound, verified_profile=matches[0].key if len(matches)==1 else None,
                            rgb_support='verified-profile' if matches and bound else 'not-verified'))
