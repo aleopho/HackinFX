@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 import center_sdk
+import usb_devices
 
 
 def atomic_json(path,value,mode=0o600):
@@ -157,7 +158,9 @@ class AdapterRegistry:
 class Center:
     def __init__(self,store,profiles_dir,sdk=None,native=None,adapters=None):
         self.store=Path(store);self.sdk=sdk or center_sdk.SDKClient();self.native=native or NativeGPU(profiles_dir)
-        self.registry=AdapterRegistry(adapters if adapters is not None else [OpenRGBAdapter(self.sdk),NativeGPUAdapter(self.native)])
+        defaults=[OpenRGBAdapter(self.sdk),NativeGPUAdapter(self.native)]
+        if sdk is None and native is None:defaults.append(usb_devices.NativeUSBAdapter())
+        self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
         self.devices=[];self.layout={};self.scene=scene_config({});self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={}
         try:
@@ -178,7 +181,7 @@ class Center:
             for name,adapter in self.registry.adapters.items():
                 try:
                     for index,record in enumerate(adapter.discover()):
-                        d=dict(record);d['backend']=name
+                        d=dict(record);d['backend']='inventory' if record.get('backend')=='inventory' and not record.get('controllable') else name
                         d.setdefault('id',name+':'+self.generation+':'+str(index))
                         d.setdefault('controllable',d.get('direct',False))
                         d.setdefault('static_modes',['static','gradient'] if d.get('direct',False) else [])
@@ -189,12 +192,16 @@ class Center:
                 for d in rows:
                     if d['backend']=='openrgb' and d['category']=='gpu':
                         d.update(controllable=False,direct=False,status='native-owned',detail='Native NVIDIA owns GPU control; duplicate GPU bridge writers are disabled.')
+            native_rows=[d for d in rows if d['backend']=='native-usb' and d.get('controllable')]
+            for d in rows:
+                if d['backend']=='openrgb' and any(d['name'].casefold() in {n.casefold() for n in row.get('ownership_names',[])} for row in native_rows):
+                    d.update(controllable=False,direct=False,status='native-owned',detail='The native HID adapter owns this exact catalog-matched controller. Duplicate bridge writes are disabled.')
             if inventory:
                 try:
                     import ram_probe
                     result=subprocess.run(['/usr/sbin/system_profiler','SPUSBDataType','SPMemoryDataType','-json'],capture_output=True,check=True,timeout=35)
                     tree=json.loads(result.stdout)
-                    passive=project_usb(tree)+[dict(name=d.get('part_number','Memory module')+' · '+d.get('size',''),vendor=d.get('manufacturer',''),category='dram') for d in ram_probe.modules(tree)]
+                    passive=([] if any(name=='native-usb' for name in self.registry.adapters) and any(d['backend'] in ('native-usb','inventory') for d in rows) else project_usb(tree))+[dict(name=d.get('part_number','Memory module')+' · '+d.get('size',''),vendor=d.get('manufacturer',''),category='dram') for d in ram_probe.modules(tree)]
                     # Inventory entries never inherit write access from a similar name.
                     for i,d in enumerate(passive):
                         d.update(id='inventory:'+self.generation+':'+str(i),fingerprint='',backend='inventory',led_count=0,zones=[],modes=[],direct=False,controllable=False,static_modes=[],status='inventory-only',detail='Detected by macOS. No direct native controller implemented; a matching OpenRGB device may appear separately.')
@@ -222,7 +229,7 @@ class Center:
                 for key in ids:
                     target=next((d for d in self.devices if d['id']==key),None)
                     if not target or not target['controllable']:raise ValueError('A selected device is not controllable; refresh or complete its setup')
-                    if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('Native GPU supports shared Static/Gradient, not host-streamed animation. Deselect it for animated scenes.')
+                    if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('A selected device supports Static/Gradient only. Deselect it for host-streamed animation.')
                     targets.append(dict(target))
                 if sum(d['led_count'] for d in targets)>16384:raise ValueError('Scene exceeds the 16,384 LED limit')
             self.stop();self.stop_event=threading.Event()

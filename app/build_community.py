@@ -20,14 +20,16 @@ cache.mkdir(exist_ok=True)
 subprocess.run(['/usr/bin/swiftc', '-swift-version', '5', '-target', 'x86_64-apple-macos15.0', '-module-cache-path', str(cache),
                 str(root/'CommunityRGB.swift'), str(root/'ControlCenter.swift'), str(root/'SetupSupport.swift'), '-o', str(app/'MacOS'/'HackinFX'),
                 '-framework', 'AppKit', '-framework', 'SwiftUI', '-framework', 'WidgetKit'], check=True)
-for name in ('center_core.py','center_sdk.py','center_service.py','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','compatibility.json','NOTICE.txt','COPYING','LICENSE.md','SOURCES-RGB.md','SOURCES.md','HACKINFX.md','EFFECTS.md'):
+subprocess.run(['/usr/bin/swiftc','-swift-version','5','-target','x86_64-apple-macos15.0','-module-cache-path',str(cache),str(root/'HIDBridge.swift'),'-o',str(resources/'HackinFXHID'),'-framework','IOKit'],check=True)
+subprocess.run(['/usr/bin/codesign','--force','--sign','-','--timestamp=none',str(resources/'HackinFXHID')],check=True)
+for name in ('usb_devices.py','openrgb_usb_catalog.json','center_core.py','center_sdk.py','center_service.py','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','compatibility.json','NOTICE.txt','COPYING','LICENSE.md','SOURCES-RGB.md','SOURCES.md','HACKINFX.md','EFFECTS.md'):
     shutil.copy2(root/name, resources/name)
 shutil.copy2(root/'report-endpoint.json', resources/'report-endpoint.json')
 shutil.copy2(root/'assets'/'hackinfx-mark-v2.png', resources/'hackinfx-logo.png')
 shutil.copy2(root/'assets'/'HackinFX.icns', resources/'HackinFX.icns')
 source = resources/'Source'
 source.mkdir(exist_ok=True)
-for name in ('CommunityRGB.swift','ControlCenter.swift','SetupSupport.swift','render_icon.swift','package_dmg.py','compatibility.json','report-endpoint.json','center_core.py','center_sdk.py','center_service.py','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','build_community.py'):
+for name in ('HIDBridge.swift','usb_devices.py','openrgb_usb_catalog.json','CommunityRGB.swift','ControlCenter.swift','SetupSupport.swift','render_icon.swift','package_dmg.py','compatibility.json','report-endpoint.json','center_core.py','center_sdk.py','center_service.py','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','build_community.py'):
     shutil.copy2(root/name,source/name)
 for name in ('NOTICE.txt','COPYING','LICENSE.md','SOURCES-RGB.md','SOURCES.md','HACKINFX.md','EFFECTS.md'):
     shutil.copy2(root/name,source/name)
@@ -35,7 +37,7 @@ shutil.copytree(root/'assets', source/'assets', dirs_exist_ok=True)
 shutil.copytree(root/'tests', source/'tests', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
 (app/'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleName='HackinFX',
     CFBundleDisplayName='HackinFX', CFBundleIdentifier='community.aleopho.hackinfx',
-    CFBundleVersion='2.0.0', CFBundleShortVersionString='2.0.0', CFBundleExecutable='HackinFX',
+    CFBundleVersion='2.0.1', CFBundleShortVersionString='2.0.1', CFBundleExecutable='HackinFX',
     CFBundlePackageType='APPL', LSMinimumSystemVersion='15.0', NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, NSHighResolutionCapable=True, CFBundleIconFile='HackinFX', CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en'], CFBundleURLTypes=[dict(CFBundleURLName='HackinFX',CFBundleURLSchemes=['hackinfx'])])))
 # Build a real WidgetKit app-extension with Xcode when available. No Apple account
 # or App Group is needed for this read-only, narrowly scoped local snapshot mode.

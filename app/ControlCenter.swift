@@ -16,6 +16,10 @@ struct CenterDevice: Codable, Identifiable {
     let controllable: Bool
     let status: String
     let detail: String
+    var static_modes:[String]? = nil
+    var usb_id:String? = nil
+    var driver:String? = nil
+    var catalog_matches:[String]? = nil
     var zones:[CenterZone]? = nil
     var modes:[CenterMode]? = nil
     var symbol: String {
@@ -24,13 +28,13 @@ struct CenterDevice: Codable, Identifiable {
         case "dram":return "memorychip"
         case "keyboard","keypad":return "keyboard"
         case "mouse":return "computermouse"
-        case "cooler":return "fanblades"
+        case "cooler","controller":return "fanblades"
         case "strip","light":return "light.strip.2"
         case "mainboard":return "cpu"
         default:return "cable.connector"
         }
     }
-    var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB" ][category] ?? category.capitalized }
+    var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
 }
 struct CenterScene: Codable {
     var mode = "static"
@@ -78,7 +82,7 @@ final class CenterModel: ObservableObject {
     var visible:[CenterDevice] { state.devices.filter { filter == "all" || $0.category == filter } }
     var chosen:[CenterDevice] { state.devices.filter { selected.contains($0.id) } }
     var canAnimate:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.direct } }
-    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable } && (canAnimate || scene.mode == "static" || (scene.mode == "gradient" && chosen.allSatisfy { $0.direct || ($0.backend == "native" && $0.led_count == 3) })) }
+    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
     func start() {
         guard process == nil && !shuttingDown else { return }
         busy=true;error=""
@@ -216,7 +220,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.0.0");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.0.1");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.padding(22).frame(width:232).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -229,8 +233,8 @@ private struct CenterDeviceCard:View {
             VStack(alignment:.leading,spacing:17) {
                 HStack { ZStack { RoundedRectangle(cornerRadius:13).fill(CenterTheme.aqua.opacity(0.07)).frame(width:46,height:46);Image(systemName:device.symbol).font(.system(size:23,weight:.light)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted) };Spacer();Image(systemName:center.selected.contains(device.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(center.selected.contains(device.id) ? CenterTheme.accent : CenterTheme.muted.opacity(0.4)) }
                 VStack(alignment:.leading,spacing:5) { Text(device.name).font(.system(size:13,weight:.semibold)).lineLimit(2).frame(height:34,alignment:.topLeading);Text(device.vendor.isEmpty ? device.categoryLabel : device.vendor+" · "+device.categoryLabel).font(.system(size:10)).foregroundStyle(CenterTheme.muted).lineLimit(1) }
-                HStack { CenterBadge(text:device.controllable ? "Ready" : device.status == "native-owned" ? "Native owned" : device.status == "hardware-modes-only" ? "Modes only" : device.backend == "inventory" ? "Detected only" : "Confirm first",good:device.controllable);Spacer();if device.led_count>0 { Text("\(device.led_count) \(device.backend == "native" ? "zones" : "LEDs")").font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
-                Text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : "No lighting driver attached").font(.system(size:9)).foregroundStyle(CenterTheme.muted)
+                HStack { CenterBadge(text:device.controllable ? "Ready" : device.status == "access-required" ? "Access required" : device.status == "catalog-match" ? "Catalog match" : device.status == "native-owned" ? "Native owned" : device.status == "hardware-modes-only" ? "Modes only" : device.backend == "inventory" ? "Detected only" : "Confirm first",good:device.controllable);Spacer();if device.led_count>0 { Text("\(device.led_count) \(device.backend == "native" || device.driver == "asus-spatha" ? "zones" : "LEDs")").font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
+                Text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : device.backend == "native-usb" ? "Native USB / HID" : "No lighting driver attached").font(.system(size:9)).foregroundStyle(CenterTheme.muted)
             }.padding(19).frame(maxWidth:.infinity,alignment:.leading).background(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.045) : CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:17)).overlay(RoundedRectangle(cornerRadius:17).stroke(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.5) : .white.opacity(0.065),lineWidth:1))
         }.buttonStyle(PressFeedbackStyle()).help(device.detail).contextMenu { Button("Device details") { center.activeDevice=device } }
     }
@@ -257,7 +261,7 @@ struct CenterWorkspace:View {
             ZStack(alignment:.leading) {
                 RoundedRectangle(cornerRadius:23).fill(LinearGradient(colors:[Color(red:0.10,green:0.16,blue:0.13),CenterTheme.surface],startPoint:.topLeading,endPoint:.bottomTrailing))
                 HStack(alignment:.center,spacing:22) {
-                    VStack(alignment:.leading,spacing:14) { CenterBadge(text:center.state.running ? "Scene active" : "Workspace ready",good:center.online);Text(center.state.running ? center.state.scene.mode.capitalized : "Your lighting workspace").font(.system(size:25,weight:.semibold,design:.rounded));Text("Native GPU control and OpenRGB devices.\nOne local engine, shared scenes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);HStack { CenterAction(title:center.busy ? "Discovering…" : "Discover devices",symbol:"arrow.clockwise",action:center.discover).disabled(!center.online || center.busy);if !center.online { Button("Start Core",action:center.start) } } }
+                    VStack(alignment:.leading,spacing:14) { CenterBadge(text:center.state.running ? "Scene active" : "Workspace ready",good:center.online);Text(center.state.running ? center.state.scene.mode.capitalized : "Your lighting workspace").font(.system(size:25,weight:.semibold,design:.rounded));Text("Native GPU, USB lighting and OpenRGB devices.\nOne local engine, shared scenes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);HStack { CenterAction(title:center.busy ? "Discovering…" : "Discover devices",symbol:"arrow.clockwise",action:center.discover).disabled(!center.online || center.busy);if !center.online { Button("Start Core",action:center.start) } } }
                     Spacer(minLength:0)
                     ZStack { ForEach(0..<4) { i in RoundedRectangle(cornerRadius:CGFloat(22+i*6)).stroke(CenterTheme.accent.opacity(0.05+Double(i)*0.02),lineWidth:1).frame(width:CGFloat(82+i*30),height:CGFloat(82+i*30)).rotationEffect(.degrees(20)) };Image(systemName:"circle.hexagongrid").font(.system(size:54,weight:.ultraLight)).foregroundStyle(CenterTheme.accent.opacity(0.85)) }.frame(width:185,height:185)
                 }.padding(27)
@@ -270,11 +274,11 @@ struct CenterWorkspace:View {
     }
     private func metric(_ title:String,value:String,symbol:String)->some View { CenterPanel { HStack(alignment:.top) { VStack(alignment:.leading,spacing:10) { Text(title).font(.system(size:10)).foregroundStyle(CenterTheme.muted);Text(value).font(.system(size:25,weight:.medium,design:.rounded)) };Spacer();Image(systemName:symbol).foregroundStyle(CenterTheme.aqua) } } }
     private func grid(_ devices:[CenterDevice])->some View { LazyVGrid(columns:[GridItem(.adaptive(minimum:210),spacing:14)],spacing:14) { ForEach(devices) { device in CenterDeviceCard(center:center,device:device) } } }
-    private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text("Connect your lighting hardware").font(.headline);Text("Discovery reads native GPU, USB and memory inventory, then connects to an OpenRGB SDK server on 127.0.0.1:6742. Inventory-only entries cannot receive lighting commands.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
+    private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text("Connect your lighting hardware").font(.headline);Text("Discovery reads native GPU, IOKit USB/HID and memory inventory, then connects to an OpenRGB SDK server on 127.0.0.1:6742. Inventory-only entries cannot receive lighting commands.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
     private var devices:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Device library",title:"Your devices",subtitle:"GPU, memory, USB peripherals and cooling — grouped by actual control capability.")
-            HStack { ScrollView(.horizontal,showsIndicators:false) { HStack(spacing:7) { ForEach([("all","All"),("gpu","GPU"),("dram","Memory"),("keyboard","Keyboards"),("mouse","Mice"),("cooler","Cooling"),("usb","USB")],id:\.0) { key,label in Button { center.filter=key } label: { Text(label).font(.system(size:10,weight:.medium)).padding(.horizontal,12).padding(.vertical,8).background(center.filter == key ? CenterTheme.accent.opacity(0.12) : CenterTheme.surface).clipShape(Capsule()).foregroundStyle(center.filter == key ? CenterTheme.accent : CenterTheme.muted) }.buttonStyle(PressFeedbackStyle()) } } };Button("Refresh",action:center.discover).disabled(center.busy || !center.online) }
+            HStack { ScrollView(.horizontal,showsIndicators:false) { HStack(spacing:7) { ForEach([("all","All"),("gpu","GPU"),("dram","Memory"),("keyboard","Keyboards"),("mouse","Mice"),("cooler","Cooling"),("mainboard","Mainboards"),("controller","Controllers"),("usb","USB")],id:\.0) { key,label in Button { center.filter=key } label: { Text(label).font(.system(size:10,weight:.medium)).padding(.horizontal,12).padding(.vertical,8).background(center.filter == key ? CenterTheme.accent.opacity(0.12) : CenterTheme.surface).clipShape(Capsule()).foregroundStyle(center.filter == key ? CenterTheme.accent : CenterTheme.muted) }.buttonStyle(PressFeedbackStyle()) } } };Button("Refresh",action:center.discover).disabled(center.busy || !center.online) }
             grid(center.visible)
             if center.visible.isEmpty { emptyState }
             Text("Select controllable cards to include them in a scene. Detected-only devices are shown for inventory and driver development; recognition does not enable writes.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
@@ -292,7 +296,7 @@ struct CenterWorkspace:View {
                     if !["static","gradient"].contains(center.scene.mode) { HStack { Text("Speed").frame(width:75,alignment:.leading);Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
                     Picker("Spatial axis",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented)
                     HStack { CenterAction(title:"Start scene",symbol:"play.fill",action:center.apply).disabled(!center.online || center.busy || !center.sceneCompatible);Button("Stop",action:center.stop).disabled(!center.state.running || center.busy);Button("Blackout",action:center.blackout).disabled(center.selected.isEmpty || center.busy);Spacer();Text("\(center.selected.count) TARGETS").font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
-                    if !center.sceneCompatible && !center.selected.isEmpty { Text("This scene needs Direct-mode devices. Native GPUs can join shared Static scenes and three-zone Gradient; use GPU Lab for their onboard animated effects.").font(.system(size:11)).foregroundStyle(.orange) }
+                    if !center.sceneCompatible && !center.selected.isEmpty { Text("This scene needs Direct-mode devices. Static-only native controllers can join Static and supported Gradient scenes; use GPU Lab for onboard GPU effects.").font(.system(size:11)).foregroundStyle(.orange) }
                     Text(center.state.message).font(.system(size:10)).foregroundStyle(CenterTheme.muted)
                 }
             }
@@ -323,7 +327,7 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Backend connections",title:"Connections",subtitle:"Hardware adapters stay separate from the shared engine. All Core API access remains on this Mac.")
             CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("OpenRGB bridge",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("127.0.0.1 : 6742").font(.system(size:20,weight:.medium,design:.monospaced));Text("Enable the SDK server in OpenRGB, then discover devices. Keyboards, mice, DRAM, USB coolers and controllers can be controlled when that server provides a working Direct-mode device. The OpenRGB device catalog alone does not prove macOS compatibility.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Connect & discover",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
-            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"pcicard").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("DRAM / native USB: inventory is available; additional host transports and device-specific protocols remain development work.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
+            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"pcicard").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other USB families need an adapter or OpenRGB bridge. DRAM host-SMBus access remains development work.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
             CenterPanel { VStack(alignment:.leading,spacing:12) { Label("Private local Core",systemImage:"lock.shield").font(.headline);Text("The API uses a per-process credential and binds only to 127.0.0.1. No LAN listener, cloud account or Android access is enabled. Saved scenes stay in Documents/HackinFX. The engine stops when HackinFX quits.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
         }
     }
@@ -338,6 +342,8 @@ private struct CenterDeviceInspector:View {
             Text(device.name).font(.system(size:23,weight:.semibold,design:.rounded))
             Text(device.vendor+" · "+device.categoryLabel).foregroundStyle(CenterTheme.muted)
             Divider()
+            if let usb=device.usb_id { Text("USB ID · "+usb).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+            if let matches=device.catalog_matches,!matches.isEmpty { Text("OpenRGB identities: "+matches.joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
             Text(device.detail).font(.system(size:12)).fixedSize(horizontal:false,vertical:true)
             Label(device.direct ? "Direct per-LED scene streaming" : device.controllable ? "Static scenes and supported native effects" : "Lighting control unavailable",systemImage:device.controllable ? "checkmark.circle" : "info.circle").font(.system(size:12)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted)
             if let zones=device.zones,!zones.isEmpty { Text("ZONES").font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);ForEach(Array(zones.prefix(8).enumerated()),id:\.offset) { _,zone in HStack { Text(zone.name);Spacer();Text("\(zone.led_count) LEDs").foregroundStyle(CenterTheme.muted) }.font(.system(size:11)) } }
@@ -359,5 +365,27 @@ extension CenterModel {
         ]
         state=CenterState(schema:1,devices:fixtures,layout:Dictionary(uniqueKeysWithValues:fixtures.enumerated().map { i,d in (d.id,CenterPosition(x:Double(i+1)/5,y:0.5,width:0.2)) }),scene:CenterScene(),running:false,frames:0,errors:[],bridge:"connected",scenes:[SavedCenterScene(name:"Evening",config:CenterScene())],message:"SAMPLE DATA — design validation only")
         selected=["sample:keyboard","sample:cooler"];online=true
+    }
+}
+
+struct PeripheralDiagnostics:View {
+    @ObservedObject var center:CenterModel
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            HStack { Text("USB & lighting controllers").font(.headline);Spacer();Button(center.busy ? "Scanning…" : "Refresh peripherals",action:center.discover).disabled(center.busy || !center.online) }
+            Text("Native IOKit inventory and OpenRGB identities. Refresh stops the current scene. Detection and catalog matches are separate from verified lighting control.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            ForEach(center.state.devices.filter { $0.backend != "native" }) { device in
+                HStack(alignment:.top,spacing:11) {
+                    Image(systemName:device.symbol).foregroundStyle(CenterTheme.aqua).frame(width:19)
+                    VStack(alignment:.leading,spacing:4) {
+                        Text(device.name).font(.system(size:12,weight:.medium))
+                        Text([device.vendor,device.usb_id ?? "",device.driver ?? device.backend].filter { !$0.isEmpty }.joined(separator:" · ")).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted)
+                        if device.status == "access-required" { Text(device.detail).font(.system(size:10)).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true) }
+                    }
+                    Spacer();CenterBadge(text:device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable)
+                }.padding(.vertical,6)
+            }
+            if center.state.devices.isEmpty { Text("No Core inventory yet. Start Core and discover devices in Overview.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+        }.padding(22).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:16))
     }
 }

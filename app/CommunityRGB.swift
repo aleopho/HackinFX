@@ -384,7 +384,7 @@ final class Model: ObservableObject {
         report["community_notes"] = ["exact_card_model": boardLabel, "observed_behavior": observedBehavior, "reported_board_vendor": manualVendor, "reported_exact_model": manualModel, "identity_source": identitySource]
         report["setup"] = ["outcome": setupState, "successful_test_steps": testStep, "transport_test_completed": testTransportOK, "visual_confirmation": setupState == "confirmed", "confirmation_source": confirmationSource] as [String: Any]
         var setup = report["setup"] as? [String:Any] ?? [:]
-        setup["control_center"] = ["online":center.online,"bridge":center.state.bridge,"running":center.state.running,"frames_sent":center.state.frames,"errors":center.state.errors.map { $0.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~") },"detected_count":center.state.devices.count,"devices":center.state.devices.prefix(32).map { ["name":$0.name,"vendor":$0.vendor,"category":$0.category,"backend":$0.backend,"status":$0.status,"led_count":$0.led_count,"direct":$0.direct] as [String:Any] }] as [String:Any]
+        setup["control_center"] = ["online":center.online,"bridge":center.state.bridge,"running":center.state.running,"frames_sent":center.state.frames,"errors":center.state.errors.map { $0.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~") },"detected_count":center.state.devices.count,"devices":center.state.devices.prefix(32).map { ["name":$0.name,"vendor":$0.vendor,"category":$0.category,"backend":$0.backend,"status":$0.status,"led_count":$0.led_count,"direct":$0.direct,"usb_id":$0.usb_id ?? "","driver":$0.driver ?? "","catalog_matches":$0.catalog_matches ?? []] as [String:Any] }] as [String:Any]
         report["setup"] = setup
         report["lighting_evidence"] = lightingEvidence
         if setupState == "confirmed" { report["led_availability"] = "User-confirmed basic RGB (\(confirmationSource))" }
@@ -742,6 +742,7 @@ struct Community: View {
                     Text("Exports PCI IDs, model labels, driver versions and query logs. No serial numbers, hostname, raw device tree or kernel addresses. No automatic uploads.").font(.system(size: 10)).foregroundColor(muted)
                 }
             }
+            PeripheralDiagnostics(center:model.center)
             ForEach(model.adapters) { gpu in
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
@@ -819,7 +820,7 @@ struct Credits: View {
                     Link("NullMoth / project and license", destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
                     Divider()
                     Text("OpenRGB").font(.headline)
-                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. The source is GPL-2.0-or-later. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. GPL version 2 compatible; per-file licenses are retained. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
                     Link("OpenRGB / PNY controller", destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
                     Divider()
                     Text("NVIDIA").font(.headline)
@@ -914,14 +915,19 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     var scanItem: NSMenuItem!
     var sceneStopItem:NSMenuItem!
     var sceneBlackoutItem:NSMenuItem!
-    static func menuGPUImage() -> NSImage {
-        let image = NSImage(size:NSSize(width:26,height:18),flipped:false) { _ in
-            NSColor.black.setStroke()
-            let body = NSBezierPath(roundedRect:NSRect(x:4,y:4,width:21,height:12),xRadius:1.8,yRadius:1.8); body.lineWidth = 0.9; body.stroke()
-            for x in [10.0,19.0] { let fan = NSBezierPath(ovalIn:NSRect(x:x-3.3,y:6.7,width:6.6,height:6.6)); fan.lineWidth=0.8; fan.stroke(); let hub=NSBezierPath(ovalIn:NSRect(x:x-0.8,y:9.2,width:1.6,height:1.6));hub.lineWidth=0.7;hub.stroke() }
-            let edge=NSBezierPath();edge.lineWidth=0.9;edge.move(to:NSPoint(x:2,y:3));edge.line(to:NSPoint(x:2,y:17));edge.move(to:NSPoint(x:6,y:2));edge.line(to:NSPoint(x:17,y:2));edge.stroke()
-            return true
-        }; image.isTemplate=true; image.accessibilityDescription="HackinFX GPU"; return image
+    static func menuFanImage() -> NSImage {
+        let image=NSImage(size:NSSize(width:20,height:20),flipped:false) { _ in
+            let center=NSPoint(x:10,y:10)
+            for index in 0..<48 {
+                NSColor(calibratedHue:CGFloat(index)/48,saturation:0.63,brightness:0.86,alpha:0.95).setStroke()
+                let arc=NSBezierPath();arc.lineWidth=1.1;arc.appendArc(withCenter:center,radius:7.6,startAngle:CGFloat(index)*7.5,endAngle:CGFloat(index+1)*7.5);arc.stroke()
+            }
+            NSColor.labelColor.withAlphaComponent(0.9).setStroke()
+            for index in 0..<7 {
+                let blade=NSBezierPath();blade.move(to:NSPoint(x:11.1,y:8.7));blade.curve(to:NSPoint(x:15.3,y:6.8),controlPoint1:NSPoint(x:12.3,y:6.2),controlPoint2:NSPoint(x:13.9,y:5.4));blade.curve(to:NSPoint(x:15.3,y:10.5),controlPoint1:NSPoint(x:16.3,y:7.8),controlPoint2:NSPoint(x:16.6,y:9.5));blade.curve(to:NSPoint(x:11.5,y:10.9),controlPoint1:NSPoint(x:14.2,y:11.6),controlPoint2:NSPoint(x:12.5,y:10.5));blade.close();var transform=AffineTransform();transform.translate(x:10,y:10);transform.rotate(byDegrees:CGFloat(index)*360/7);transform.translate(x:-10,y:-10);blade.transform(using:transform);blade.lineWidth=0.65;blade.stroke()
+            }
+            let hub=NSBezierPath(ovalIn:NSRect(x:8.4,y:8.4,width:3.2,height:3.2));hub.lineWidth=0.7;hub.stroke();return true
+        };image.isTemplate=false;image.accessibilityDescription="HackinFX RGB fan";return image
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(contentRect: NSRect(x:0,y:0,width:1180,height:860), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
@@ -933,7 +939,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         window.contentView = NSHostingView(rootView: Root(model:model))
         window.center()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = Self.menuGPUImage()
+        statusItem.button?.image = Self.menuFanImage()
         statusItem.button?.title = " FX"
         statusItem.button?.toolTip = "HackinFX — Control Center"
         let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false

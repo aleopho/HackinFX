@@ -26,3 +26,6 @@ build/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Pinned OpenRGB source snapshot for offline USB identity imports
+!vendor/openrgb/usb-sources.zip

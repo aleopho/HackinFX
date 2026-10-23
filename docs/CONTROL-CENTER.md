@@ -6,7 +6,7 @@ This branch expands the x86-64/macOS 15 app from a GPU panel into a device works
 
 - The native SwiftUI/AppKit application manages a separate Python Core process. It remains alive with the menu-bar app and stops at app quit; an owner-process watchdog also stops an orphaned Core. No launch daemon, kernel extension or system helper is installed.
 - Core owns device discovery, capability routing, shared scene rendering, local scene storage and device placement. The API is versioned under `/v1`, binds only to 127.0.0.1 on an ephemeral port, rejects browser Origins/foreign Hosts and requires a random per-process credential. Discovery credentials are stored in a mode-0600 file inside a private Core directory, not exported in reports. Android/LAN access is not enabled.
-- Native NVIDIA and OpenRGB are separate functional adapters. USB and DRAM inventory never inherits control access from a vendor/model match.
+- Native NVIDIA and OpenRGB are separate functional adapters. Native USB/HID now has a signed IOKit transport with HID LampArray, ASUS Spatha X and NZXT Kraken X2/M2 lighting paths. USB and DRAM inventory never inherits control access from a vendor/model match. See [USB-LIGHTING.md](USB-LIGHTING.md) for the imported identity catalog and hardware validation limits.
 
 ## OpenRGB bridge
 
@@ -35,9 +35,9 @@ The new interface contains Overview, Devices, Scenes, Layout, Connections, GPU L
 | Device class | Current control path | Native work still required |
 | --- | --- | --- |
 | NVIDIA GPU | Existing confirmed native profiles; static shared scenes | More native controller families and validated streaming |
-| Keyboards / mice / USB coolers | OpenRGB Direct-mode bridge when working on macOS | Native HID/USB device-specific adapters |
+| Keyboards / mice / USB coolers | Native HID LampArray, ASUS Spatha X, NZXT Kraken X2/M2; OpenRGB bridge for other working controllers | Additional USB families and physical validation |
 | DRAM | Passive macOS inventory; OpenRGB bridge if a working RAM controller is exposed | A documented macOS host-SMBus transport and exact controller validation |
-| Lighting controllers / strips | OpenRGB Direct-mode bridge | Additional native transports |
+| Mainboards / lighting controllers / strips | Native HID LampArray when implemented by firmware; OpenRGB bridge | Additional vendor protocols |
 
 The Corsair RAM inventory prototype remains read-only. It has not changed any memory lighting. No SPD writes, bus-address sweeps or unreviewed kernel driver installation are implemented.
 

@@ -24,3 +24,13 @@ assert 'com.apple.security.application-groups' not in entitlements
 assert not (app/'Resources/Source/Widget/build').exists()
 assert json.loads((app/'Resources/openrgb_gpu_catalog.json').read_text())['schema_version']==1
 print('WidgetKit bundle identity, snapshot scope, preserved entitlements and host URL scheme verified')
+
+helper=app/'Resources/HackinFXHID'
+assert helper.is_file()
+assert subprocess.check_output(['/usr/bin/lipo','-archs',str(helper)],text=True).strip()=='x86_64'
+subprocess.run(['/usr/bin/codesign','--verify','--strict',str(helper)],check=True)
+assert (app/'Resources/Source/HIDBridge.swift').is_file()
+usb=json.loads((app/'Resources/openrgb_usb_catalog.json').read_text())
+assert usb['schema']==1 and len(usb['entries'])>1000
+assert (app/'Resources/Source/vendor/openrgb/usb-sources.zip').is_file()
+print('Signed x86-64 HID helper and reproducible OpenRGB USB catalog included')
