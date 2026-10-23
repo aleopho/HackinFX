@@ -16,7 +16,7 @@ enum Lighting: String, CaseIterable, Identifiable {
     var backend: String { switch self { case .solid: return "static"; case .gradient: return "gradient"; case .cycle: return "cycle"; case .breath: return "breath"; case .wave: return "wave" } }
     var symbol: String { switch self { case .solid: return "circle.fill"; case .gradient: return "slider.horizontal.3"; case .cycle: return "circle.lefthalf.filled"; case .breath: return "waveform.path"; case .wave: return "water.waves" } }
     var detail: String { switch self {
-    case .solid: return "One color across the card. Verified on the tested PNY profile."
+    case .solid: return "One color across the card. Confirm the visible result on your GPU."
     case .gradient: return "A color blend across three controller zones. Appearance depends on the card."
     case .cycle: return "The onboard controller cycles through the color spectrum."
     case .breath: return "The onboard controller pulses the selected color."
@@ -92,6 +92,8 @@ final class Model: ObservableObject {
     var feedbackSave: DispatchWorkItem?
     var testStep = 0
     var pendingCommand = "Not applied"
+    var pendingWidgetColors: [String] = []
+    var pendingWidgetBrightness: Double = 0
     var lightingEvidence: [[String: Any]] = []
     var reportPreview: String { String(data: (try? JSONSerialization.data(withJSONObject: diagnosticPayload(), options: [.prettyPrinted, .sortedKeys])) ?? Data(), encoding: .utf8) ?? "" }
     var canControlLighting: Bool { configurationStatus == "supported" && setupState == "confirmed" }
@@ -103,7 +105,8 @@ final class Model: ObservableObject {
     func writeWidgetSnapshot() {
         let last = !fingerprint.isEmpty && UserDefaults.standard.string(forKey:"LastLightingFingerprint") == fingerprint ? (UserDefaults.standard.string(forKey:"LastLightingCommand") ?? "Not applied") : "Not applied"
         let folder = verificationStore.directory.appendingPathComponent("Widget",isDirectory:true)
-        let value = WidgetStatusSnapshot(gpuName:currentGPUName,boardVendor:currentBoardVendor,profileReady:canControlLighting,lastCommand:last,updatedAt:Date())
+        let sameGPU = !fingerprint.isEmpty && UserDefaults.standard.string(forKey:"LastLightingFingerprint") == fingerprint
+        let value = WidgetStatusSnapshot(gpuName:currentGPUName,boardVendor:currentBoardVendor,profileReady:canControlLighting,lastCommand:last,updatedAt:Date(),colors:sameGPU ? UserDefaults.standard.stringArray(forKey:"LastLightingColors") : nil,brightness:sameGPU ? UserDefaults.standard.object(forKey:"LastLightingBrightness") as? Double : nil)
         do {
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
             let encoder=JSONEncoder();encoder.dateEncodingStrategy = .iso8601
@@ -126,6 +129,8 @@ final class Model: ObservableObject {
         busy = true; lastSuccess = nil
         let selected = testEffect ?? (off ? "off" : effect.backend)
         pendingCommand = testEffect != nil ? testPlan[min(testStep,testPlan.count-1)].0 : (off ? "Off" : effect.rawValue)
+        pendingWidgetColors = testEffect != nil ? (selected == "gradient" ? ["ff0000","00ff00","0000ff"] : [testHex ?? "ff0000"]) : [hex(colorA),hex(colorB),hex(colorC)]
+        pendingWidgetBrightness = selected == "off" ? 0 : (testEffect != nil ? 50 : brightness)
         message = "Applying \(off ? "Off" : effect.rawValue) …"
         let resource = Bundle.main.resourceURL!
         let reports = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX/Reports", isDirectory: true)
@@ -158,7 +163,7 @@ final class Model: ObservableObject {
     }
     func finish(_ success: Bool, _ text: String) {
         busy = false; lastSuccess = success; message = text
-        if success { UserDefaults.standard.set(pendingCommand,forKey:"LastLightingCommand"); UserDefaults.standard.set(fingerprint,forKey:"LastLightingFingerprint") }
+        if success { UserDefaults.standard.set(pendingWidgetColors,forKey:"LastLightingColors"); UserDefaults.standard.set(pendingWidgetBrightness,forKey:"LastLightingBrightness"); UserDefaults.standard.set(pendingCommand,forKey:"LastLightingCommand"); UserDefaults.standard.set(fingerprint,forKey:"LastLightingFingerprint") }
         record("lighting", success ? "accepted" : "failed")
         if let url = lastReport, let bytes = try? Data(contentsOf: url), let report = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] {
             lightingEvidence.append(report)
@@ -703,7 +708,7 @@ struct Community: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Additional hardware").font(.headline)
-                    Text("Other models are not enabled. Each profile needs PCI IDs, a documented lighting controller and a verified transport. Unknown cards are never written to.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
+                    Text("Exact OpenRGB PNY Lovelace matches can run the lighting test through the NVIDIA transport. Community-tested status is added only after visual confirmation. Other NVIDIA controller families are still being ported.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
                 }
             }
             Text("This is the verified profile, not a live connection indicator.").font(.system(size: 11)).foregroundColor(muted)

@@ -14,7 +14,7 @@ This covers the selected upstream GPU detector families, not every peripheral su
 
 Exact tuples resolve to upstream names and candidate controllers. Reused PCI tuples retain all aliases/controllers and are marked ambiguous; an arbitrary precise marketing name is not invented. Unknown subsystem IDs do not inherit a close model. Known entries are displayed as catalog matches when a local macOS lighting module is missing.
 
-**Remaining RGB work:** only the previously validated local PNY profile can currently send commands. Upstream names/address registrations do not prove a working macOS transport, RM port mapping, controller identity or effects. Broad automatic testing needs controller modules and suitable native transports. A catalog match never bypasses those guards. This preview establishes broader identification and auditability; it is not the completed universal-light-test feature.
+**NVIDIA-first controller work:** exact, unambiguous OpenRGB PNY Lovelace registrations can now enter the existing NVIDIA/NullMoth lighting test with the shared PNY protocol. Only the original PNY card has been physically tested by the author; other entries are candidates until the user confirms the visible test. This is not yet cross-vendor NVIDIA RGB support. Upstream names/address registrations do not prove a working macOS transport, RM port mapping, controller identity or effects. Broad automatic testing needs controller modules and suitable native transports. A catalog match never bypasses those guards. This preview establishes broader identification and auditability; it is not the completed universal-light-test feature.
 
 Rebuild offline: python3 tools/import_openrgb_catalog.py. It rejects changed upstream inputs and unresolved numeric symbols instead of silently omitting registrations. It never executes C++ or downloads anything.
 
@@ -30,4 +30,6 @@ Ad-hoc WidgetKit gallery registration, snapshot access, timeline updates, deep l
 
 ## Checks
 
-46 Python tests cover transport/scanner and the catalog importer/lookup. 20 Swift assertions include profile/queue and widget snapshot handling. Backend tests remain separate. Native app/widget packaging is checked in GitHub Actions. No new GPU writes or physical controller tests were performed by this change.
+48 Python tests cover transport/scanner and the catalog importer/lookup. 20 Swift assertions include profile/queue and widget snapshot handling. Backend tests remain separate. Native app/widget packaging is checked in GitHub Actions. No new GPU writes or physical controller tests were performed by this change.
+
+The widget now displays the last successfully applied mode, its color palette, brightness and GPU model. Unapplied UI changes and failed commands do not change the snapshot. Spectrum/Wave use a schematic rainbow; this is not an animation or live LED readback.

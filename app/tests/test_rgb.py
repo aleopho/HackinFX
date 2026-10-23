@@ -139,3 +139,20 @@ class RGBTests(unittest.TestCase):
             profiles.select([dict(device, **{'subsystem-id': 0})])
         with self.assertRaises(ValueError):
             profiles.select([device,device])
+
+
+    def test_exact_pny_family_can_enter_test_without_claiming_user_verification(self):
+        import profiles
+        self.assertGreater(len(profiles.PROFILES), 1)
+        device = dict(zip(('vendor-id','device-id','subsystem-vendor-id','subsystem-id'), (0x10de,0x2684,0x196e,0x13ae)))
+        profile = profiles.select([device])
+        self.assertEqual(profile.address, 0x60)
+        self.assertEqual(profile.register, 2)
+        self.assertEqual(profile.port, 1)
+        self.assertIn('4090', profile.name)
+
+    def test_other_nvidia_controller_does_not_inherit_pny_packets(self):
+        import profiles
+        device = dict(zip(('vendor-id','device-id','subsystem-vendor-id','subsystem-id'), (0x10de,0x1b80,0x3842,0x6286)))
+        with self.assertRaises(ValueError):
+            profiles.select([device])

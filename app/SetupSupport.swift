@@ -100,4 +100,6 @@ struct WidgetStatusSnapshot: Codable {
     let profileReady: Bool
     let lastCommand: String
     let updatedAt: Date
+    var colors: [String]? = nil
+    var brightness: Double? = nil
 }

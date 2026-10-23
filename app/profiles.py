@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Verified device profiles. Add support only after controller/transport validation."""
+"""Executable controller profiles; a profile permits testing, not a claim of user verification."""
+import gpu_catalog
 from dataclasses import dataclass
 
 
@@ -17,8 +18,26 @@ class Profile:
         return tuple(device.get(key) for key in ('vendor-id', 'device-id', 'subsystem-vendor-id', 'subsystem-id')) == self.pci
 
 
-PROFILES = (Profile('pny-4080-196e-13bc', 'PNY XLR8 RTX 4080 VERTO',
-                    (0x10de, 0x2704, 0x196e, 0x13bc), 1, 0x60, 0x02, 3),)
+# This macOS transport implements the PNY Lovelace protocol only. Exact upstream
+# registrations sharing that implementation can enter the visual test. Never
+# infer write compatibility from a board vendor or GPU generation alone.
+def controller_profiles():
+    rows = gpu_catalog.load()[0]['pci_registrations']
+    result = {}
+    for row in rows:
+        if row['controller'] != 'PNYLovelaceGPUController' or row['address_7bit'] != 0x60:
+            continue
+        pci = tuple(int(value, 16) for value in row['pci'])
+        identity = gpu_catalog.identify(dict(zip(gpu_catalog.PCI_FIELDS,pci)))
+        if pci[0] != 0x10de or identity['controllers'] != ['PNYLovelaceGPUController']:
+            continue
+        key = 'pny-4080-196e-13bc' if pci == (0x10de,0x2704,0x196e,0x13bc) else 'pny-lovelace-' + '-'.join(row['pci'])
+        name = 'PNY XLR8 RTX 4080 VERTO' if pci == (0x10de,0x2704,0x196e,0x13bc) else row['name']
+        result[pci] = Profile(key,name,pci,1,0x60,0x02,3)
+    return tuple(result.values())
+
+
+PROFILES = controller_profiles()
 
 
 def select(devices):
@@ -26,5 +45,5 @@ def select(devices):
         raise ValueError('Exactly one NVRM-backed GPU required')
     matches = [profile for profile in PROFILES if profile.matches(devices[0])]
     if len(matches) != 1:
-        raise ValueError('No verified RGB profile for this PCI subsystem')
+        raise ValueError('No executable RGB controller for this exact PCI subsystem')
     return matches[0]

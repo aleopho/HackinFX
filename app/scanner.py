@@ -69,8 +69,8 @@ def lighting_configuration(adapters, inventory_failed=False, arch=None):
     if len(bound) != 1:
         return dict(status='unsupported', reason='Exactly one NVRM-bound display adapter is required')
     if bound[0]['rgb_support'] != 'verified-profile':
-        return dict(status='unsupported', reason='No verified lighting profile for the NVRM-bound adapter')
-    return dict(status='supported', reason='Verified PCI profile and NVRM binding found', profile=bound[0]['verified_profile'])
+        return dict(status='unsupported', reason='No macOS lighting controller for the NVRM-bound adapter')
+    return dict(status='supported', reason='Exact OpenRGB controller profile and NVRM binding found; visual confirmation required', profile=bound[0]['verified_profile'])
 
 
 def collect(run=subprocess.run):
