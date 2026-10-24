@@ -2,6 +2,8 @@
 """Native lighting-only IOKit adapters and pinned OpenRGB USB identity catalog."""
 import base64,collections,hashlib,json,os,select,struct,subprocess,threading,time
 from pathlib import Path
+import radius_protocol
+import asus_keyboard
 
 class HIDError(ValueError):pass
 
@@ -57,8 +59,8 @@ def lamp_descriptor(data):
     return {c:dict(id=reports[c],size=offsets[reports[c]]//8+1) for c in expected}
 
 class HIDTransport:
-    def __init__(self,executable=None):
-        self.executable=Path(executable) if executable else Path(__file__).with_name('HackinFXHID');self.process=None;self.lock=threading.RLock()
+    def __init__(self,executable=None,timeout=4):
+        self.executable=Path(executable) if executable else Path(__file__).with_name('HackinFXHID');self.process=None;self.lock=threading.RLock();self.timeout=timeout
     def call(self,value):
         with self.lock:
             if self.process is None or self.process.poll() is not None:
@@ -67,7 +69,7 @@ class HIDTransport:
             data=json.dumps(value).encode()+b'\n'
             if len(data)>65536:raise HIDError('HID request too large')
             try:
-                self.process.stdin.write(data);self.process.stdin.flush();output=bytearray();deadline=time.monotonic()+4
+                self.process.stdin.write(data);self.process.stdin.flush();output=bytearray();deadline=time.monotonic()+self.timeout
                 while b'\n' not in output:
                     if time.monotonic()>=deadline or not select.select([self.process.stdout],[],[],max(0,deadline-time.monotonic()))[0]:raise TimeoutError('HID transport timed out')
                     part=os.read(self.process.stdout.fileno(),65536)
@@ -86,6 +88,9 @@ class HIDTransport:
         return data
     def send(self,handle,packet,feature=False):
         return self.call(dict(command='feature_set' if feature else 'output',handle=handle,report_id=packet[0],data=base64.b64encode(packet).decode()))
+    def exchange(self,handle,packet):
+        reply=self.call(dict(command='exchange',handle=handle,report_id=packet[0],data=base64.b64encode(packet).decode()))
+        return base64.b64decode(reply['data'],validate=True)
     def close(self):
         if self.process:
             self.process.terminate()
@@ -119,9 +124,28 @@ class NativeUSBAdapter:
     def discover(self):
         self.release();self.transport.close();snapshot=self.transport.inventory();self.records={};rows=[];claimed=set();groups=collections.defaultdict(list)
         for record in snapshot['devices']:groups[record['physical_id']].append(record)
+        keyboards={}
+        for physical,records in groups.items():
+            candidates=[r for r in records if r['vendor_id']==0x0b05 and r['product_id'] in (0x1ace,0x1aae) and r['usage_page']>=0xff00 and r.get('descriptor')]
+            if candidates:
+                candidate=sorted(candidates,key=lambda r:r['usage_page']!=0xff02)[0]
+                try:keyboards[physical]=dict(record=candidate,paired=asus_keyboard.discover(self.transport,candidate),error='')
+                except Exception as exc:keyboards[physical]=dict(record=candidate,paired=None,error=str(exc))
         for record in snapshot['devices']:
+            keyboard=keyboards.get(record['physical_id'])
+            if keyboard and keyboard['record']['handle']!=record['handle']:continue
             vid,pid,page,handle=record['vendor_id'],record['product_id'],record['usage_page'],record['handle'];kind=None;count=0;category='usb';reports=None;status='ready';detail='Native lighting transport; confirm the visible result on your hardware.';direct=False
-            if page==0x59 and record['usage']==1:
+            if keyboard:
+                kind='asus-keyboard';count=1;category='keyboard';direct=False
+                if keyboard['error']:status='setup-required';detail=keyboard['error']
+                else:detail='Native ASUS OMNI keyboard hardware effects. Static, Breathing and Spectrum; no device profile saves. Onboard effects do not share the host animation clock.'
+            elif vid==0x36bc and pid==0x1003 and page==0xff00 and record['usage']==1 and record.get('interface')==0:
+                kind='radius';category='cooler';record['radius']=radius_protocol.Radius(self.transport,handle)
+                try:
+                    record['radius_zones']=record['radius'].discover();count=sum(z['count'] for z in record['radius_zones']);direct=True;record['interval']=.05
+                    detail='Fractal Radius pump and configured fan RGB zones. Every lighting packet is acknowledged; no PWM, firmware, flash or port-resize commands.'
+                except Exception as exc:status='setup-required';detail=str(exc)
+            elif page==0x59 and record['usage']==1:
                 kind='lamp';direct=True
                 try:
                     reports=lamp_descriptor(base64.b64decode(record['descriptor'],validate=True));attributes=self.transport.get(handle,reports[2]);count=struct.unpack_from('<H',attributes,1)[0];array_kind=struct.unpack_from('<I',attributes,15)[0]
@@ -139,15 +163,21 @@ class NativeUSBAdapter:
             elif vid==0x1e71 and pid in (0x170e,0x1715) and page>=0xff00:
                 kind='kraken-x2';count=9;category='cooler';direct=True;record['interval']=.1
             if not kind:continue
-            if kind!='lamp':
+            if kind not in ('lamp','radius','asus-keyboard'):
                 try:self.transport.check(handle)
                 except Exception as exc:status='access-required';direct=False;detail=str(exc)
             # A single physical collection is exposed once; no duplicate input interfaces.
             key='hid:'+handle;identity=hashlib.sha256(repr((vid,pid,page,category,count)).encode()).hexdigest()[:24]
             matches=self.catalog.match(vid,pid);names=sorted(set(r['name'] for r in matches if r['enabled']))
             name='ASUS ROG Spatha X'+(' · Wireless' if pid==0x1979 else ' · USB') if kind=='asus-spatha' else record['name'].strip() or (names[0] if len(names)==1 else 'HID lighting device')
+            if kind=='radius':name='Fractal Design Radius'
+            if kind=='asus-keyboard':name=keyboard['paired']['name'] if keyboard['paired'] else 'ASUS ROG Keyboard · OMNI'
             if kind=='lamp':name+= ' · '+('Keyboard' if category=='keyboard' else 'LampArray')
             row=dict(id=key,fingerprint=identity,name=name,vendor='ASUS' if vid==0x0b05 else 'GIGABYTE / ITE' if vid==0x048d else record['vendor'],category=category,backend=self.name,led_count=count,direct=direct,controllable=count>0 and status=='ready',status=status,detail=detail,static_modes=['static','gradient'],zones=[dict(name='LampArray' if kind=='lamp' else 'Lighting',led_count=count)],modes=[],usb_id='%04x:%04x'%(vid,pid),catalog_matches=names[:12],ownership_names=[record['name'].strip()]+[name for name in names if kind!='asus-spatha' or 'dock' not in name.lower()],driver=kind)
+            if kind=='radius':row['zones']=[dict(name='Pump' if z['id']==1 else 'Fan RGB %02X'%z['id'],led_count=z['count']) for z in record.get('radius_zones',[])]
+            if kind=='asus-keyboard':
+                row.update(static_modes=['static','breathing','spectrum'],onboard_modes=['breathing','spectrum'])
+                row['zones']=[dict(name='Whole keyboard (onboard effects)',led_count=1)]
             rows.append(row);claimed.add(record['physical_id']);self.records[key]=dict(record,kind=kind,reports=reports,count=count)
         usb={r['physical_id']:r for r in snapshot.get('usb',[])}
         for physical,records in groups.items():
@@ -176,6 +206,11 @@ class NativeUSBAdapter:
     def write_frame(self,device,colors,mode):
         key=device['id'];record=self.records[key]
         if key not in self.active or len(colors)!=record['count']:raise HIDError('Native device requires activation / exact color count')
+        if record['kind']=='radius':
+            record['radius'].write(colors);return
+        if record['kind']=='asus-keyboard':
+            brightness=round(device.get('scene_brightness',100)) if mode=='spectrum' else 100
+            self.transport.send(record['handle'],asus_keyboard.effect_packet(mode,colors[0],brightness,record.get('keyboard_report_id',2),record.get('keyboard_length',64)));return
         if record['kind']=='asus-spatha':
             for zone,rgb in enumerate(colors):self.transport.send(record['handle'],asus_mouse_packet(zone,rgb))
             return

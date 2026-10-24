@@ -13,6 +13,7 @@ import time
 import uuid
 import center_sdk
 import usb_devices
+import ram_control
 
 
 def atomic_json(path,value,mode=0o600):
@@ -159,7 +160,7 @@ class Center:
     def __init__(self,store,profiles_dir,sdk=None,native=None,adapters=None):
         self.store=Path(store);self.sdk=sdk or center_sdk.SDKClient();self.native=native or NativeGPU(profiles_dir)
         defaults=[OpenRGBAdapter(self.sdk),NativeGPUAdapter(self.native)]
-        if sdk is None and native is None:defaults.append(usb_devices.NativeUSBAdapter())
+        if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
         self.devices=[];self.layout={};self.scene=scene_config({});self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={}
@@ -201,7 +202,7 @@ class Center:
                     import ram_probe
                     result=subprocess.run(['/usr/sbin/system_profiler','SPUSBDataType','SPMemoryDataType','-json'],capture_output=True,check=True,timeout=35)
                     tree=json.loads(result.stdout)
-                    passive=([] if any(name=='native-usb' for name in self.registry.adapters) and any(d['backend'] in ('native-usb','inventory') for d in rows) else project_usb(tree))+[dict(name=d.get('part_number','Memory module')+' · '+d.get('size',''),vendor=d.get('manufacturer',''),category='dram') for d in ram_probe.modules(tree)]
+                    passive=([] if any(name=='native-usb' for name in self.registry.adapters) and any(d['backend'] in ('native-usb','inventory') for d in rows) else project_usb(tree))+[dict(name=d.get('part_number','Memory module')+' · '+d.get('size',''),vendor=d.get('manufacturer',''),category='dram') for d in ([] if 'native-ram' in self.registry.adapters else ram_probe.modules(tree))]
                     # Inventory entries never inherit write access from a similar name.
                     for i,d in enumerate(passive):
                         d.update(id='inventory:'+self.generation+':'+str(i),fingerprint='',backend='inventory',led_count=0,zones=[],modes=[],direct=False,controllable=False,static_modes=[],status='inventory-only',detail='Detected by macOS. No direct native controller implemented; a matching OpenRGB device may appear separately.')
@@ -220,6 +221,13 @@ class Center:
             if worker and worker is not threading.current_thread():worker.join(timeout=35)
             if worker and worker.is_alive():raise RuntimeError('A controller is still responding; retry after it stops')
             with self.lock:self.running=False;self.worker=None
+    def probe_ram(self):
+        with self.operation:
+            self.stop()
+            adapter=self.registry.adapters.get('native-ram')
+            if adapter is None:raise ValueError('Native RAM adapter is unavailable')
+            adapter.probe()
+            return self.refresh()
     def start(self,value):
         with self.operation:
             config=scene_config(value.get('config',{}));ids=value.get('devices',[])
@@ -229,14 +237,18 @@ class Center:
                 for key in ids:
                     target=next((d for d in self.devices if d['id']==key),None)
                     if not target or not target['controllable']:raise ValueError('A selected device is not controllable; refresh or complete its setup')
-                    if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('A selected device supports Static/Gradient only. Deselect it for host-streamed animation.')
-                    targets.append(dict(target))
+                    if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('A selected device cannot play this effect. Select only compatible targets.')
+                    targets.append(dict(target,scene_brightness=config['brightness']))
                 if sum(d['led_count'] for d in targets)>16384:raise ValueError('Scene exceeds the 16,384 LED limit')
             self.stop();self.stop_event=threading.Event()
             # Selecting Direct/Custom is a hardware action, only after explicit Start.
             for target in targets:
                 try:self.registry.activate(target)
                 except Exception:
+                    for adapter in self.registry.adapters.values():
+                        if hasattr(adapter,'release'):
+                            try:adapter.release()
+                            except Exception:pass
                     self.message='Could not activate all targets. Some devices may already be in Direct mode.'
                     raise
             with self.lock:self.scene=config;self.running=True;self.frames=0;self.errors=[];self.message='Scene active; commands sent, not live LED readback'
@@ -250,16 +262,22 @@ class Center:
                 for target in list(active):
                     if event.is_set():break
                     try:
-                        colors=frame(config,target['led_count'],self.layout[target['id']],elapsed)
+                        colors=frame(dict(config,mode='static') if config['mode'] in target.get('onboard_modes',[]) else config,target['led_count'],self.layout[target['id']],elapsed)
                         self.registry.write_frame(target,colors,config['mode'])
+                        if config['mode'] in target.get('onboard_modes',[]):active.remove(target)
                     except Exception as exc:
                         active.remove(target)
-                        with self.lock:self.errors=(self.errors+[target['name']+': '+str(exc)])[-12:]
+                        with self.lock:
+                            self.errors=(self.errors+[target['name']+': '+str(exc)])[-12:]
+                            for device in self.devices:
+                                if device['id']==target['id']:device.update(status='command-failed',controllable=False,detail=str(exc))
                 with self.lock:self.frames+=1
                 if not animated:break
                 event.wait(max(0,0.05-(time.monotonic()-tick)))
         finally:
-            with self.lock:self.running=False;self.message='Animation stopped; hardware keeps its last color. Use Blackout to send black.' if animated else 'Static scene sent; hardware keeps the applied colors.'
+            with self.lock:
+                self.running=False
+                self.message='Scene ended with device errors. Inspect the device details and rediscover before retrying.' if self.errors else 'Host animation stopped; onboard effects continue until changed. Blackout sends black.' if animated else 'Scene commands sent. Onboard effects continue until changed; Blackout sends black.'
     def set_layout(self,values):
         if not isinstance(values,dict) or len(values)>192:raise ValueError('Invalid layout')
         with self.operation:

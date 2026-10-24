@@ -36,10 +36,10 @@ The new interface contains Overview, Devices, Scenes, Layout, Connections, GPU L
 | --- | --- | --- |
 | NVIDIA GPU | Existing confirmed native profiles; static shared scenes | More native controller families and validated streaming |
 | Keyboards / mice / USB coolers | Native HID LampArray, ASUS Spatha X, NZXT Kraken X2/M2; OpenRGB bridge for other working controllers | Additional USB families and physical validation |
-| DRAM | Passive macOS inventory; OpenRGB bridge if a working RAM controller is exposed | A documented macOS host-SMBus transport and exact controller validation |
+| DRAM | Scoped native Corsair Titanium / Intel 8086:7f23 Static adapter, requiring macUSPCIO and explicit probe; OpenRGB bridge | Driver installation/reboot and real RAM validation; more host families |
 | Mainboards / lighting controllers / strips | Native HID LampArray when implemented by firmware; OpenRGB bridge | Additional vendor protocols |
 
-The Corsair RAM inventory prototype remains read-only. It has not changed any memory lighting. No SPD writes, bus-address sweeps or unreviewed kernel driver installation are implemented.
+The initial native Corsair Titanium DDR5 adapter supports explicit identity/CRC probe and one Static color per DIMM on the exact Intel 8086:7f23 host, after separate macUSPCIO setup. Discovery stays preflight-only. The driver is missing on this host and RAM colors have not been physically tested. See RAM-SETUP.md; no kernel driver is installed automatically.
 
 The real WidgetKit diagnostics from the earlier branch remain available, but its desktop failure is unresolved and is not a prerequisite for using the new Core. There is no floating-window widget substitute.
 

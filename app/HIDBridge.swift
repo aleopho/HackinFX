@@ -23,10 +23,17 @@ func deviceList()->[IOHIDDevice] {
     IOHIDManagerSetDeviceMatching(manager,nil)
     return Array((IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []).sorted { entryID(IOHIDDeviceGetService($0)) < entryID(IOHIDDeviceGetService($1)) }
 }
+func interfaceNumber(_ device:IOHIDDevice)->Int {
+    var current=IOHIDDeviceGetService(device);IOObjectRetain(current);defer { IOObjectRelease(current) }
+    for _ in 0..<16 {
+        if let value=IORegistryEntryCreateCFProperty(current,"bInterfaceNumber" as CFString,kCFAllocatorDefault,0)?.takeRetainedValue() as? NSNumber { return value.intValue }
+        var parent:io_registry_entry_t=0;guard IORegistryEntryGetParentEntry(current,kIOServicePlane,&parent)==KERN_SUCCESS else { break };IOObjectRelease(current);current=parent
+    };return -1
+}
 func inventory(_ devices:[IOHIDDevice])->[[String:Any]] {
     devices.prefix(256).map { device in
-        var row:[String:Any]=["handle":entryID(IOHIDDeviceGetService(device)),"physical_id":parentUSB(device),"vendor_id":integer(device,"VendorID"),"product_id":integer(device,"ProductID"),"name":text(device,"Product"),"vendor":text(device,"Manufacturer"),"usage_page":integer(device,"PrimaryUsagePage"),"usage":integer(device,"PrimaryUsage"),"transport":text(device,"Transport")]
-        if integer(device,"PrimaryUsagePage")==0x59,let descriptor=property(device,"ReportDescriptor") as? Data,descriptor.count<=16384 { row["descriptor"]=descriptor.base64EncodedString() }
+        var row:[String:Any]=["handle":entryID(IOHIDDeviceGetService(device)),"physical_id":parentUSB(device),"vendor_id":integer(device,"VendorID"),"product_id":integer(device,"ProductID"),"name":text(device,"Product"),"vendor":text(device,"Manufacturer"),"usage_page":integer(device,"PrimaryUsagePage"),"usage":integer(device,"PrimaryUsage"),"transport":text(device,"Transport"),"interface":interfaceNumber(device)]
+        if integer(device,"PrimaryUsagePage")==0x59 || integer(device,"VendorID")==0x0b05,let descriptor=property(device,"ReportDescriptor") as? Data,descriptor.count<=16384 { row["descriptor"]=descriptor.base64EncodedString() }
         return row
     }
 }
@@ -42,6 +49,34 @@ func usbInventory()->[[String:Any]] {
     }
     return rows
 }
+final class LightingReply {
+    let prefix:[UInt8];var bytes:[UInt8]?
+    init(_ prefix:[UInt8]) { self.prefix=prefix }
+}
+func lightingExchange(_ device:IOHIDDevice,_ packet:[UInt8])throws->[UInt8] {
+    let state=LightingReply(Array(packet.prefix(3)))
+    let buffer=UnsafeMutablePointer<UInt8>.allocate(capacity:512);defer { buffer.deallocate() }
+    let loop=CFRunLoopGetCurrent()!
+    IOHIDDeviceRegisterInputReportCallback(device,buffer,512,{ context,result,_,_,_,report,length in
+        guard result==kIOReturnSuccess,let context=context,length>0,length<=512 else { return }
+        let state=Unmanaged<LightingReply>.fromOpaque(context).takeUnretainedValue()
+        var bytes=Array(UnsafeBufferPointer(start:report,count:length))
+        if state.prefix.first==0 { bytes.insert(0,at:0) }
+        if bytes.count>=3 && Array(bytes.prefix(3))==state.prefix { state.bytes=bytes }
+    },Unmanaged.passUnretained(state).toOpaque())
+    IOHIDDeviceScheduleWithRunLoop(device,loop,CFRunLoopMode.defaultMode.rawValue)
+    defer {
+        IOHIDDeviceUnscheduleFromRunLoop(device,loop,CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceRegisterInputReportCallback(device,buffer,512,nil,nil)
+    }
+    var bytes=packet;let id=bytes[0];if id==0 { bytes.removeFirst() }
+    let result=IOHIDDeviceSetReport(device,kIOHIDReportTypeOutput,CFIndex(id),bytes,bytes.count)
+    guard result==kIOReturnSuccess else { try fail("Lighting request failed (\(result))") }
+    let deadline=Date().addingTimeInterval(2)
+    while state.bytes==nil && Date()<deadline { CFRunLoopRunInMode(CFRunLoopMode.defaultMode,0.01,true) }
+    guard let reply=state.bytes else { try fail("Lighting acknowledgement timed out; no automatic retry") }
+    return reply
+}
 struct BridgeError:Error { let message:String }
 func fail(_ message:String)throws->Never { throw BridgeError(message:message) }
 func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
@@ -52,7 +87,9 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     let lamp=page==0x59 && integer(device,"PrimaryUsage")==1
     let mouse=vid==0x0b05 && [0x1977,0x1979].contains(pid) && page==0xff01
     let kraken=vid==0x1e71 && [0x170e,0x1715].contains(pid) && page>=0xff00
-    guard lamp || mouse || kraken else { try fail("No implemented lighting transport for this collection") }
+    let radius=vid==0x36bc && pid==0x1003 && page==0xff00 && integer(device,"PrimaryUsage")==1 && interfaceNumber(device)==0
+    let keyboard=vid==0x0b05 && ((pid==0x1ace && page>=0xff00) || (pid==0x1aae && page==0xff00))
+    guard lamp || mouse || kraken || radius || keyboard else { try fail("No implemented lighting transport for this collection") }
     guard let id=request["report_id"] as? Int,(0...255).contains(id) else { try fail("Invalid report ID") }
     let opened=IOHIDDeviceOpen(device,IOOptionBits(kIOHIDOptionsTypeNone))
     guard opened==kIOReturnSuccess else { try fail("macOS denied HID lighting access (\(opened)). Close other lighting software and check device permissions.") }
@@ -68,7 +105,14 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     guard let encoded=request["data"] as? String,let data=Data(base64Encoded:encoded),!data.isEmpty,data.count<=512 else { try fail("Invalid lighting packet") }
     var bytes=[UInt8](data)
     let feature=command=="feature_set"
-    guard (lamp && feature && id>0 && bytes.first==UInt8(id)) || (mouse && command=="output" && id==0 && bytes.count==65 && bytes.prefix(3)==[0,0x51,0x28]) || (kraken && command=="output" && id==2 && bytes.count==64 && bytes.prefix(2)==[2,0x4c]) else { try fail("Packet outside lighting-only protocol allowlist") }
+    if command=="exchange" {
+        let radiusQuery=radius && id==2 && bytes.count==64 && bytes.prefix(4)==[2,0xa4,8,1]
+        let radiusLight=radius && id==2 && bytes.count==64 && bytes[1]==0xa4 && [0x0a,0x11,0x12].contains(bytes[2])
+        let keyboardQuery=keyboard && ((pid==0x1ace && bytes.count==64 && ((id==2 && bytes.prefix(3)==[2,0x12,0x12]) || (id==1 && bytes.prefix(3)==[1,0xa0,0]))) || (pid==0x1aae && bytes.count==65 && id==0 && bytes.prefix(3)==[0,0x12,0x12]))
+        guard radiusQuery || radiusLight || keyboardQuery else { try fail("Exchange outside lighting-only allowlist") }
+        return ["data":Data(try lightingExchange(device,bytes)).base64EncodedString()]
+    }
+    guard (lamp && feature && id>0 && bytes.first==UInt8(id)) || (mouse && command=="output" && id==0 && bytes.count==65 && bytes.prefix(3)==[0,0x51,0x28]) || (kraken && command=="output" && id==2 && bytes.count==64 && bytes.prefix(2)==[2,0x4c]) || (keyboard && command=="output" && ((pid==0x1ace && id==2 && bytes.count==64) || (pid==0x1aae && id==0 && bytes.count==65)) && bytes[1]==0x51 && bytes[2]==0x2c && [0,1,2].contains(bytes[3])) else { try fail("Packet outside lighting-only protocol allowlist") }
     // Match hidapi's macOS framing: report zero is omitted, nonzero IDs stay in the buffer.
     if id==0 { bytes.removeFirst() }
     let result=IOHIDDeviceSetReport(device,feature ? kIOHIDReportTypeFeature : kIOHIDReportTypeOutput,CFIndex(id),bytes,bytes.count)

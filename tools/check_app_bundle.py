@@ -34,3 +34,12 @@ usb=json.loads((app/'Resources/openrgb_usb_catalog.json').read_text())
 assert usb['schema']==1 and len(usb['entries'])>1000
 assert (app/'Resources/Source/vendor/openrgb/usb-sources.zip').is_file()
 print('Signed x86-64 HID helper and reproducible OpenRGB USB catalog included')
+
+ram_helper=app/'Resources/HackinFXSMBus'
+assert ram_helper.is_file()
+assert subprocess.check_output(['/usr/bin/lipo','-archs',str(ram_helper)],text=True).strip()=='x86_64'
+subprocess.run(['/usr/bin/codesign','--verify','--strict',str(ram_helper)],check=True)
+assert (app/'Resources/Source/docs/RAM-SETUP.md').is_file()
+assert (app/'Resources/Source/vendor/radius/LICENSE').is_file()
+assert (app/'Resources/Source/vendor/rigstats/LICENSE').is_file()
+print('Scoped RAM helper, setup guide and Radius/ASUS protocol notices included')

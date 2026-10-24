@@ -63,3 +63,11 @@ The new Python SDK client is implemented from OpenRGB's network protocol and SDK
 The USB/HID identity catalog is deterministically imported from OpenRGB commit `817834cfab034c97927451e31c4a2deb60a44725`. Original detector/header bytes and the upstream GPL license are retained in `vendor/openrgb/usb-sources.zip`. `tools/import_openrgb_usb_catalog.py` rebuilds the catalog offline. Unsupported/disabled registrations do not authorize hardware writes.
 
 Native lighting protocol references are preserved under `vendor/openrgb/usb-protocols`, with exact paths and hashes in `SOURCES.json`. Credits include Adam Honse (HID LampArray, GPL-2.0-only; ASUS Aura Mouse, GPL-2.0-or-later), Martin Hartl (NZXT Kraken, GPL-2.0-or-later), and the per-file contributors and copyright notices. HackinFX uses Apple's IOKit transport rather than bundling hidapi. Distribution remains compatible with GPL version 2; all original notices are retained.
+
+## Radius, ASUS keyboard and RAM references (2.0.2)
+
+The Fractal Radius adapter ports aleopho/signalrgb-fractal-radius at e86cabf7154c0022fd23799a55d0fc3e24154744 (MIT; Copyright 2026 SignalRGB Fractal Radius contributors). Original plugin, protocol notes, fixture and MIT license are retained in vendor/radius.
+
+ASUS keyboard/OMNI protocol references include dvalfrid/rigstats at bf0f1f3e8ab1b387dd7cd914a44ba0d95ad1cd96 (MIT; Copyright 2026 Daniel Valfridsson); original reference files and license are retained in vendor/rigstats.
+
+Corsair DRAM and macOS i801 protocol references are from the existing pinned OpenRGB tree and preserved under vendor/openrgb/ram, with original contributor/license notices. Credits include Adam Honse, Erik Gilling and Shady Nawara. macUSPCIO is a separately installed GPL-3.0 driver; it is not embedded, installed or loaded by the HackinFX application. The external OpenCore preparation package retains its original archives, source and license separately.
