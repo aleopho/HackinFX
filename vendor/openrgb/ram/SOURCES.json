@@ -24,11 +24,11 @@
     },
     {
       "path": "Controllers/CorsairDRAMController/RGBController_CorsairDRAM.cpp",
-      "sha256": "7f10a9d4605325bfa002a2658ff151dc4acfed6c5bb2723f28a5a7b5bb3b873f"
+      "sha256": "9011d3da700ea91785e7358b80473fe27cf999c4d8f0f2c21c0af5bc699d9474"
     },
     {
       "path": "Controllers/CorsairDRAMController/RGBController_CorsairDRAM.h",
-      "sha256": "03b2e0cab0fda9f1b9d9010ae1c23537cafa064394d200b6fa7ab7febef11f03"
+      "sha256": "72657f41b4abc389c522c91a0e28824c7c9007c530c0b40f9bd9ffc20a830958"
     },
     {
       "path": "dependencies/macUSPCIO/macUSPCIOAccess.h",
