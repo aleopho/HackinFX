@@ -1,0 +1,355 @@
+using System.Text.Json.Nodes;
+
+namespace SensorSidecar.Control.Lighting;
+
+/// The mouse paired to a ROG Omni receiver (`1ACE`), reached on the
+/// receiver's vendor channels (#236). Two things the mouse's LampArray
+/// can't say: which mouse it is (the receiver names only itself), and its
+/// "WDL state" — Gear Link's Cross-device Lighting Toggle. With WDL off
+/// ("Device Lighting") the mouse accepts and ignores every LampArray write.
+///
+/// Protocol from Gear Link's own HID log, verified on the ROG Harpe Ace Aim
+/// Lab Edition (docs/control-architecture.md):
+/// receiver channel (report id 1): `a0 00` → paired devices;
+/// mouse channel (the report id the receiver names): `12 00 09 00` → WDL
+/// state, `51 42 00 00 0x` → set it. Every reply echoes the command.
+public interface IWdlDevice
+{
+    /// Whether this device offers the WDL switch.
+    bool HasWdl { get; }
+
+    /// Whether the model is known, so a false `HasWdl` means "has no such
+    /// setting" rather than "unknown".
+    bool KnownModel { get; }
+
+    /// On, off, or null when the device doesn't answer.
+    bool? WdlOn();
+
+    /// Lets lighting commands through ("Aura Sync & Windows Dynamic Lighting").
+    void EnableWdl();
+}
+
+/// The mouse's channel is opened per question, not kept open: Windows
+/// queues every input report for every open handle, so a long-lived handle
+/// would first read replies to Gear Link's questions (an old WDL state).
+public sealed class OmniMouse
+{
+    public const ushort ReceiverProductId = 0x1ACE;
+    private const ushort VendorPage = 0xFF00;
+    private const byte ReceiverReportId = 1;
+    private static readonly TimeSpan ReplyTimeout = TimeSpan.FromMilliseconds(500);
+
+    /// Mice by the product id the receiver reports (the mouse's 2.4 GHz
+    /// id). From Gear Link's device manifests and its Companion's model
+    /// configs, which agree: `Wdl` = the mouse has the Cross-device Lighting
+    /// Toggle (Companion `WDL=1`, Gear Link's WDL switch) — newer mice follow
+    /// LampArray's own autonomous mode and have none. `Verified`: seen on
+    /// hardware — the Harpe Ace's switch checked; the Harpe Ace Mini's
+    /// lighting following on a second receiver (2026-10-19, #296; its WDL
+    /// state didn't answer at discovery, so the switch itself is unchecked).
+    public static readonly IReadOnlyDictionary<ushort, MouseModel> Models = new Dictionary<ushort, MouseModel>
+    {
+        [0x1A94] = new("ROG Harpe Ace Aim Lab Edition", Wdl: true, Verified: true),
+        [0x1B18] = new("ROG Keris II Ace", Wdl: true),
+        [0x1B65] = new("ROG Harpe Ace Mini", Wdl: true, Verified: true),
+        [0x1B69] = new("ROG Harpe Ace Extreme", Wdl: true),
+        [0x1C0E] = new("ROG Keris II Origin"),
+        [0x1C6B] = new("ROG Harpe II Ace"),
+        [0x1CD3] = new("ProArt Mouse MD301"),
+        [0x1D4E] = new("ROG Keris II Origin (KJP)"),
+        [0x1D7C] = new("ROG Harpe II Extreme Edition 20"),
+        [0x1DBF] = new("ROG Gladius IV Ace"),
+        [0x1DE0] = new("ROG Spatha X 65K"),
+        [0x1E32] = new("ROG Harpe II Ace Mini"),
+        [0x1E4B] = new("ROG Harpe II Ace (PBZ)"),
+        [0x1E4F] = new("ROG Gladius IV Ace Max"),
+        [0x1E52] = new("ROG Harpe II Ace Mini Demon1 Edition"),
+    };
+
+    public sealed record MouseModel(string Name, bool Wdl = false, bool Verified = false);
+
+    private readonly object _lock = new();
+    private readonly HidDeviceInfo _channel;
+    private readonly byte _reportId;
+
+    public ushort ProductId { get; }
+
+    /// The model name, or null for a mouse not in <see cref="Models"/>.
+    public string? Name => Models.TryGetValue(ProductId, out var m) ? m.Name : null;
+
+    /// Whether this mouse has the WDL switch, so it is read and offered.
+    public bool HasWdl => Models.TryGetValue(ProductId, out var m) && m.Wdl;
+
+    private OmniMouse(HidDeviceInfo channel, byte reportId, ushort productId)
+    {
+        _channel = channel;
+        _reportId = reportId;
+        ProductId = productId;
+    }
+
+    /// One paired device: its product id and the report id of its channel.
+    public readonly record struct Paired(ushort ProductId, byte ReportId);
+
+    /// The paired list from an `a0 00` reply (report id first):
+    /// `01 a0 00 <count> 00`, then per device `<pid lo> <pid hi>
+    /// <report id> <type>` — four bytes each, as a receiver with a keyboard
+    /// and a mouse answers (`… 02 00 25 1c 02 04 94 1a 03 05`). Entries that
+    /// don't look like a device (pid 0, report id outside 1–3) are skipped.
+    public static IReadOnlyList<Paired> ParsePaired(byte[] reply)
+    {
+        if (reply.Length < 4 || reply[0] != ReceiverReportId || reply[1] != 0xA0 || reply[2] != 0x00)
+            return [];
+        var found = new List<Paired>();
+        for (int i = 0, at = 5; i < reply[3] && at + 3 < reply.Length; i++, at += 4)
+        {
+            var pid = (ushort)(reply[at] | reply[at + 1] << 8);
+            var reportId = reply[at + 2];
+            if (pid != 0 && reportId is >= 1 and <= 3)
+                found.Add(new Paired(pid, reportId));
+        }
+        return found;
+    }
+
+    /// The WDL state from a `12 00 09 00` reply, or null when it isn't one.
+    public static bool? ParseWdl(byte[] reply, byte reportId) =>
+        reply.Length >= 6 && reply[0] == reportId && reply[1] == 0x12 && reply[2] == 0x00 && reply[3] == 0x09
+            ? reply[5] != 0
+            : null;
+
+    /// One ROG Omni receiver (#296): its key (the USB device it is, see
+    /// <see cref="UsbParent"/>) and its vendor channels — the receiver's own
+    /// (report id 1) and one per paired device (2, 3).
+    public sealed record Receiver(string Key, IReadOnlyList<HidDeviceInfo> Channels)
+    {
+        public HidDeviceInfo? Own => Channels.FirstOrDefault(c => c.OutputReportId == ReceiverReportId);
+
+        /// The channel for the device on `reportId`, or null.
+        public HidDeviceInfo? Channel(byte reportId) => Channels.FirstOrDefault(c => c.OutputReportId == reportId);
+    }
+
+    /// Every Omni receiver among `hid`, each with its own channels — grouped
+    /// by the USB device they belong to (`key`, <see cref="UsbParent.Of"/> by
+    /// default), so two receivers no longer hide each other (#296). Ordered
+    /// by key, so ids stay put across rescans.
+    public static IReadOnlyList<Receiver> Receivers(IReadOnlyList<HidDeviceInfo> hid, Func<string, string>? key = null) =>
+        Channels(hid)
+            .GroupBy(c => (key ?? UsbParent.Of)(c.Path))
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new Receiver(g.Key, g.ToList()))
+            .ToList();
+
+    /// The mouse on `receiver`, or null when it has none.
+    public static OmniMouse? Find(Receiver receiver)
+    {
+        foreach (var p in PairedDevices(receiver))
+        {
+            if (p.ReportId == ReceiverReportId || receiver.Channel(p.ReportId) is not { } channel)
+                continue;
+            // A keyboard on the receiver is driven by AsusKeyboardDevice; never
+            // ask it the mouse's WDL question.
+            if (AsusKeyboardDevice.Model(p.ProductId) is not null)
+                continue;
+            var mouse = new OmniMouse(channel, p.ReportId, p.ProductId);
+            // A known mouse is taken as it is; an unknown device counts as the
+            // mouse only if it answers the WDL query (a keyboard doesn't).
+            var wdl = mouse.HasWdl || mouse.Name is null ? mouse.WdlOn() : null;
+            if (mouse.Name is not null || wdl is not null)
+            {
+                LightingLog.Discovery($"[rigstats-control] Lighting: Omni receiver mouse 0x{p.ProductId:X4} " +
+                    $"({mouse.Name ?? "unknown model"}) on report 0x{p.ReportId:X2}" +
+                    (wdl is { } on ? $", WDL {(on ? "on" : "off")}." : "."));
+                return mouse;
+            }
+        }
+        return null;
+    }
+
+    private static List<HidDeviceInfo> Channels(IReadOnlyList<HidDeviceInfo> hid) => hid
+        .Where(h => h.VendorId == AuraUsb.AsusVendorId && h.ProductId == ReceiverProductId
+            && h.UsagePage is >= VendorPage and <= VendorPage + 2 && h.OutputReportLength > 0)
+        .ToList();
+
+    /// What `receiver` says is paired to it (`a0 00` on its own channel);
+    /// empty when it doesn't answer. Also used by keyboard and mouse
+    /// discovery.
+    public static IReadOnlyList<Paired> PairedDevices(Receiver receiver)
+    {
+        if (receiver.Own is not { } own)
+            return [];
+        try
+        {
+            using var device = Hid.Open(own);
+            return Ask(device, [ReceiverReportId, 0xA0, 0x00]) is { } reply ? ParsePaired(reply) : [];
+        }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// Every mouse in <see cref="Models"/> has `hasPowerInfo` in its Gear Link
+    /// manifest (read 2026-10-09); an unknown one is never asked.
+    public bool HasBattery => Name is not null;
+
+    /// `12 07` on the mouse's channel (Gear Link's mouse power class and
+    /// G-Helper agree), or null when it doesn't answer (asleep, gone).
+    public BatteryStatus? ReadBattery()
+    {
+        if (!HasBattery)
+            return null;
+        try
+        {
+            lock (_lock)
+            {
+                using var device = Hid.Open(_channel);
+                return QueryBattery(device, _reportId);
+            }
+        }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// The mouse's power question and nothing else: `12 07` on its channel.
+    public static BatteryStatus? QueryBattery(IHidDevice device, byte reportId) =>
+        Ask(device, [reportId, 0x12, 0x07]) is { } reply ? BatteryReplies.Mouse(reply) : null;
+
+    /// The mouse's WDL state, or null when it doesn't answer (asleep, gone).
+    public bool? WdlOn()
+    {
+        try
+        {
+            lock (_lock)
+            {
+                using var device = Hid.Open(_channel);
+                return Ask(device, [_reportId, 0x12, 0x00, 0x09, 0x00]) is { } reply ? ParseWdl(reply, _reportId) : null;
+            }
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// Switches WDL on or off; throws when the mouse doesn't confirm it.
+    public void SetWdl(bool on)
+    {
+        lock (_lock)
+        {
+            using var device = Hid.Open(_channel);
+            if (Ask(device, [_reportId, 0x51, 0x42, 0x00, 0x00, on ? (byte)1 : (byte)0]) is null)
+                throw new InvalidOperationException("The mouse didn't confirm the lighting mode change. Move it to wake it up and try again.");
+        }
+    }
+
+    public JsonObject Diagnostics() => new()
+    {
+        ["paired_product_id"] = $"{ProductId:X4}",
+        ["model"] = Name,
+        ["report_id"] = $"{_reportId:X2}",
+        // Read for any mouse here: an unknown one answering it is how a new
+        // WDL model shows up in a diagnostics report.
+        ["wdl_on"] = WdlOn(),
+    };
+
+    /// ASUS 2.4 GHz receivers in Gear Link's device data (type "receiver"):
+    /// ROG Omni, ROG SpeedNova 8K, "Asus Dongle". Only the Omni is verified;
+    /// the others are only asked the read-only questions in <see cref="Probe"/>.
+    public static readonly IReadOnlyList<ushort> ReceiverProductIds = [ReceiverProductId, 0x1AD0, 0x1D54];
+
+    /// Read-only questions to every ASUS receiver and the devices paired to
+    /// it, raw and decoded — for the diagnostics export, so a user's report
+    /// is enough to add a mouse (its product id, versions, whether it has
+    /// the WDL toggle). Only commands Gear Link itself sends while idle;
+    /// serial numbers are not asked.
+    public static JsonArray Probe(IReadOnlyList<HidDeviceInfo> hid, Func<HidDeviceInfo, IHidDevice>? open = null)
+    {
+        var result = new JsonArray();
+        // One entry per receiver: two of the same kind are two USB devices
+        // (#296), told apart by their channels' interface instance.
+        foreach (var (pid, channels) in ReceiverProductIds.SelectMany(pid => hid
+                     .Where(h => h.VendorId == AuraUsb.AsusVendorId && h.ProductId == pid
+                         && h.UsagePage is >= VendorPage and <= VendorPage + 2 && h.OutputReportLength > 0)
+                     .GroupBy(h => UsbParent.Instance(h.Path))
+                     .Select(g => (pid, g.ToList()))))
+        {
+            var receiver = channels.Where(h => h.OutputReportId == ReceiverReportId).ToList();
+            if (receiver.Count != 1)
+            {
+                result.Add(new JsonObject { ["receiver_pid"] = $"{pid:X4}", ["skipped"] = $"{receiver.Count} receiver channels" });
+                continue;
+            }
+            var entry = new JsonObject
+            {
+                ["receiver_pid"] = $"{pid:X4}",
+                ["channels"] = new JsonArray(channels.Select(c => (JsonNode)$"{c.UsagePage:X4} report {c.OutputReportId:X2}").ToArray()),
+            };
+            byte[]? pairedReply = null;
+            try
+            {
+                using var device = (open ?? Hid.Open)(receiver[0]);
+                entry["firmware"] = Hex(Ask(device, [ReceiverReportId, 0xA1, 0x01]));
+                pairedReply = Ask(device, [ReceiverReportId, 0xA0, 0x00]);
+                entry["paired_reply"] = Hex(pairedReply);
+            }
+            catch (Exception e)
+            {
+                entry["error"] = e.Message;
+            }
+            var paired = new JsonArray();
+            foreach (var p in pairedReply is null ? [] : ParsePaired(pairedReply))
+            {
+                var device = new JsonObject
+                {
+                    ["product_id"] = $"{p.ProductId:X4}",
+                    ["report_id"] = $"{p.ReportId:X2}",
+                    ["model"] = Models.TryGetValue(p.ProductId, out var m) ? m.Name : null,
+                };
+                if (p.ReportId != ReceiverReportId && channels.FirstOrDefault(c => c.OutputReportId == p.ReportId) is { } channel)
+                {
+                    try
+                    {
+                        using var channelDevice = (open ?? Hid.Open)(channel);
+                        device["device_info"] = Hex(Ask(channelDevice, [p.ReportId, 0x12, 0x00, 0x00, 0x00]));
+                        device["present"] = Hex(Ask(channelDevice, [p.ReportId, 0x12, 0x00, 0x02, 0x00]));
+                        var wdl = Ask(channelDevice, [p.ReportId, 0x12, 0x00, 0x09, 0x00]);
+                        device["wdl_reply"] = Hex(wdl);
+                        device["wdl_on"] = wdl is null ? null : ParseWdl(wdl, p.ReportId);
+                    }
+                    catch (Exception e)
+                    {
+                        device["error"] = e.Message;
+                    }
+                }
+                paired.Add(device);
+            }
+            entry["paired"] = paired;
+            result.Add(entry);
+        }
+        return result;
+    }
+
+    /// The first 24 bytes of a reply in hex (the rest is padding), or null.
+    private static string? Hex(byte[]? reply) =>
+        reply is null ? null : Convert.ToHexString(reply.AsSpan(0, Math.Min(24, reply.Length)));
+
+    /// Writes `request` and returns the reply that echoes it (report id and
+    /// up to three command bytes — `12 00 02` and `12 00 09` differ only in
+    /// the third), skipping other input reports; null on timeout.
+    public static byte[]? Ask(IHidDevice device, byte[] request)
+    {
+        var echo = Math.Min(request.Length, 4);
+        device.Write(request);
+        var deadline = DateTime.UtcNow + ReplyTimeout;
+        for (var left = ReplyTimeout; left > TimeSpan.Zero; left = deadline - DateTime.UtcNow)
+        {
+            if (device.Read(left) is not { } reply)
+                return null;
+            if (reply.Length >= echo && reply.AsSpan(0, echo).SequenceEqual(request.AsSpan(0, echo)))
+                return reply;
+        }
+        return null;
+    }
+}
+

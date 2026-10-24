@@ -18,16 +18,20 @@ resources.mkdir(parents=True, exist_ok=True)
 cache = Path(tempfile.gettempdir()) / 'aleopho-gpurgb-swift-cache'
 cache.mkdir(exist_ok=True)
 subprocess.run(['/usr/bin/swiftc', '-swift-version', '5', '-target', 'x86_64-apple-macos15.0', '-module-cache-path', str(cache),
-                str(root/'CommunityRGB.swift'), str(root/'SetupSupport.swift'), '-o', str(app/'MacOS'/'HackinFX'),
+                str(root/'CommunityRGB.swift'), str(root/'ControlCenter.swift'), str(root/'SetupSupport.swift'), '-o', str(app/'MacOS'/'HackinFX'),
                 '-framework', 'AppKit', '-framework', 'SwiftUI', '-framework', 'WidgetKit'], check=True)
-for name in ('ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','compatibility.json','NOTICE.txt','COPYING','LICENSE.md','SOURCES-RGB.md','SOURCES.md','HACKINFX.md','EFFECTS.md'):
+subprocess.run(['/usr/bin/swiftc','-swift-version','5','-target','x86_64-apple-macos15.0','-module-cache-path',str(cache),str(root/'HIDBridge.swift'),'-o',str(resources/'HackinFXHID'),'-framework','IOKit'],check=True)
+subprocess.run(['/usr/bin/codesign','--force','--sign','-','--timestamp=none',str(resources/'HackinFXHID')],check=True)
+subprocess.run(['/usr/bin/swiftc','-swift-version','5','-target','x86_64-apple-macos15.0','-module-cache-path',str(cache),str(root/'SMBusBridge.swift'),'-o',str(resources/'HackinFXSMBus'),'-framework','IOKit'],check=True)
+subprocess.run(['/usr/bin/codesign','--force','--sign','-','--timestamp=none',str(resources/'HackinFXSMBus')],check=True)
+for name in ('radius_protocol.py','asus_keyboard.py','ram_control.py','usb_devices.py','openrgb_usb_catalog.json','center_core.py','center_sdk.py','center_service.py','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','compatibility.json','NOTICE.txt','COPYING','LICENSE.md','SOURCES-RGB.md','SOURCES.md','HACKINFX.md','EFFECTS.md'):
     shutil.copy2(root/name, resources/name)
 shutil.copy2(root/'report-endpoint.json', resources/'report-endpoint.json')
 shutil.copy2(root/'assets'/'hackinfx-mark-v2.png', resources/'hackinfx-logo.png')
 shutil.copy2(root/'assets'/'HackinFX.icns', resources/'HackinFX.icns')
 source = resources/'Source'
 source.mkdir(exist_ok=True)
-for name in ('CommunityRGB.swift','SetupSupport.swift','render_icon.swift','package_dmg.py','compatibility.json','report-endpoint.json','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','build_community.py'):
+for name in ('SMBusBridge.swift','radius_protocol.py','asus_keyboard.py','ram_control.py','HIDBridge.swift','usb_devices.py','openrgb_usb_catalog.json','CommunityRGB.swift','ControlCenter.swift','SetupSupport.swift','render_icon.swift','package_dmg.py','compatibility.json','report-endpoint.json','center_core.py','center_sdk.py','center_service.py','ram_probe.py','rgb.py','probe.py','profiles.py','scanner.py','gpu_catalog.py','openrgb_gpu_catalog.json','build_community.py'):
     shutil.copy2(root/name,source/name)
 for name in ('NOTICE.txt','COPYING','LICENSE.md','SOURCES-RGB.md','SOURCES.md','HACKINFX.md','EFFECTS.md'):
     shutil.copy2(root/name,source/name)
@@ -35,8 +39,8 @@ shutil.copytree(root/'assets', source/'assets', dirs_exist_ok=True)
 shutil.copytree(root/'tests', source/'tests', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
 (app/'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleName='HackinFX',
     CFBundleDisplayName='HackinFX', CFBundleIdentifier='community.aleopho.hackinfx',
-    CFBundleVersion='1.2.0', CFBundleShortVersionString='1.2.0', CFBundleExecutable='HackinFX',
-    CFBundlePackageType='APPL', LSMinimumSystemVersion='15.0', NSHighResolutionCapable=True, CFBundleIconFile='HackinFX', CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en'], CFBundleURLTypes=[dict(CFBundleURLName='HackinFX',CFBundleURLSchemes=['hackinfx'])])))
+    CFBundleVersion='2.0.2', CFBundleShortVersionString='2.0.2', CFBundleExecutable='HackinFX',
+    CFBundlePackageType='APPL', LSMinimumSystemVersion='15.0', NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, NSHighResolutionCapable=True, CFBundleIconFile='HackinFX', CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en'], CFBundleURLTypes=[dict(CFBundleURLName='HackinFX',CFBundleURLSchemes=['hackinfx'])])))
 # Build a real WidgetKit app-extension with Xcode when available. No Apple account
 # or App Group is needed for this read-only, narrowly scoped local snapshot mode.
 widget_product = os.environ.get('HACKINFX_WIDGET_PATH')
@@ -56,7 +60,7 @@ else:
     print('WidgetKit source included; compiled extension requires Xcode or HACKINFX_WIDGET_PATH.')
 shutil.copytree(root/'Widget',source/'Widget',dirs_exist_ok=True,ignore=shutil.ignore_patterns('build','DerivedData','xcuserdata','*.xcuserstate'))
 repo=root.parent
-for folder in ['tools','vendor']:
+for folder in ['tools','vendor','docs']:
     if (repo/folder).is_dir():shutil.copytree(repo/folder,source/folder,ignore=shutil.ignore_patterns('__pycache__'),dirs_exist_ok=True)
 subprocess.run(['/usr/bin/codesign','--force','--sign','-','--timestamp=none',str(app.parent)],check=True)
 subprocess.run(['/usr/bin/codesign','--verify','--deep','--strict',str(app.parent)],check=True)

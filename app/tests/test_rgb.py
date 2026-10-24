@@ -280,3 +280,13 @@ class RGBTests(unittest.TestCase):
         with self.assertRaises(p.ProbeError): rgb.RGB(fake,report,port=1,apply=True,profile=profile).run()
         self.assertFalse(report.get('write_completed',False))
         self.assertEqual(len(fake.writes),2)
+
+
+    def test_native_write_lock_excludes_parallel_core_and_gpu_lab_requests(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp:
+            first=rgb.acquire_write_lock(temp)
+            try:
+                with self.assertRaises(p.ProbeError):rgb.acquire_write_lock(temp)
+            finally:first.close()
+            rgb.acquire_write_lock(temp).close()

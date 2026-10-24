@@ -53,3 +53,21 @@ ASUS Aura signature checks and volatile register/mode handling are adapted from 
 ## Additional NVIDIA controller adaptations
 
 EVGA Turing volatile unlock/color/mode/relock sequences are adapted from TheRogueZeta, OpenRGB, 15 April 2021. Zotac Turing enable/mode/readback handling is adapted from David Henry, OpenRGB, 7 January 2023. Both are GPL-2.0-or-later. Exact implementations from pinned commit `817834cfab034c97927451e31c4a2deb60a44725` and hashes are in `vendor/openrgb/implementations/`. Original detector/header notices remain preserved. These macOS ports are unverified on physical EVGA/Zotac hardware. No upstream flash-save operation is implemented.
+
+## OpenRGB SDK protocol references
+
+The new Python SDK client is implemented from OpenRGB's network protocol and SDK-3 controller serialization. Original protocol/interface/serialization sources at commit `817834cfab034c97927451e31c4a2deb60a44725` are preserved with their original Adam Honse/OpenRGB author notices and per-file hashes under `vendor/openrgb/sdk/`. They remain GPL-2.0-or-later and are protocol references, not a bundled OpenRGB executable. HackinFX does not claim OpenRGB's entire catalog as working macOS hardware support.
+
+## OpenRGB USB/HID identities and lighting protocols
+
+The USB/HID identity catalog is deterministically imported from OpenRGB commit `817834cfab034c97927451e31c4a2deb60a44725`. Original detector/header bytes and the upstream GPL license are retained in `vendor/openrgb/usb-sources.zip`. `tools/import_openrgb_usb_catalog.py` rebuilds the catalog offline. Unsupported/disabled registrations do not authorize hardware writes.
+
+Native lighting protocol references are preserved under `vendor/openrgb/usb-protocols`, with exact paths and hashes in `SOURCES.json`. Credits include Adam Honse (HID LampArray, GPL-2.0-only; ASUS Aura Mouse, GPL-2.0-or-later), Martin Hartl (NZXT Kraken, GPL-2.0-or-later), and the per-file contributors and copyright notices. HackinFX uses Apple's IOKit transport rather than bundling hidapi. Distribution remains compatible with GPL version 2; all original notices are retained.
+
+## Radius, ASUS keyboard and RAM references (2.0.2)
+
+The Fractal Radius adapter ports aleopho/signalrgb-fractal-radius at e86cabf7154c0022fd23799a55d0fc3e24154744 (MIT; Copyright 2026 SignalRGB Fractal Radius contributors). Original plugin, protocol notes, fixture and MIT license are retained in vendor/radius.
+
+ASUS keyboard/OMNI protocol references include dvalfrid/rigstats at bf0f1f3e8ab1b387dd7cd914a44ba0d95ad1cd96 (MIT; Copyright 2026 Daniel Valfridsson); original reference files and license are retained in vendor/rigstats.
+
+Corsair DRAM and macOS i801 protocol references are from the existing pinned OpenRGB tree and preserved under vendor/openrgb/ram, with original contributor/license notices. Credits include Adam Honse, Erik Gilling and Shady Nawara. macUSPCIO is a separately installed GPL-3.0 driver; it is not embedded, installed or loaded by the HackinFX application. The external OpenCore preparation package retains its original archives, source and license separately.

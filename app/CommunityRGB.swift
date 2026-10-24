@@ -51,6 +51,7 @@ enum Lighting: String, CaseIterable, Identifiable {
 }
 
 final class Model: ObservableObject {
+    let center = CenterModel()
     @Published var effect = Lighting.solid
     @Published var colorA = Color(red: 0.73, green: 0.84, blue: 0.48)
     @Published var colorB = Color(red: 0.20, green: 0.45, blue: 1)
@@ -61,7 +62,7 @@ final class Model: ObservableObject {
     @Published var message = "Ready. Changes are sent only when you click Apply."
     @Published var lastSuccess: Bool? = nil
     @Published var lastReport: URL?
-    @Published var page = "Hardware"
+    @Published var page = "Overview"
     private var initialHardwareCheck = true
     @Published var scanning = false
     @Published var scanSummary = "No scan yet. Read-only inventory; no lighting commands."
@@ -240,7 +241,7 @@ final class Model: ObservableObject {
             do { try setupProfiles.save(data,fingerprint:fingerprint) } catch { setupMessage = "Could not save the profile in Documents/HackinFX: \(error.localizedDescription)"; return }
             UserDefaults.standard.set(data, forKey: "VerifiedLightingSetup")
             UserDefaults.standard.removeObject(forKey: "FailedLightingSetupFingerprint")
-            showSetupWizard = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Studio"
+            showSetupWizard = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Studio"; if center.online && !center.state.running { center.discover() }
         } else {
             setupState = outcome; UserDefaults.standard.set(fingerprint, forKey: "FailedLightingSetupFingerprint"); setupMessage = "Describe what did not work, then review the troubleshooting report."; record("setup-confirmation", outcome); saveTroubleshooting()
         }
@@ -382,6 +383,9 @@ final class Model: ObservableObject {
         report["app_session_events"] = sessionEvents
         report["community_notes"] = ["exact_card_model": boardLabel, "observed_behavior": observedBehavior, "reported_board_vendor": manualVendor, "reported_exact_model": manualModel, "identity_source": identitySource]
         report["setup"] = ["outcome": setupState, "successful_test_steps": testStep, "transport_test_completed": testTransportOK, "visual_confirmation": setupState == "confirmed", "confirmation_source": confirmationSource] as [String: Any]
+        var setup = report["setup"] as? [String:Any] ?? [:]
+        setup["control_center"] = ["online":center.online,"bridge":center.state.bridge,"running":center.state.running,"frames_sent":center.state.frames,"errors":center.state.errors.map { $0.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~") },"detected_count":center.state.devices.count,"devices":center.state.devices.prefix(32).map { ["name":$0.name,"vendor":$0.vendor,"category":$0.category,"backend":$0.backend,"status":$0.status,"detail":$0.detail.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~"),"led_count":$0.led_count,"direct":$0.direct,"usb_id":$0.usb_id ?? "","driver":$0.driver ?? "","catalog_matches":$0.catalog_matches ?? []] as [String:Any] }] as [String:Any]
+        report["setup"] = setup
         report["lighting_evidence"] = lightingEvidence
         if setupState == "confirmed" { report["led_availability"] = "User-confirmed basic RGB (\(confirmationSource))" }
         return report
@@ -466,7 +470,7 @@ final class Model: ObservableObject {
                 let errors = report["errors"] as? [[String: Any]] ?? []
                 let raw = String(data: data, encoding: .utf8) ?? ""
                 let summary = errors.isEmpty ? "Scan complete. \(found.count) display adapter(s) found." : "Scan finished with \(errors.count) query error(s). Export the report for analysis."
-                DispatchQueue.main.asyncAfter(deadline:.now()+0.8) { self.configurationStatus = configStatus; self.configurationReason = configReason; self.scanJSON = raw; self.identifyHardware(report); self.restoreSetup(report); self.flushVerifications(); self.fetchCommunityCatalog(); if self.initialHardwareCheck || configStatus != "supported" { self.page = self.canControlLighting ? "Studio" : "Hardware" }; self.initialHardwareCheck = false; self.adapters = found; self.scanJSON = raw; self.scanReport = output; self.scanSummary = summary; self.scanning = false; self.record("scan", errors.isEmpty ? "completed" : "completed-with-errors"); if self.setupState == "required" && configStatus == "supported" { self.startSetupTest() } }
+                DispatchQueue.main.asyncAfter(deadline:.now()+0.8) { self.configurationStatus = configStatus; self.configurationReason = configReason; self.scanJSON = raw; self.identifyHardware(report); self.restoreSetup(report); self.flushVerifications(); self.fetchCommunityCatalog(); if self.initialHardwareCheck { self.page = "Overview" }; self.initialHardwareCheck = false; self.adapters = found; self.scanJSON = raw; self.scanReport = output; self.scanSummary = summary; self.scanning = false; self.record("scan", errors.isEmpty ? "completed" : "completed-with-errors"); if self.setupState == "required" && configStatus == "supported" { self.startSetupTest() } }
             } catch { DispatchQueue.main.async { self.scanning = false; self.configurationStatus = "unknown"; self.configurationReason = "Hardware check failed"; self.page = "Hardware"; self.scanSummary = "Could not start or read the scan. \(error.localizedDescription)"; self.record("scan", "failed") } }
         }
     }
@@ -738,6 +742,7 @@ struct Community: View {
                     Text("Exports PCI IDs, model labels, driver versions and query logs. No serial numbers, hostname, raw device tree or kernel addresses. No automatic uploads.").font(.system(size: 10)).foregroundColor(muted)
                 }
             }
+            PeripheralDiagnostics(center:model.center)
             ForEach(model.adapters) { gpu in
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
@@ -815,7 +820,7 @@ struct Credits: View {
                     Link("NullMoth / project and license", destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
                     Divider()
                     Text("OpenRGB").font(.headline)
-                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. The source is GPL-2.0-or-later. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. GPL version 2 compatible; per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work. Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
                     Link("OpenRGB / PNY controller", destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
                     Divider()
                     Text("NVIDIA").font(.headline)
@@ -888,16 +893,16 @@ struct Root: View {
     @ObservedObject var model: Model
     var body: some View {
         HStack(spacing:0) {
-            Sidebar(model:model)
+            CenterNavigation(model:model,center:model.center)
             Rectangle().fill(.white.opacity(0.06)).frame(width:1)
             VStack(spacing:0) {
-                HStack(spacing:8) { Text("HACKINFX").foregroundColor(muted);Text("/").foregroundColor(muted.opacity(0.4));Text(model.page.uppercased());Spacer();Text("HACKINTOSH").foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
-                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else { Credits() } }.padding(28).frame(maxWidth:.infinity,alignment:.leading) }
+                HStack(spacing:8) { Text("HACKINFX").foregroundColor(muted);Text("/").foregroundColor(muted.opacity(0.4));Text(model.page.uppercased());Spacer();Text("x86-64 / LOCAL WORKSPACE").foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
+                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.padding(28).frame(maxWidth:.infinity,alignment:.leading) }
                 if model.page == "Studio" { StudioFooter(model:model) }
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
-        }.frame(minWidth:940,minHeight:720).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
+        }.frame(minWidth:1050,minHeight:760).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
         .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration:0.2),value:model.launching)
-        .overlay { if model.scanning { StartupScanView() } }
+        .overlay { if model.scanning && model.page == "Hardware" { StartupScanView() } }
         .sheet(isPresented:$model.showSetupWizard) { SetupWizard(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
     }
 }
@@ -908,18 +913,25 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     var actionItems: [NSMenuItem] = []
     var exportItem: NSMenuItem!
     var scanItem: NSMenuItem!
-    static func menuGPUImage() -> NSImage {
-        let image = NSImage(size:NSSize(width:26,height:18),flipped:false) { _ in
-            NSColor.black.setStroke()
-            let body = NSBezierPath(roundedRect:NSRect(x:4,y:4,width:21,height:12),xRadius:1.8,yRadius:1.8); body.lineWidth = 0.9; body.stroke()
-            for x in [10.0,19.0] { let fan = NSBezierPath(ovalIn:NSRect(x:x-3.3,y:6.7,width:6.6,height:6.6)); fan.lineWidth=0.8; fan.stroke(); let hub=NSBezierPath(ovalIn:NSRect(x:x-0.8,y:9.2,width:1.6,height:1.6));hub.lineWidth=0.7;hub.stroke() }
-            let edge=NSBezierPath();edge.lineWidth=0.9;edge.move(to:NSPoint(x:2,y:3));edge.line(to:NSPoint(x:2,y:17));edge.move(to:NSPoint(x:6,y:2));edge.line(to:NSPoint(x:17,y:2));edge.stroke()
-            return true
-        }; image.isTemplate=true; image.accessibilityDescription="HackinFX GPU"; return image
+    var sceneStopItem:NSMenuItem!
+    var sceneBlackoutItem:NSMenuItem!
+    static func menuFanImage() -> NSImage {
+        let image=NSImage(size:NSSize(width:20,height:20),flipped:false) { _ in
+            let center=NSPoint(x:10,y:10)
+            for index in 0..<48 {
+                NSColor(calibratedHue:CGFloat(index)/48,saturation:0.63,brightness:0.86,alpha:0.95).setStroke()
+                let arc=NSBezierPath();arc.lineWidth=1.1;arc.appendArc(withCenter:center,radius:7.6,startAngle:CGFloat(index)*7.5,endAngle:CGFloat(index+1)*7.5);arc.stroke()
+            }
+            NSColor.labelColor.withAlphaComponent(0.9).setStroke()
+            for index in 0..<7 {
+                let blade=NSBezierPath();blade.move(to:NSPoint(x:11.1,y:8.7));blade.curve(to:NSPoint(x:15.3,y:6.8),controlPoint1:NSPoint(x:12.3,y:6.2),controlPoint2:NSPoint(x:13.9,y:5.4));blade.curve(to:NSPoint(x:15.3,y:10.5),controlPoint1:NSPoint(x:16.3,y:7.8),controlPoint2:NSPoint(x:16.6,y:9.5));blade.curve(to:NSPoint(x:11.5,y:10.9),controlPoint1:NSPoint(x:14.2,y:11.6),controlPoint2:NSPoint(x:12.5,y:10.5));blade.close();var transform=AffineTransform();transform.translate(x:10,y:10);transform.rotate(byDegrees:CGFloat(index)*360/7);transform.translate(x:-10,y:-10);blade.transform(using:transform);blade.lineWidth=0.65;blade.stroke()
+            }
+            let hub=NSBezierPath(ovalIn:NSRect(x:8.4,y:8.4,width:3.2,height:3.2));hub.lineWidth=0.7;hub.stroke();return true
+        };image.isTemplate=false;image.accessibilityDescription="HackinFX RGB fan";return image
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(contentRect: NSRect(x:0,y:0,width:1000,height:820), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
-        window.contentMinSize = NSSize(width:940,height:720)
+        window = NSWindow(contentRect: NSRect(x:0,y:0,width:1180,height:860), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
+        window.contentMinSize = NSSize(width:1050,height:760)
         window.title = "HackinFX — by aleopho"
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
@@ -927,20 +939,24 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         window.contentView = NSHostingView(rootView: Root(model:model))
         window.center()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = Self.menuGPUImage()
+        statusItem.button?.image = Self.menuFanImage()
         statusItem.button?.title = " FX"
-        statusItem.button?.toolTip = "HackinFX — GPU lighting"
+        statusItem.button?.toolTip = "HackinFX — Control Center"
         let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
         let header = menu.addItem(withTitle:"HackinFX · by aleopho", action:nil, keyEquivalent:""); header.isEnabled = false
-        add(menu,"Open Lighting",#selector(show),"o")
+        add(menu,"Open Control Center",#selector(show),"o")
+        add(menu,"Devices",#selector(showDevices))
+        add(menu,"Scenes",#selector(showScenes))
+        sceneStopItem=add(menu,"Stop scene",#selector(stopCenterScene))
+        sceneBlackoutItem=add(menu,"Blackout selected devices",#selector(blackoutCenter))
         menu.addItem(NSMenuItem.separator())
-        actionItems.append(add(menu,"Apply current settings",#selector(applyCurrent)))
-        actionItems.append(add(menu,"Turn lighting off",#selector(turnOff)))
+        actionItems.append(add(menu,"Apply GPU Lab settings",#selector(applyCurrent)))
+        actionItems.append(add(menu,"Turn GPU lighting off",#selector(turnOff)))
         let effects = NSMenu()
         for (index,effect) in Lighting.allCases.enumerated() {
             let item = add(effects,effect.rawValue,#selector(selectEffect)); item.tag = index; actionItems.append(item)
         }
-        let effectItem = menu.addItem(withTitle:"Effects", action:nil, keyEquivalent:""); effectItem.submenu = effects
+        let effectItem = menu.addItem(withTitle:"GPU effects", action:nil, keyEquivalent:""); effectItem.submenu = effects
         menu.addItem(NSMenuItem.separator())
         scanItem = add(menu,"Scan hardware…",#selector(scan))
         exportItem = add(menu,"Export diagnostics…",#selector(exportScan))
@@ -961,6 +977,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         edit.addItem(withTitle:"Select All", action:#selector(NSText.selectAll(_:)), keyEquivalent:"a")
         editItem.submenu = edit; main.addItem(editItem); NSApp.mainMenu = main
         show()
+        model.center.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self.model.launching = false; self.model.scanHardware() }
     }
     @discardableResult func add(_ menu: NSMenu, _ title: String, _ selector: Selector, _ key: String = "") -> NSMenuItem {
@@ -968,10 +985,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     func menuWillOpen(_ menu: NSMenu) {
         for item in actionItems { item.isEnabled = !model.working && model.canControlLighting && (item.action != #selector(selectEffect) || model.availableEffects.contains(Lighting.allCases[item.tag].backend)) }
+        sceneStopItem.isEnabled = model.center.online && !model.center.busy && model.center.state.running
+        sceneBlackoutItem.isEnabled = model.center.online && !model.center.busy && !model.center.selected.isEmpty
         scanItem.isEnabled = !model.working
         exportItem.isEnabled = !model.scanJSON.isEmpty && !model.scanning
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
+    func applicationWillTerminate(_ notification: Notification) { model.center.shutdown() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
@@ -984,6 +1004,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         show()
     }
     @objc func show() { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps:true); window.makeKeyAndOrderFront(nil) }
+    @objc func showDevices() { model.page="Devices";show() }
+    @objc func showScenes() { model.page="Scenes";show() }
+    @objc func stopCenterScene() { model.center.stop() }
+    @objc func blackoutCenter() { model.center.blackout() }
     @objc func applyCurrent() { model.apply() }
     @objc func turnOff() { model.apply(off:true) }
     @objc func selectEffect(_ sender: NSMenuItem) { guard !model.working && model.canControlLighting else { return }; model.effect = Lighting.allCases[sender.tag]; model.apply() }
@@ -1002,14 +1026,18 @@ struct HackinFXMain {
     static func main() throws {
 UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
 let app = NSApplication.shared
-if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview"].contains(CommandLine.arguments[1]) {
+if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes"].contains(CommandLine.arguments[1]) {
     app.setActivationPolicy(.prohibited)
+    app.appearance = NSAppearance(named: .darkAqua)
     let preview = Model(); preview.launching = false; preview.page = "Studio"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
+    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Scenes" : "Overview" }
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
-    let view = NSHostingView(rootView: content)
-    view.frame = NSRect(x: 0, y: 0, width: 1000, height: 820)
+    let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text("SAMPLE DATA · DESIGN CHECK").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
+    let view = NSHostingView(rootView:labeled)
+    view.appearance = NSAppearance(named: .darkAqua)
+    view.frame = NSRect(x:0,y:0,width:1200,height:900)
     view.layoutSubtreeIfNeeded()
     if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
         view.cacheDisplay(in: view.bounds, to: bitmap)

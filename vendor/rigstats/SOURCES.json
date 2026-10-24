@@ -1,0 +1,18 @@
+{
+  "repository": "dvalfrid/rigstats",
+  "commit": "bf0f1f3e8ab1b387dd7cd914a44ba0d95ad1cd96",
+  "files": [
+    {
+      "path": "AsusKeyboardDevice.cs",
+      "sha256": "73bf322c7e44cd6f117651803c55c684b8858c29a5228bd3dc6b90c52fbc1af7"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "3fdec75b3d4e97664c99e7436dc0580ed2a410eff78c9d6a76b025037995f45b"
+    },
+    {
+      "path": "OmniMouse.cs",
+      "sha256": "66b2f102ac121f65c25965a76ba291d1fbb62d67f163c94b34a13ad56d6d5d07"
+    }
+  ]
+}

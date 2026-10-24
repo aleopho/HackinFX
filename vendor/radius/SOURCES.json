@@ -1,0 +1,22 @@
+{
+  "repository": "aleopho/signalrgb-fractal-radius",
+  "commit": "e86cabf7154c0022fd23799a55d0fc3e24154744",
+  "files": [
+    {
+      "path": "FractalRadius.js",
+      "sha256": "4c5c75b0e43c3cdc303af326e88e35e349a5d22687f15ffa2c7e205644c66fc7"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "dd7c6217a8248eee4d4f278efddd5b8acef059eac74d5b3c2667bbccb5fcb21e"
+    },
+    {
+      "path": "PROTOCOL.md",
+      "sha256": "6d0da14797add95d00189e973658e9a41632fceaeb1ebc3e125c9b5402d05928"
+    },
+    {
+      "path": "confirmed-packets.json",
+      "sha256": "68428b3d150ea5bd72f8788d13ac5a20b15d40b4993a361813f90ae4d3fa1f95"
+    }
+  ]
+}

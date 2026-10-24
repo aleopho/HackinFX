@@ -1,0 +1,85 @@
+{
+  "commit": "817834cfab034c97927451e31c4a2deb60a44725",
+  "files": [
+    {
+      "path": "Controllers/HIDLampArrayController/HIDLampArrayController.cpp",
+      "local": "usb-protocols/Controllers/HIDLampArrayController/HIDLampArrayController.cpp",
+      "sha256": "7baed1d85ca29914e4bc2e53bc20eeb876ba59da27e0e1d6b9ff0c10a80ba1eb"
+    },
+    {
+      "path": "Controllers/HIDLampArrayController/HIDLampArrayController.h",
+      "local": "usb-protocols/Controllers/HIDLampArrayController/HIDLampArrayController.h",
+      "sha256": "f75f2809b5acd708aeda42e443e2a5e79c6215fc129b3eb6e5f5a59ba1b10903"
+    },
+    {
+      "path": "Controllers/HIDLampArrayController/HIDLampArrayControllerDetect.cpp",
+      "local": "usb-protocols/Controllers/HIDLampArrayController/HIDLampArrayControllerDetect.cpp",
+      "sha256": "ed15d13e1299d57131a34289b55dff29dcc471ac8e08e895aaf1a1780e03b3b3"
+    },
+    {
+      "path": "Controllers/HIDLampArrayController/RGBController_HIDLampArray.cpp",
+      "local": "usb-protocols/Controllers/HIDLampArrayController/RGBController_HIDLampArray.cpp",
+      "sha256": "10deba1462a5149cc883ac216e83187ce4cb244f9515b68ea4674fbc21377a8c"
+    },
+    {
+      "path": "Controllers/HIDLampArrayController/RGBController_HIDLampArray.h",
+      "local": "usb-protocols/Controllers/HIDLampArrayController/RGBController_HIDLampArray.h",
+      "sha256": "eac1f6757e981ed286a31121ffd938d7420607156b94c834f170d0468a2bb4dd"
+    },
+    {
+      "path": "Controllers/HIDLampArrayController/hid_util.h",
+      "local": "usb-protocols/Controllers/HIDLampArrayController/hid_util.h",
+      "sha256": "5889ebdd8916ad5f5fe6614f74258b57cf3848bd613321456ecb9ad8c9c42a97"
+    },
+    {
+      "path": "Controllers/AsusAuraUSBController/AsusAuraMouseController/AsusAuraMouseController.cpp",
+      "local": "usb-protocols/Controllers/AsusAuraUSBController/AsusAuraMouseController/AsusAuraMouseController.cpp",
+      "sha256": "b0c7338f2b96140e93aee1746a2808b2d57b71d3525c8a6af24299173efd3617"
+    },
+    {
+      "path": "Controllers/AsusAuraUSBController/AsusAuraMouseController/AsusAuraMouseController.h",
+      "local": "usb-protocols/Controllers/AsusAuraUSBController/AsusAuraMouseController/AsusAuraMouseController.h",
+      "sha256": "1504a9f22040aa6a94df1320beccef8ecbec07786818ad802387f0616c0e3faf"
+    },
+    {
+      "path": "Controllers/AsusAuraUSBController/AsusAuraMouseController/AsusAuraMouseDevices.h",
+      "local": "usb-protocols/Controllers/AsusAuraUSBController/AsusAuraMouseController/AsusAuraMouseDevices.h",
+      "sha256": "fa93b84f80a5191c346eca37b0fdff9e9f27083ae8acfe66a61c81bc6ca4d67a"
+    },
+    {
+      "path": "Controllers/AsusAuraUSBController/AsusAuraMouseController/RGBController_AsusAuraMouse.cpp",
+      "local": "usb-protocols/Controllers/AsusAuraUSBController/AsusAuraMouseController/RGBController_AsusAuraMouse.cpp",
+      "sha256": "96ebbc9bc036f2547ae2a1766c0d0ce290fc4c87f004d12307e707bdc3ea537a"
+    },
+    {
+      "path": "Controllers/AsusAuraUSBController/AsusAuraMouseController/RGBController_AsusAuraMouse.h",
+      "local": "usb-protocols/Controllers/AsusAuraUSBController/AsusAuraMouseController/RGBController_AsusAuraMouse.h",
+      "sha256": "5004ddffd3f2b0a57f3f70b094f3fcac52b06dbdefe9743cbccf23eefbd71764"
+    },
+    {
+      "path": "Controllers/NZXTKrakenController/NZXTKrakenController.cpp",
+      "local": "usb-protocols/Controllers/NZXTKrakenController/NZXTKrakenController.cpp",
+      "sha256": "2cf74fadac37bb8e01a2036e181408eeef3ef75f615704e1fb6181c698c9138f"
+    },
+    {
+      "path": "Controllers/NZXTKrakenController/NZXTKrakenController.h",
+      "local": "usb-protocols/Controllers/NZXTKrakenController/NZXTKrakenController.h",
+      "sha256": "f126a17dcdd72ed57cecf89301be9a9a4e36b1d71a1b61ca0c7b22891a20fa38"
+    },
+    {
+      "path": "Controllers/NZXTKrakenController/NZXTKrakenControllerDetect.cpp",
+      "local": "usb-protocols/Controllers/NZXTKrakenController/NZXTKrakenControllerDetect.cpp",
+      "sha256": "91c589954c8a713270fc00fd241be8e3f1bbbbb7bcdf97702775846543f808c7"
+    },
+    {
+      "path": "Controllers/NZXTKrakenController/RGBController_NZXTKraken.cpp",
+      "local": "usb-protocols/Controllers/NZXTKrakenController/RGBController_NZXTKraken.cpp",
+      "sha256": "2efe57e43cfa0014393a71ecf95388f5cd186bf9166d5d943974164c1319b0ab"
+    },
+    {
+      "path": "Controllers/NZXTKrakenController/RGBController_NZXTKraken.h",
+      "local": "usb-protocols/Controllers/NZXTKrakenController/RGBController_NZXTKraken.h",
+      "sha256": "95005efb43a40f11860a2828f5d433ec63333d606faec679cfef81aec61a1db0"
+    }
+  ]
+}

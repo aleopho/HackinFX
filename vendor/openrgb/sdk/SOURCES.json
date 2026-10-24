@@ -1,0 +1,27 @@
+{
+  "commit": "817834cfab034c97927451e31c4a2deb60a44725",
+  "license": "GPL-2.0-or-later",
+  "purpose": "Protocol references for the new SDK 3 client; not compiled as a driver",
+  "files": [
+    {
+      "file": "NetworkProtocol.h",
+      "path": "NetworkProtocol.h",
+      "sha256": "36693d957c289a5b3e9c04f070c27688506eb07075b6029aadf267e71f984f16"
+    },
+    {
+      "file": "RGBControllerInterface.h",
+      "path": "RGBController/RGBControllerInterface.h",
+      "sha256": "20543c30348ab9819d5f236e9635d06b21204a77ad297068878b6d63d60e1e04"
+    },
+    {
+      "file": "RGBController.cpp",
+      "path": "RGBController/RGBController.cpp",
+      "sha256": "eaebe16d6ebb1837ce4d8da96db8f92c58226484c49182fc2809bf9d8d218c91"
+    },
+    {
+      "file": "RGBController_Network.cpp",
+      "path": "RGBController/RGBController_Network.cpp",
+      "sha256": "81617df3e1e08193525677a448168d53577780875e56b305350ee1241688b735"
+    }
+  ]
+}
