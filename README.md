@@ -1,25 +1,70 @@
-<p align="center"><img src="docs/images/hackinfx.svg" width="144" alt="HackinFX GPU line icon"></p>
+<p align="center"><img src="docs/images/hackinfx.svg" width="144" alt="HackinFX icon"></p>
 <h1 align="center">HackinFX</h1>
-<p align="center">GPU lighting for Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
+<p align="center">RGB Control Center for Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
 
-HackinFX is a native macOS menu-bar app for controlling a supported GPU's RGB lighting through a separately installed NullMoth NVRM driver. It combines a lighting studio, visible hardware detection, a guided visual test, local profiles and community compatibility reports.
+HackinFX is a native macOS RGB Control Center by **aleopho** for x86-64
+Hackintoshes with an Intel or AMD CPU. It combines the bundled **OpenRGB 1.1
+macOS engine** with native NVIDIA, USB/HID and scoped DRAM adapters.
 
-**Release 1.1.1 · macOS 15 or later.** Includes a refined native interface, genuine WidgetKit widget and OpenRGB-based NVIDIA controller matching.
+This branch contains **2.0.3**: live lighting, nine shared effects, a refined
+lighting-first interface, launch at login, white on startup, update checks and
+an installer with optional automatic OpenCore SMBus setup.
+[Changes and exact validation limits](docs/RELEASE-2.0.3.md).
 
-The OpenRGB catalog recognizes 752 exact GPU PCI tuples. Executable lighting-test paths currently cover **38 exact configurations across PNY Lovelace, EVGA Pascal and ASUS Aura**. These are test candidates; only cards with successful visual user confirmation are listed as user-tested. Other controller families remain identification-only. [Controller details](docs/RELEASE-1.1.md).
+## Install
 
-## Download and install
+The 2.0.3 PKG installs HackinFX into **Applications**. Quit older copies first.
+Under **Customize**, the optional **OpenCore SMBus driver (RAM RGB)** component
+finds the boot EFI, backs it up, copies macUSPCIO and activates its Kernel/Add
+entry. It stops on ambiguity; reboot after installing this component.
+[OpenCore setup and recovery](docs/RAM-SETUP.md).
 
-Download [HackinFX 1.1.1 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.1.1/HackinFX-aleopho-1.1.1.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.
+The last published release remains [1.1.1](https://github.com/aleopho/HackinFX/releases/tag/v1.1.1)
+until the Control Center hardware validation is complete. GitHub Actions on this
+branch produces the 2.0.3 PKG and DMG, including the real WidgetKit extension.
 
 Requirements:
 
-- macOS 15 or later on an x86-64 Hackintosh (Intel or AMD CPU); GPU/driver configuration already working. CPU vendor is not a software gate; AMD-CPU systems have not yet been physically validated by this project.
-- A compatible, separately installed [NullMoth NVIDIA driver / NVRM service](https://github.com/nullmoth/nvidia-macos-driver).
+- **macOS 15 or later**, x86-64 Hackintosh; no ARM build. CPU vendor is not a gate.
+- Working macOS device access. OpenRGB's macOS drivers are bundled; a device
+  being supported on Windows does not guarantee access on macOS.
+- Native NVIDIA control additionally requires the separately installed
+  [NullMoth NVRM driver](https://github.com/nullmoth/nvidia-macos-driver).
+- Native/SMBus DRAM access additionally requires a compatible host/module and
+  the macUSPCIO transport. The initial native RAM adapter is narrowly scoped;
+  generic RAM compatibility is not claimed.
 - A working `/usr/bin/python3` supplied with Apple's command line tools.
-- A matching RGB controller profile from the table below.
 
-The app is locally ad-hoc signed. It is not Developer ID signed or notarized; downloaded copies may show a macOS security warning. HackinFX does not disable security settings or remove quarantine flags. Native installation and appearance on Sequoia/Tahoe still need broader community validation.
+The app, helpers and nested engine are locally **ad-hoc signed**, not Developer
+ID signed or notarized. Downloaded packages/apps may need macOS approval.
+
+## Control Center
+
+- OpenRGB starts and stops with HackinFX on a local-only SDK port; no separate
+  installation, manual server configuration, remote plugins or account needed.
+- Ready devices receive **static white at 100% once per app/Core session**.
+  Later rediscovery does not reset colors. Unknown/unconfirmed devices are
+  never granted lighting access from a catalog match alone.
+- Changes go live after a short debounce; no Apply button. Static, Gradient,
+  Spectrum, Breathing, Wave, Aurora, Comet, Twinkle and Color shift are available
+  according to each adapter's capabilities. Direct-mode OpenRGB devices can
+  stream shared per-LED effects; hardware-mode-only devices remain visible.
+- Launch at login is managed through macOS Login Items after first launch from
+  Applications. White is applied **after sign-in**, not before the login screen.
+- Profiles/scenes live in `~/Documents/HackinFX`. Logs and private engine state
+  live in `~/Library/Application Support/HackinFX/Core`.
+- Window close keeps the menu-bar app running. Quit stops its Core and child
+  engine. Hardware inventory, explicit diagnostics/report submission and guided
+  native-GPU visual confirmation remain available under advanced tools.
+- Radius callback lifetime crash is fixed in source; its lighting still needs
+  physical verification. The blank desktop widget remains an open issue.
+
+## Native GPU compatibility
+
+The OpenRGB identity catalog recognizes 752 GPU PCI tuples. Native executable
+paths cover PNY Lovelace, EVGA Pascal, ASUS Aura and the controller families
+implemented in this branch; a catalog identity is not a transport or a verified
+lighting result. Native GPU writes require successful visual confirmation.
 
 ## Verified hardware
 
@@ -33,7 +78,7 @@ These lighting effects were visually confirmed by aleopho on the development car
 
 Other GPUs can be inventoried and reported, but lighting writes remain disabled until a compatible local controller/transport module is implemented and validated. See [compatibility and adding GPUs](docs/COMPATIBILITY.md).
 
-## What the app does
+## Native GPU confirmation and community reports
 
 1. Shows a short launch animation, then visibly reads PCI identity and graphics-driver information.
 2. Loads a previously confirmed local profile when the hardware/driver/OS fingerprint matches. Older basic-only profiles require the complete test.
@@ -45,7 +90,7 @@ Closing the window keeps HackinFX in the menu bar. Open Lighting restores it; **
 
 ## Desktop widget
 
-The genuine WidgetKit widget shows GPU model, last successfully applied lighting mode, a matching color strip and brightness where supported. Add HackinFX from the desktop’s **Edit Widgets** gallery after installing and launching the app. WidgetKit controls refresh timing; the colors are a schematic of the last command, not live LED feedback. Normal desktop registration and update behavior still need community validation with the ad-hoc-signed distribution.
+The genuine WidgetKit extension is included. Desktop display is currently reported blank and is still under investigation. Its intended snapshot shows GPU model, last successfully applied lighting mode, a matching color strip and brightness where supported. Add HackinFX from the desktop’s **Edit Widgets** gallery after installing and launching the app. WidgetKit controls refresh timing; the colors are a schematic of the last command, not live LED feedback. Normal desktop registration and update behavior still need community validation with the ad-hoc-signed distribution.
 
 ## Screenshots
 
@@ -74,7 +119,7 @@ licenses/            Preserved third-party notices
 LICENSE              Full GPL version 2 text; project permits version 2 or later
 ```
 
-Build locally with `python3 app/build_community.py`. Package with `python3 app/package_dmg.py`. Full commands and remaining validation limits are in the developer guide.
+Prepare pinned engine/source inputs with `python3 tools/prepare_openrgb_runtime.py`, then build with `python3 app/build_community.py` (full Xcode for WidgetKit). Package with `python3 app/package_installer.py`. [Build checks](docs/RELEASE-2.0.3.md).
 
 ## Credits and license
 

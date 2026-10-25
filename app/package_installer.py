@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Application-only installer: no scripts, kext installation or EFI changes."""
+"""App installer with an explicit optional OpenCore SMBus transaction."""
 from pathlib import Path
 import plistlib
 import shutil
