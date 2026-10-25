@@ -965,7 +965,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let header = menu.addItem(withTitle:"HackinFX · by aleopho", action:nil, keyEquivalent:""); header.isEnabled = false
         add(menu,"Open Control Center",#selector(show),"o")
         add(menu,"Devices",#selector(showDevices))
-        add(menu,"Scenes",#selector(showScenes))
+        add(menu,"Canvas",#selector(showScenes))
         sceneStopItem=add(menu,"Stop scene",#selector(stopCenterScene))
         sceneBlackoutItem=add(menu,"Blackout selected devices",#selector(blackoutCenter))
         menu.addItem(NSMenuItem.separator())
@@ -998,6 +998,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         if !loginLaunch { show() }
         model.center.configureLoginAtLaunch()
         model.center.start()
+        if model.center.automaticUpdates { model.center.checkForUpdates() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self.model.launching = false; self.model.scanHardware() }
     }
     @discardableResult func add(_ menu: NSMenu, _ title: String, _ selector: Selector, _ key: String = "") -> NSMenuItem {
@@ -1025,7 +1026,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     @objc func show() { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps:true); window.makeKeyAndOrderFront(nil) }
     @objc func showDevices() { model.page="Devices";show() }
-    @objc func showScenes() { model.page="Scenes";show() }
+    @objc func showScenes() { model.page="Canvas";show() }
     @objc func stopCenterScene() { model.center.stop() }
     @objc func blackoutCenter() { model.center.blackout() }
     @objc func applyCurrent() { model.apply() }
@@ -1052,7 +1053,7 @@ if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-previ
     let preview = Model(); preview.launching = false; preview.page = "Studio"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
-    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Scenes" : "Overview" }
+    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
     let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text("SAMPLE DATA · DESIGN CHECK").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
     let view = NSHostingView(rootView:labeled)

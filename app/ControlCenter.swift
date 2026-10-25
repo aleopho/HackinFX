@@ -39,6 +39,7 @@ struct CenterDevice: Codable, Identifiable {
     var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
 }
 struct CenterScene: Codable {
+    var synchronized = false
     var mode = "static"
     var palette = ["ffffff","42d6ce","9f8bff"]
     var brightness = 100.0
@@ -49,7 +50,9 @@ private struct PublicRelease:Decodable { let tag_name:String;let html_url:String
 private struct StringError:LocalizedError { let message:String;init(_ message:String) { self.message=message };var errorDescription:String? { message } }
 struct SavedCenterScene: Codable, Identifiable { var id:String { name }; let name: String; let config:CenterScene }
 struct CenterPosition: Codable { var x:Double;var y:Double;var width:Double }
+struct CoreSync:Codable { let clock:String;let dropped:Int;let frames:Int }
 struct CenterState: Codable {
+    var sync:CoreSync? = nil
     let schema:Int
     let devices:[CenterDevice]
     let layout:[String:CenterPosition]
@@ -91,6 +94,7 @@ final class CenterModel: ObservableObject {
         } catch { loginMessage="Login launch: \(error.localizedDescription)" }
     }
     @Published var liveStatus = "Connecting to your devices…"
+    @Published var automaticUpdates = UserDefaults.standard.object(forKey:"AutomaticUpdateChecks") as? Bool ?? true { didSet { UserDefaults.standard.set(automaticUpdates,forKey:"AutomaticUpdateChecks") } }
     @Published var checkingUpdates = false
     @Published var updateMessage = "Check GitHub for the latest public release."
     @Published var updateURL:URL?
@@ -116,7 +120,7 @@ final class CenterModel: ObservableObject {
     var visible:[CenterDevice] { state.devices.filter { device in filter == "all" || (filter == "lighting" && (device.controllable || device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || (filter == "attention" && !device.controllable && (device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || device.category == filter } }
     var chosen:[CenterDevice] { state.devices.filter { selected.contains($0.id) } }
     var canAnimate:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.direct } }
-    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
+    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && (!scene.synchronized || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
     func start() {
         guard process == nil && !shuttingDown else { return }
         busy=true;error=""
@@ -232,7 +236,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.0.3"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.1.0"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -253,7 +257,7 @@ final class CenterModel: ObservableObject {
     func move(_ id:String,x:Double,y:Double,width:Double?=nil) {
         guard online && !busy else { return };busy=true
         let w=width ?? state.layout[id]?.width ?? 0.22
-        request("/v1/layout",body:[id:["x":min(1,max(0,x)),"y":min(1,max(0,y)),"width":w]]) { result in self.busy=false;self.accept(result);self.flushLive() }
+        request("/v1/layout",body:[id:["x":min(1,max(0,x)),"y":min(1,max(0,y)),"width":w]]) { result in self.busy=false;self.accept(result);self.scheduleLive() }
     }
     func shutdown() {
         shuttingDown=true;liveWork?.cancel();livePending=false;timer?.invalidate();timer=nil
@@ -342,7 +346,7 @@ struct CenterNavigation:View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State private var advanced=false
     @Namespace private var selection
-    private let pages=[("Overview","sun.max"),("Devices","externaldrive.connected.to.line.below"),("Scenes","square.stack"),("Layout","rectangle.3.group")]
+    private let pages=[("Overview","sun.max"),("Devices","externaldrive.connected.to.line.below"),("Canvas","rectangle.3.group"),("Effects","sparkles")]
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:11) { Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:36,height:36);VStack(alignment:.leading,spacing:3) { Text("HackinFX").font(.system(size:21,weight:.semibold,design:.rounded));Text("CONTROL CENTER").font(.system(size:7,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted) } }.padding(.bottom,35)
@@ -366,7 +370,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.0.3");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.1.0");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -398,8 +402,8 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:24) {
             if page == "Overview" { overview }
             else if page == "Devices" { devices }
-            else if page == "Scenes" { sceneEditor }
-            else if page == "Layout" { layout }
+            else if page == "Effects" || page == "Scenes" { sceneEditor }
+            else if page == "Canvas" || page == "Layout" { layout }
             else { connections }
             if !center.error.isEmpty { CenterPanel { HStack { Label(center.error,systemImage:"exclamationmark.triangle").font(.system(size:12)).foregroundStyle(.orange).textSelection(.enabled);Spacer();Button { center.error="" } label: { Image(systemName:"xmark") }.help("Dismiss error") } } }
             if !center.state.errors.isEmpty { DisclosureGroup("Connection & device details") { ForEach(Array(center.state.errors.enumerated()),id:\.offset) { _,value in Text(value).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted).textSelection(.enabled) } } }
@@ -462,35 +466,53 @@ struct CenterWorkspace:View {
                         Button("Lights off",action:center.blackout).disabled(center.selected.isEmpty)
                     }
                     if !center.sceneCompatible && !center.selected.isEmpty { Text("Devices that cannot play this effect keep their last color. Choose Static to control all ready devices.").font(.system(size:11)).foregroundStyle(.orange) }
-                    if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text("ASUS keyboard effects run onboard. Direct devices share the host clock; onboard effects continue after Stop until changed or blacked out.").font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
+                    if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text("Onboard effects use their own clocks. Use Canvas with shared-clock streaming devices for synchronized effects.").font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
 
                 }
             }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode)
     }
     private var sceneEditor:some View {
         VStack(alignment:.leading,spacing:22) {
-            CenterHeading(eyebrow:"Scene library",title:"Scenes",subtitle:"Save your favorite looks. Loading a scene updates selected devices immediately.")
-            lightingControls
-            HStack { Text("Scene targets").font(.system(size:16,weight:.semibold));Spacer();Button("Select compatible") { center.selected=Set(center.controllable.filter { $0.direct || ($0.static_modes ?? ["static"]).contains(center.scene.mode) }.map { $0.id }) };Button("Clear") { center.selected=[] } }
-            grid(center.state.devices.filter { $0.controllable })
-            CenterPanel { VStack(alignment:.leading,spacing:15) { HStack { TextField("Scene name",text:$center.sceneName).textFieldStyle(.roundedBorder);Button("Save scene",action:center.saveScene).disabled(center.busy || !center.online) };Text("Scenes store colors and effect settings. Your current device selection stays in place.").font(.system(size:10)).foregroundStyle(CenterTheme.muted);ForEach(center.state.scenes) { saved in Button { center.scene=saved.config } label: { HStack { Image(systemName:"square.stack");Text(saved.name);Spacer();Text(saved.config.mode.capitalized).foregroundStyle(CenterTheme.muted);Image(systemName:"arrow.up.right") } }.buttonStyle(.plain) } } }
+            CenterHeading(eyebrow:"Your effect library",title:"Effect Studio",subtitle:"Build reusable looks. Lighting handles live controls; Canvas places your devices.")
+            CenterPanel { VStack(alignment:.leading,spacing:16) {
+                Text("Save the current look").font(.headline)
+                TextField("Preset name",text:$center.sceneName).textFieldStyle(.roundedBorder)
+                HStack { Text(center.scene.mode.capitalized+" · \(Int(center.scene.brightness))% brightness").foregroundStyle(CenterTheme.muted);Spacer();Button("Save preset",action:center.saveScene).disabled(center.busy || !center.online) }.font(.system(size:12))
+                Text("Presets store effect, palette, speed, direction and shared-clock preference. Device selection stays local to your workspace.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            } }
+            if center.state.scenes.isEmpty { CenterPanel { Label("Create a look in Lighting, then save your first preset here.",systemImage:"sparkles").foregroundStyle(CenterTheme.muted) } }
+            LazyVGrid(columns:[GridItem(.adaptive(minimum:240),spacing:16)],spacing:16) {
+                ForEach(center.state.scenes) { saved in
+                    Button { center.scene=saved.config } label: {
+                        VStack(alignment:.leading,spacing:18) {
+                            HStack(spacing:4) { ForEach(Array(saved.config.palette.enumerated()),id:\.offset) { _,hex in RoundedRectangle(cornerRadius:5).fill(Color(nsColor:NSColor(srgbRed:Double((UInt32(hex,radix:16) ?? 0)>>16&255)/255,green:Double((UInt32(hex,radix:16) ?? 0)>>8&255)/255,blue:Double((UInt32(hex,radix:16) ?? 0)&255)/255,alpha:1))).frame(height:36) } }
+                            Text(saved.name).font(.headline);HStack { Text(saved.config.mode.capitalized);Spacer();Image(systemName:"play.fill") }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                        }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:16))
+                    }.buttonStyle(PressFeedbackStyle())
+                }
+            }
         }
     }
     private var layout:some View {
         VStack(alignment:.leading,spacing:22) {
-            CenterHeading(eyebrow:"Spatial lighting",title:"Setup layout",subtitle:"Drag a controllable device to position it in the shared effect space. Moving a device stops the active scene.")
+            CenterHeading(eyebrow:"Spatial lighting",title:"Canvas",subtitle:"Arrange your setup in one shared effect space. Move devices without resetting the animation clock.")
+            CenterPanel { VStack(alignment:.leading,spacing:12) {
+                Toggle("Shared-clock Canvas",isOn:$center.scene.synchronized).toggleStyle(.switch)
+                HStack { Button("Select streaming devices") { center.selected=Set(center.controllable.filter { $0.direct }.map { $0.id }) };Spacer();Text("20 FPS target · \(center.state.sync?.dropped ?? 0) stale frames skipped").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
+                Text("Canvas mode streams one timeline to Direct-capable devices. Onboard-only effects use independent hardware clocks and are excluded; USB and controller latency can still cause a visible offset.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            } }
             GeometryReader { geometry in
                 ZStack {
                     RoundedRectangle(cornerRadius:20).fill(CenterTheme.surface)
                     Path { path in for x in stride(from:CGFloat(0),through:geometry.size.width,by:32) { path.move(to:CGPoint(x:x,y:0));path.addLine(to:CGPoint(x:x,y:geometry.size.height)) };for y in stride(from:CGFloat(0),through:geometry.size.height,by:32) { path.move(to:CGPoint(x:0,y:y));path.addLine(to:CGPoint(x:geometry.size.width,y:y)) } }.stroke(.white.opacity(0.025),lineWidth:1)
-                    ForEach(center.controllable) { device in
+                    ForEach(center.controllable.filter { !center.scene.synchronized || $0.direct }) { device in
                         let p=center.state.layout[device.id] ?? CenterPosition(x:0.5,y:0.5,width:0.22)
                         let location=dragLocations[device.id] ?? CGPoint(x:p.x*geometry.size.width,y:p.y*geometry.size.height)
                         VStack(spacing:8) { Image(systemName:device.symbol).font(.system(size:25,weight:.light));Text(device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:122,height:85).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
                     }
                     if center.controllable.isEmpty { Text("Discover and confirm a controllable device first").font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
                 }.coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
-            }.frame(height:420)
+            }.frame(height:560)
             Text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; keyboard matrix placement is not yet mapped. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
@@ -498,7 +520,8 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("HackinFX",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.0.3").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.1.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }
             } }

@@ -7,6 +7,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import plistlib
 import shutil
@@ -33,11 +34,27 @@ def boot_partition_guids(data):
         offset+=size
     return guids
 
+def booter_path_guids(value):
+    if isinstance(value,bytes):value=value.decode('utf-8',errors='replace')
+    return {str(uuid.UUID(v)).lower() for v in re.findall(r'GPT,([0-9a-fA-F-]{36}),',value)}
+
 def choose_candidate(candidates,boot_guids):
     preferred=[c for c in candidates if c['uuid'].lower() in boot_guids]
     if len(preferred)==1:return preferred[0]
     if not boot_guids and len(candidates)==1:return candidates[0]
-    raise SetupError('No unique OpenCore EFI found. Nothing was changed. Keep only the intended boot EFI connected and retry the RAM component.')
+    raise SetupError('Cannot uniquely identify the boot OpenCore EFI ('+str(len(candidates))+' candidates). No changes made. Enable Misc/Security/ExposeSensitiveData bit 0x01 to expose the OpenCore boot path, or use the documented manual setup.')
+
+def select_interactively(candidates):
+    if not candidates:raise SetupError('No readable OpenCore EFI found. Check that the boot disk is connected.')
+    uid=os.stat('/dev/console').st_uid
+    if uid==0:raise SetupError('Multiple EFIs require selection in an interactive macOS session')
+    labels=[c['device']+' — '+c['path'] for c in candidates]
+    script='on run choices\nset picked to choose from list choices with title "HackinFX OpenCore setup" with prompt "Select the EFI you boot OpenCore from. A complete backup will be saved before changes."\nif picked is false then return "CANCEL"\nreturn item 1 of picked\nend run'
+    try:
+        selected=subprocess.check_output(['/bin/launchctl','asuser',str(uid),'/usr/bin/sudo','-u','#'+str(uid),'/usr/bin/osascript','-e',script]+labels,stderr=subprocess.PIPE,timeout=180).decode().strip()
+    except (OSError,subprocess.CalledProcessError,subprocess.TimeoutExpired):raise SetupError('EFI selection unavailable. No EFI was changed; use the manual setup guide.')
+    if selected not in labels:raise SetupError('EFI selection cancelled. No EFI was changed.')
+    return candidates[labels.index(selected)]
 
 def edited_config(config,relative=BUNDLE):
     result=copy.deepcopy(config)
@@ -121,16 +138,11 @@ def automatically_install(kext,backup_root):
         for part in disk.get('Partitions',[]):
             if part.get('Content')=='EFI':partitions.append(part['DeviceIdentifier'])
     boot=set()
+    # OpenCore's own booter path, NOT chosen/boot-device-path (the macOS volume).
     try:
-        def visit(value):
-            if isinstance(value,dict):
-                for k,v in value.items():
-                    if k in ('boot-device-path','boot-file','boot-device-data') and isinstance(v,bytes):boot.update(boot_partition_guids(v))
-                    visit(v)
-            elif isinstance(value,list):
-                for v in value:visit(v)
-        visit(plist_command('/usr/sbin/ioreg','-a','-r','-p','IODeviceTree','-n','chosen'))
-    except (subprocess.CalledProcessError,ValueError):pass
+        value=subprocess.check_output(['/usr/sbin/nvram','4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102:boot-path'],stderr=subprocess.PIPE).decode('utf-8',errors='replace')
+        boot=booter_path_guids(value)
+    except (OSError,subprocess.CalledProcessError):pass
     mounted=[];candidates=[]
     try:
         for identifier in partitions:
@@ -140,8 +152,9 @@ def automatically_install(kext,backup_root):
                 subprocess.run(['/usr/sbin/diskutil','mount','readOnly',identifier],check=True,capture_output=True)
                 mounted.append(identifier);info=plist_command('/usr/sbin/diskutil','info','-plist',identifier);point=info.get('MountPoint')
             if point and (Path(point)/'EFI/OC/config.plist').is_file() and (Path(point)/'EFI/OC/OpenCore.efi').is_file():
-                candidates.append(dict(device=identifier,path=point,uuid=info.get('DiskUUID','')))
-        candidate=choose_candidate(candidates,boot)
+                candidates.append(dict(device=identifier,path=point,uuid=info.get('DiskUUID') or info.get('PartitionUUID') or ''))
+        try:candidate=choose_candidate(candidates,boot)
+        except SetupError:candidate=select_interactively(candidates)
         # Remount only an EFI we mounted ourselves; do not disrupt a user-mounted volume.
         if candidate['device'] in mounted:
             subprocess.run(['/usr/sbin/diskutil','unmount',candidate['device']],check=True,capture_output=True)

@@ -41,3 +41,13 @@ class ConfigTests(unittest.TestCase):
    with self.assertRaises(oc.SetupError):oc.install(efi,kext,root/'backups')
    self.assertEqual(other.read_bytes(),original)
 if __name__=='__main__':unittest.main()
+
+class BooterPathTests(unittest.TestCase):
+ def test_opencore_printable_boot_path_is_distinct_from_macos_volume(self):
+  guid=str(uuid.uuid4());path='PciRoot(0x0)/HD(1,GPT,'+guid+',0x800,0x64000)/\\EFI\\OC\\OpenCore.efi'
+  self.assertEqual(oc.booter_path_guids(path),{guid});self.assertEqual(oc.booter_path_guids('missing variable'),set())
+ def test_explicit_picker_can_resolve_multiple_efis_and_cancel(self):
+  a=dict(device='disk0s1',path='/Volumes/EFI',uuid='a');b=dict(device='disk2s1',path='/Volumes/EFI 1',uuid='b')
+  with patch.object(oc.os,'stat',return_value=type('Stat',(),{'st_uid':501})()),patch.object(oc.subprocess,'check_output',return_value=(b['device']+' — '+b['path']+'\n').encode()):self.assertEqual(oc.select_interactively([a,b]),b)
+  with patch.object(oc.os,'stat',return_value=type('Stat',(),{'st_uid':501})()),patch.object(oc.subprocess,'check_output',return_value=b'CANCEL\n'):
+   with self.assertRaises(oc.SetupError):oc.select_interactively([a,b])

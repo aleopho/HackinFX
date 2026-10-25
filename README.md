@@ -6,7 +6,7 @@ HackinFX is a native macOS RGB Control Center by **aleopho** for x86-64
 Hackintoshes with an Intel or AMD CPU. It combines the bundled **OpenRGB 1.1
 macOS engine** with native NVIDIA, USB/HID and scoped DRAM adapters.
 
-This branch contains **2.0.3**: live lighting, nine shared effects, a refined
+This branch contains **2.1.0**: live lighting, nine shared effects, a refined
 lighting-first interface, launch at login, white on startup, update checks and
 an installer with optional automatic OpenCore SMBus setup.
 [Changes and exact validation limits](docs/RELEASE-2.0.3.md).
@@ -21,7 +21,7 @@ entry. It stops on ambiguity; reboot after installing this component.
 
 The last published release remains [1.1.1](https://github.com/aleopho/HackinFX/releases/tag/v1.1.1)
 until the Control Center hardware validation is complete. GitHub Actions on this
-branch produces the 2.0.3 PKG and DMG, including the real WidgetKit extension.
+branch produces the 2.1.0 PKG and DMG, including the real WidgetKit extension.
 
 Requirements:
 
@@ -140,3 +140,14 @@ shared effects, a lighting-first interface, update checks and a macOS 15+ x86-64
 PKG installer. See [changes, build instructions and validation limits](docs/RELEASE-2.0.3.md).
 The current public release is separate from this development branch; device
 control still requires a working macOS driver, not merely a catalog entry.
+
+### 2.1.0 Canvas and clock synchronization
+
+Dedicated Canvas and Effect Studio replace the duplicated Scenes/Layout areas.
+Host-streamed effects share one persistent timeline, parallel output workers and
+a bounded latest-frame policy. Hardware-only modes remain separately timed and
+are excluded from strict Canvas streaming. Update checks run automatically at
+launch and remain available under Software Update. The installer uses OpenCore
+boot-path NVRAM and offers explicit EFI selection when automatic selection is
+ambiguous. Radius discovery/control is now user-confirmed on the development
+machine (2026-10-26), without a claim that all firmware/topologies are tested.

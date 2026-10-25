@@ -10,9 +10,10 @@ RAM lighting is attached to the motherboard SMBus, not GPU NVRM or USB. HackinFX
 
 The PKG installer offers **OpenCore SMBus driver (RAM RGB)** under Customize.
 Selecting it detects EFI partitions, prefers the actual boot partition GUID
-when exposed by firmware, and otherwise accepts only one unambiguous OpenCore
-installation. Ambiguous/malformed configurations stop the component without
-writing to an EFI. The component is optional and off by default.
+using the documented OpenCore NVRAM boot-path, and otherwise accepts only one unambiguous OpenCore
+installation. If that path is unavailable or ambiguous, an interactive EFI selection dialog
+asks which OpenCore installation to use. Cancelling changes nothing. Malformed
+configurations stop the component without writing to an EFI. The component is optional and off by default.
 
 Before changes it saves a complete EFI backup under
 `/Library/Application Support/HackinFX/EFI Backups/<timestamp>/EFI` (administrator

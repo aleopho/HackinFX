@@ -50,14 +50,14 @@ jobs:
       - run: codesign --verify --deep --strict app/HackinFX.app
       - run: python3 tools/check_app_bundle.py
       - run: python3 app/package_installer.py
-      - run: python3 tools/verify_installer.py HackinFX-2.0.3-Installer.pkg
+      - run: python3 tools/verify_installer.py HackinFX-2.1.0-Installer.pkg
       - run: python3 app/package_dmg.py
-      - run: hdiutil verify HackinFX-aleopho-2.0.3.dmg
-      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.0.3.dmg
+      - run: hdiutil verify HackinFX-aleopho-2.1.0.dmg
+      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.1.0.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.0.3-with-WidgetKit
+          name: HackinFX-2.1.0-with-WidgetKit
           path: |
-            HackinFX-aleopho-2.0.3.dmg
-            HackinFX-2.0.3-Installer.pkg
+            HackinFX-aleopho-2.1.0.dmg
+            HackinFX-2.1.0-Installer.pkg
           retention-days: 14

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """HackinFX Core: device adapters, shared scene renderer and private local state."""
+from concurrent.futures import ThreadPoolExecutor
 import colorsys
 import hashlib
 import json
@@ -42,12 +43,14 @@ def scene_config(value):
     if not isinstance(value,dict):raise ValueError('Scene must be an object')
     mode=value.get('mode','static')
     if mode not in ('static','gradient','spectrum','breathing','wave','aurora','comet','twinkle','color shift'):raise ValueError('Unknown scene')
+    synchronized=value.get('synchronized',False)
+    if type(synchronized) is not bool:raise ValueError('Synchronized must be boolean')
     palette=value.get('palette',['c6ed91','42d6ce','9f8bff'])
     if not isinstance(palette,list) or not 1<=len(palette)<=8:raise ValueError('One to eight colors required')
     for item in palette:color(item)
     axis=value.get('axis','x')
     if axis not in ('x','y'):raise ValueError('Invalid scene axis')
-    return dict(mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
+    return dict(synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
 
 
 def frame(scene,count,position,elapsed):
@@ -120,6 +123,8 @@ class NativeGPU:
             identity='native:'+hashlib.sha256(repr(adapter['pci']).encode()).hexdigest()[:24]
             key=identity+':'+str(index)
             row=dict(id=key,fingerprint=identity,name=saved.get('gpuName') or adapter.get('profile_name') or adapter.get('catalog_name') or adapter.get('gpu_name') or 'Display adapter',vendor=saved.get('boardVendor') or adapter.get('board_vendor') or adapter.get('vendor_name') or '',category='gpu',backend='native',led_count=executable.zones if executable else 0,zones=[],direct=False,status='ready' if confirmed else 'setup-required',detail='Confirmed native controller. Static scenes; Gradient on three-zone PNY profiles.' if confirmed else 'Complete the native GPU visual test before control-center writes.',static_modes=['static']+(['gradient'] if executable and executable.zones==3 else []),controllable=confirmed,owns_gpu=adapter.get('nvrm_bound',False))
+            if confirmed and executable.controller=='PNYLovelaceGPUController' and executable.zones==3:
+                row.update(direct=True,host_stream=True,detail='Confirmed PNY RGB zones follow the shared host timeline. Actual rate depends on NVRM transaction latency.')
             rows.append(row)
             if confirmed:self.identities[key]=(fp,executable)
         return rows
@@ -134,7 +139,11 @@ class NativeGPU:
         args=['/usr/bin/python3','-B',str(Path(__file__).with_name('rgb.py')),'--apply','--port',str(profile.port),'--expected-profile',profile.key,'--led','all','--effect',mode,'--color',hexes[0],'--brightness','255','--output',str(path)]
         if mode=='gradient':args+=['--colors',','.join(hexes)]
         result=subprocess.run(args,capture_output=True,timeout=30)
-        if result.returncode:raise RuntimeError('Native GPU command failed; inspect its local CoreReports diagnostic')
+        if result.returncode:
+            failed=sorted(path.parent.glob('rgb-*.json'),key=lambda p:p.stat().st_mtime)
+            for old in failed[:-12]:old.unlink(missing_ok=True)
+            raise RuntimeError('Native GPU command failed; inspect its local CoreReports diagnostic')
+        path.unlink(missing_ok=True) # Successful streamed frames must not grow a report archive.
 
 
 class OpenRGBAdapter:
@@ -155,7 +164,7 @@ class NativeGPUAdapter:
     def __init__(self,driver):self.driver=driver
     def discover(self):return self.driver.discover()
     def activate(self,device):pass  # A native static request is a single bounded transaction group.
-    def write_frame(self,device,colors,mode):self.driver.apply(device,colors,mode)
+    def write_frame(self,device,colors,mode):self.driver.apply(device,colors,'gradient' if device.get('host_stream') else mode)
     def close(self):pass
 
 
@@ -183,7 +192,7 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False
+        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -194,7 +203,7 @@ class Center:
                 if isinstance(row,dict) and isinstance(row.get('name'),str):self.scenes.append(dict(name=row['name'][:60],config=scene_config(row['config'])))
         except (OSError,ValueError,KeyError,TypeError):pass
     def status(self):
-        with self.lock:return dict(schema=1,devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True)
+        with self.lock:return dict(schema=1,devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats))
     def refresh(self,inventory=True):
         with self.operation:
             self.stop();rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
@@ -269,6 +278,7 @@ class Center:
                 for key in ids:
                     target=next((d for d in self.devices if d['id']==key),None)
                     if not target or not target['controllable']:raise ValueError('A selected device is not controllable; refresh or complete its setup')
+                    if config['synchronized'] and not target['direct']:raise ValueError('Canvas sync requires host-streamed Direct devices; onboard effects have independent clocks')
                     if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('A selected device cannot play this effect. Select only compatible targets.')
                     targets.append(dict(target,scene_brightness=config['brightness']))
                 if sum(d['led_count'] for d in targets)>16384:raise ValueError('Scene exceeds the 16,384 LED limit')
@@ -294,29 +304,44 @@ class Center:
             self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
     def render(self,targets,config,event):
-        started=time.monotonic();active=list(targets);animated=config['mode'] not in ('static','gradient')
+        active={d['id']:d for d in targets};pending={};animated=config['mode'] not in ('static','gradient')
+        pool=ThreadPoolExecutor(max_workers=max(1,len(targets)),thread_name_prefix='lighting-output')
+        def collect(key,future):
+            try:future.result()
+            except Exception as exc:
+                active.pop(key,None)
+                with self.lock:
+                    self.errors=(self.errors+[targets_by_id[key]['name']+': '+str(exc)])[-12:]
+                    for device in self.devices:
+                        if device['id']==key:device.update(status='command-failed',controllable=False,detail=str(exc))
+            if config['mode'] in targets_by_id[key].get('onboard_modes',[]):active.pop(key,None)
+        targets_by_id={d['id']:d for d in targets}
         try:
             while active and not event.is_set():
-                tick=time.monotonic();elapsed=tick-started
-                for target in list(active):
+                tick=time.monotonic();elapsed=tick-self.clock_started
+                for key,future in list(pending.items()):
+                    if future.done():collect(key,future);del pending[key]
+                # Render ALL outputs from the same timestamp before any I/O.
+                frames=[]
+                for key,target in list(active.items()):
+                    if key in pending:
+                        with self.lock:self.sync_stats['dropped']+=1
+                        continue # Bounded latest-frame policy; never queue stale frames.
+                    mode='static' if config['mode'] in target.get('onboard_modes',[]) else config['mode']
+                    pixels=frame(dict(config,mode=mode),target['led_count'],self.layout[key],elapsed)
+                    frames.append((key,target,pixels))
+                for key,target,pixels in frames:
                     if event.is_set():break
-                    try:
-                        colors=frame(dict(config,mode='static') if config['mode'] in target.get('onboard_modes',[]) else config,target['led_count'],self.layout[target['id']],elapsed)
-                        self.registry.write_frame(target,colors,config['mode'])
-                        if config['mode'] in target.get('onboard_modes',[]):active.remove(target)
-                    except Exception as exc:
-                        active.remove(target)
-                        with self.lock:
-                            self.errors=(self.errors+[target['name']+': '+str(exc)])[-12:]
-                            for device in self.devices:
-                                if device['id']==target['id']:device.update(status='command-failed',controllable=False,detail=str(exc))
-                with self.lock:self.frames+=1
+                    pending[key]=pool.submit(self.registry.write_frame,target,pixels,config['mode'])
+                with self.lock:self.frames+=1;self.sync_stats['frames']+=1
                 if not animated:break
-                event.wait(max(0,0.05-(time.monotonic()-tick)))
+                event.wait(max(0,.05-(time.monotonic()-tick)))
+            for key,future in list(pending.items()):collect(key,future)
         finally:
+            pool.shutdown(wait=True)
             with self.lock:
                 self.running=False
-                self.message='Scene ended with device errors. Inspect the device details and rediscover before retrying.' if self.errors else 'Host animation stopped; onboard effects continue until changed. Blackout sends black.' if animated else 'Scene commands sent. Onboard effects continue until changed; Blackout sends black.'
+                self.message='Some outputs failed; inspect device details.' if self.errors else 'Shared-clock streaming paused; last colors kept.' if animated else 'Static colors sent.'
     def set_layout(self,values):
         if not isinstance(values,dict) or len(values)>192:raise ValueError('Invalid layout')
         with self.operation:

@@ -61,7 +61,7 @@ class USBTests(unittest.TestCase):
             rows=usb.NativeUSBAdapter(Transport(count=count)).discover();self.assertFalse(rows[0]['controllable'])
     def test_spatha_exact_transport_and_packets(self):
         transport=Transport([record(pid=0x1979,page=0xff01,name='ROG SPATHA X'),record('2',pid=0x1979,page=1,usage=2)])
-        adapter=usb.NativeUSBAdapter(transport);device=adapter.discover()[0];self.assertEqual(device['driver'],'asus-spatha');self.assertEqual(device['category'],'mouse');self.assertFalse(device['direct']);self.assertEqual(transport.sent,[])
+        adapter=usb.NativeUSBAdapter(transport);device=adapter.discover()[0];self.assertEqual(device['driver'],'asus-spatha');self.assertEqual(device['category'],'mouse');self.assertTrue(device['direct']);self.assertEqual(transport.sent,[])
         adapter.activate(device);adapter.write_frame(device,[(10,20,30)]*3,'gradient')
         self.assertEqual(len(transport.sent),3)
         for zone,(_,packet,feature) in enumerate(transport.sent):

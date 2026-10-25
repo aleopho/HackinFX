@@ -158,7 +158,7 @@ class NativeUSBAdapter:
                     count=0;status='access-required';direct=False;detail='HID LampArray detected. '+str(exc)
                     category='keyboard' if any(r['usage_page']==1 and r['usage']==6 for r in groups[record['physical_id']]) else 'mainboard' if vid==0x048d else 'controller'
             elif vid==0x0b05 and pid in (0x1977,0x1979) and page==0xff01:
-                kind='asus-spatha';count=3;category='mouse'
+                kind='asus-spatha';direct=True;count=3;category='mouse'
                 detail='Native ASUS Spatha X lighting. Three hardware zones; Static and Gradient. Wireless updates are deliberately bounded.'
             elif vid==0x1e71 and pid in (0x170e,0x1715) and page>=0xff00:
                 kind='kraken-x2';count=9;category='cooler';direct=True;record['interval']=.1
