@@ -18,6 +18,7 @@ with tempfile.TemporaryDirectory(prefix='hackinfx-pkg-check-') as temporary:
     assert (scripts[0]/'postinstall').is_file()
     assert (scripts[0]/'opencore_setup.py').is_file()
     assert (scripts[0]/'macUSPCIO_Smbus.kext/Contents/Info.plist').is_file()
+    assert (scripts[0]/'macUSPCIO_Smbus.kext/Contents/MacOS/macUSPCIO').stat().st_mode & 0o111
     option=distribution.find("choice[@id='opencore']");assert option is not None and option.get('start_selected')=='false'
     payload=apps[0].parent.parent
     assert [p.name for p in payload.iterdir()]==['Applications']

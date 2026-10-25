@@ -33,6 +33,8 @@ with tempfile.TemporaryDirectory(prefix='hackinfx-installer-') as temporary:
             path=Path(name)
             if path.parts and path.parts[0]=='macUSPCIO_Smbus.kext' and not path.is_absolute() and '..' not in path.parts:
                 bundle.extract(name,scripts)
+    (scripts/'macUSPCIO_Smbus.kext/Contents/MacOS/macUSPCIO').chmod(0o755)
+    subprocess.run(['/usr/bin/lipo','-verify_arch','x86_64',str(scripts/'macUSPCIO_Smbus.kext/Contents/MacOS/macUSPCIO')],check=True)
     shutil.copy2(root.parent/'installer/opencore_setup.py',scripts/'opencore_setup.py')
     (scripts/'postinstall').write_text('#!/bin/sh\nset -eu\nif [ "${3:-/}" != "/" ]; then echo "EFI setup requires the current startup volume" >&2; exit 1; fi\nSCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec /usr/bin/python3 "$SCRIPT_DIR/opencore_setup.py" --kext "$SCRIPT_DIR/macUSPCIO_Smbus.kext" --backups "/Library/Application Support/HackinFX/EFI Backups"\n')
     (scripts/'postinstall').chmod(0o755)
