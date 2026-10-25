@@ -29,3 +29,9 @@ xcuserdata/
 
 # Pinned OpenRGB source snapshot for offline USB identity imports
 !vendor/openrgb/usb-sources.zip
+
+# Verified external build inputs and installer output
+.build-cache/
+*.pkg
+!vendor/macUSPCIO/macUSPCIO_Smbus_Release.kext.zip
+!vendor/macUSPCIO/macUSPCIO-v1.0-source.zip

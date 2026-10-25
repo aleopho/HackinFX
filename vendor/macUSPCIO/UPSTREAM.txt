@@ -1,0 +1,4 @@
+Original driver: https://github.com/ShadyNawara/macUSPCIO/releases/tag/v1.0
+Source: https://github.com/ShadyNawara/macUSPCIO/tree/v1.0
+License: current upstream repository LICENSE (the v1.0 tag archive omits a license file).
+No installation, EFI changes or driver loading were performed.

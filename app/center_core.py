@@ -41,7 +41,7 @@ def color(value):
 def scene_config(value):
     if not isinstance(value,dict):raise ValueError('Scene must be an object')
     mode=value.get('mode','static')
-    if mode not in ('static','gradient','spectrum','breathing','wave'):raise ValueError('Unknown scene')
+    if mode not in ('static','gradient','spectrum','breathing','wave','aurora','comet','twinkle','color shift'):raise ValueError('Unknown scene')
     palette=value.get('palette',['c6ed91','42d6ce','9f8bff'])
     if not isinstance(palette,list) or not 1<=len(palette)<=8:raise ValueError('One to eight colors required')
     for item in palette:color(item)
@@ -66,6 +66,18 @@ def frame(scene,count,position,elapsed):
             rgb=tuple(round(palette[a][i]*(1-f)+palette[b][i]*f) for i in range(3))
         elif mode=='gradient':
             offset=max(0,min(1,coord))*(len(palette)-1);a=int(offset);b=min(a+1,len(palette)-1);f=offset-a
+            rgb=tuple(round(palette[a][i]*(1-f)+palette[b][i]*f) for i in range(3))
+        elif mode=='aurora':
+            hue=(coord*.28+elapsed*speed*.06)%1
+            rgb=tuple(round(c*255) for c in colorsys.hsv_to_rgb(.38+hue*.36,.78,.6+.4*math.sin(coord*5+elapsed*speed)**2))
+        elif mode=='comet':
+            distance=((elapsed*speed*.25)%1-coord)%1
+            rgb=tuple(round(c*math.exp(-distance*12)) for c in palette[0])
+        elif mode=='twinkle':
+            sparkle=max(0,math.sin(index*12.9898+coord*78.233+elapsed*speed*3))**12
+            rgb=tuple(round(c*(.08+.92*sparkle)) for c in palette[index%len(palette)])
+        elif mode=='color shift':
+            offset=(elapsed*speed*.12)%len(palette);a=int(offset);b=(a+1)%len(palette);f=offset-a
             rgb=tuple(round(palette[a][i]*(1-f)+palette[b][i]*f) for i in range(3))
         else:rgb=palette[0]
         level=brightness*(0.08+0.92*(0.5-0.5*math.cos(elapsed*speed*math.pi))) if mode=='breathing' else brightness
@@ -127,11 +139,15 @@ class NativeGPU:
 
 class OpenRGBAdapter:
     name='openrgb'
-    def __init__(self,client):self.client=client
-    def discover(self):return self.client.discover()
+    def __init__(self,client,engine=None):self.client=client;self.engine=engine
+    def discover(self):
+        if self.engine:self.client.port=self.engine.ensure_started()
+        return self.client.discover()
     def activate(self,device):self.client.activate(device['index'])
     def write_frame(self,device,colors,mode):self.client.colors(device['index'],colors)
-    def close(self):self.client.close()
+    def close(self):
+        self.client.close()
+        if self.engine:self.engine.close()
 
 
 class NativeGPUAdapter:
@@ -159,11 +175,15 @@ class AdapterRegistry:
 class Center:
     def __init__(self,store,profiles_dir,sdk=None,native=None,adapters=None):
         self.store=Path(store);self.sdk=sdk or center_sdk.SDKClient();self.native=native or NativeGPU(profiles_dir)
-        defaults=[OpenRGBAdapter(self.sdk),NativeGPUAdapter(self.native)]
+        self.engine=None
+        if sdk is None and adapters is None:
+            from openrgb_runtime import ManagedEngine
+            self.engine=ManagedEngine(Path.home()/'Library/Application Support/HackinFX/Core/OpenRGB')
+        defaults=[OpenRGBAdapter(self.sdk,self.engine),NativeGPUAdapter(self.native)]
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config({});self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={}
+        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -226,9 +246,21 @@ class Center:
             self.stop()
             adapter=self.registry.adapters.get('native-ram')
             if adapter is None:raise ValueError('Native RAM adapter is unavailable')
+            if self.engine:
+                self.sdk.close();self.engine.claim_native_ram()
             adapter.probe()
             return self.refresh()
-    def start(self,value):
+    def initialize(self,inventory=True):
+        # Exactly once per Core session; later discovery never resets a user's colors.
+        with self.operation:
+            if self.initialized:return self.status()
+            self.refresh(inventory=inventory);self.initialized=True
+            ids=[d['id'] for d in self.devices if d['controllable'] and (d['direct'] or 'static' in d['static_modes'])]
+            if not ids:return self.status()
+            discovery_errors=list(self.errors)
+            self.start(dict(config=dict(mode='static',palette=['ffffff'],brightness=100),devices=ids),isolate_failures=True,initial_errors=discovery_errors)
+            return self.status()
+    def start(self,value,isolate_failures=False,initial_errors=None):
         with self.operation:
             config=scene_config(value.get('config',{}));ids=value.get('devices',[])
             if not isinstance(ids,list) or not 1<=len(ids)<=64 or len(set(ids))!=len(ids):raise ValueError('Select one to 64 different devices')
@@ -241,18 +273,25 @@ class Center:
                     targets.append(dict(target,scene_brightness=config['brightness']))
                 if sum(d['led_count'] for d in targets)>16384:raise ValueError('Scene exceeds the 16,384 LED limit')
             self.stop();self.stop_event=threading.Event()
-            # Selecting Direct/Custom is a hardware action, only after explicit Start.
+            # Direct/Custom activation follows a live edit or the startup-white policy.
+            activation_errors=list(initial_errors or []);ready=[]
             for target in targets:
-                try:self.registry.activate(target)
-                except Exception:
+                try:self.registry.activate(target);ready.append(target)
+                except Exception as exc:
+                    if isolate_failures:
+                        activation_errors.append(target['name']+': '+str(exc))
+                        with self.lock:
+                            for device in self.devices:
+                                if device['id']==target['id']:device.update(status='command-failed',controllable=False,detail=str(exc))
+                        continue
                     for adapter in self.registry.adapters.values():
                         if hasattr(adapter,'release'):
                             try:adapter.release()
                             except Exception:pass
                     self.message='Could not activate all targets. Some devices may already be in Direct mode.'
                     raise
-            with self.lock:self.scene=config;self.running=True;self.frames=0;self.errors=[];self.message='Scene active; commands sent, not live LED readback'
-            self.worker=threading.Thread(target=self.render,args=(targets,config,self.stop_event),daemon=True);self.worker.start()
+            with self.lock:self.scene=config;self.running=True;self.frames=0;self.errors=activation_errors;self.message='Scene active; commands sent, not live LED readback'
+            self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
     def render(self,targets,config,event):
         started=time.monotonic();active=list(targets);animated=config['mode'] not in ('static','gradient')

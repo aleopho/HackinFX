@@ -49,32 +49,60 @@ func usbInventory()->[[String:Any]] {
     }
     return rows
 }
-final class LightingReply {
-    let prefix:[UInt8];var bytes:[UInt8]?
-    init(_ prefix:[UInt8]) { self.prefix=prefix }
+final class LightingInbox {
+    var prefix=[UInt8]()
+    var reply:[UInt8]?
+    func receive(_ report:[UInt8]) {
+        guard prefix.count==3 else { return }
+        var bytes=report
+        if prefix.first==0 { bytes.insert(0,at:0) }
+        if bytes.count>=3 && Array(bytes.prefix(3))==prefix { reply=bytes }
+    }
+}
+// A callback context and input buffer must outlive every queued IOKit delivery.
+// Keep one channel per retained lighting collection for the entire helper session.
+final class LightingChannel {
+    let device:IOHIDDevice
+    let buffer=UnsafeMutablePointer<UInt8>.allocate(capacity:512)
+    let inbox=LightingInbox()
+    var prefix:[UInt8] { get { inbox.prefix } set { inbox.prefix=newValue } }
+    var reply:[UInt8]? { get { inbox.reply } set { inbox.reply=newValue } }
+    init(_ device:IOHIDDevice)throws {
+        self.device=device
+        let opened=IOHIDDeviceOpen(device,IOOptionBits(kIOHIDOptionsTypeNone))
+        guard opened==kIOReturnSuccess else { buffer.deallocate();try fail("macOS denied HID lighting access (\(opened)). Close other lighting software and check device permissions.") }
+    }
+    func schedule() {
+        IOHIDDeviceRegisterInputReportCallback(device,buffer,512,{ context,result,_,_,_,report,length in
+            guard result==kIOReturnSuccess,let context=context,length>0,length<=512 else { return }
+            let channel=Unmanaged<LightingChannel>.fromOpaque(context).takeUnretainedValue()
+            channel.receive(Array(UnsafeBufferPointer(start:report,count:length)))
+        },Unmanaged.passUnretained(self).toOpaque())
+        IOHIDDeviceScheduleWithRunLoop(device,CFRunLoopGetCurrent(),CFRunLoopMode.defaultMode.rawValue)
+    }
+    func receive(_ report:[UInt8]) { inbox.receive(report) }
+}
+var lightingChannels=[String:LightingChannel]()
+func lightingChannel(_ device:IOHIDDevice)throws->LightingChannel {
+    let key=entryID(IOHIDDeviceGetService(device))
+    if let channel=lightingChannels[key] { return channel }
+    let channel=try LightingChannel(device)
+    lightingChannels[key]=channel // Retain BEFORE registering the unretained C context.
+    channel.schedule()
+    return channel
 }
 func lightingExchange(_ device:IOHIDDevice,_ packet:[UInt8])throws->[UInt8] {
-    let state=LightingReply(Array(packet.prefix(3)))
-    let buffer=UnsafeMutablePointer<UInt8>.allocate(capacity:512);defer { buffer.deallocate() }
-    let loop=CFRunLoopGetCurrent()!
-    IOHIDDeviceRegisterInputReportCallback(device,buffer,512,{ context,result,_,_,_,report,length in
-        guard result==kIOReturnSuccess,let context=context,length>0,length<=512 else { return }
-        let state=Unmanaged<LightingReply>.fromOpaque(context).takeUnretainedValue()
-        var bytes=Array(UnsafeBufferPointer(start:report,count:length))
-        if state.prefix.first==0 { bytes.insert(0,at:0) }
-        if bytes.count>=3 && Array(bytes.prefix(3))==state.prefix { state.bytes=bytes }
-    },Unmanaged.passUnretained(state).toOpaque())
-    IOHIDDeviceScheduleWithRunLoop(device,loop,CFRunLoopMode.defaultMode.rawValue)
-    defer {
-        IOHIDDeviceUnscheduleFromRunLoop(device,loop,CFRunLoopMode.defaultMode.rawValue)
-        IOHIDDeviceRegisterInputReportCallback(device,buffer,512,nil,nil)
-    }
+    let channel=try lightingChannel(device)
+    channel.prefix=[];channel.reply=nil
+    CFRunLoopRunInMode(CFRunLoopMode.defaultMode,0.001,false) // Drain stale input with no active request.
+    channel.prefix=Array(packet.prefix(3))
+    defer { channel.prefix=[];channel.reply=nil }
     var bytes=packet;let id=bytes[0];if id==0 { bytes.removeFirst() }
     let result=IOHIDDeviceSetReport(device,kIOHIDReportTypeOutput,CFIndex(id),bytes,bytes.count)
     guard result==kIOReturnSuccess else { try fail("Lighting request failed (\(result))") }
     let deadline=Date().addingTimeInterval(2)
-    while state.bytes==nil && Date()<deadline { CFRunLoopRunInMode(CFRunLoopMode.defaultMode,0.01,true) }
-    guard let reply=state.bytes else { try fail("Lighting acknowledgement timed out; no automatic retry") }
+    while channel.reply==nil && Date()<deadline { CFRunLoopRunInMode(CFRunLoopMode.defaultMode,0.01,true) }
+    guard let reply=channel.reply else { try fail("Lighting acknowledgement timed out; no automatic retry") }
     return reply
 }
 struct BridgeError:Error { let message:String }
@@ -91,9 +119,13 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     let keyboard=vid==0x0b05 && ((pid==0x1ace && page>=0xff00) || (pid==0x1aae && page==0xff00))
     guard lamp || mouse || kraken || radius || keyboard else { try fail("No implemented lighting transport for this collection") }
     guard let id=request["report_id"] as? Int,(0...255).contains(id) else { try fail("Invalid report ID") }
-    let opened=IOHIDDeviceOpen(device,IOOptionBits(kIOHIDOptionsTypeNone))
-    guard opened==kIOReturnSuccess else { try fail("macOS denied HID lighting access (\(opened)). Close other lighting software and check device permissions.") }
-    defer { IOHIDDeviceClose(device,IOOptionBits(kIOHIDOptionsTypeNone)) }
+    let persistent=radius || keyboard
+    if persistent { _=try lightingChannel(device) }
+    else {
+        let opened=IOHIDDeviceOpen(device,IOOptionBits(kIOHIDOptionsTypeNone))
+        guard opened==kIOReturnSuccess else { try fail("macOS denied HID lighting access (\(opened)). Close other lighting software and check device permissions.") }
+    }
+    defer { if !persistent { IOHIDDeviceClose(device,IOOptionBits(kIOHIDOptionsTypeNone)) } }
     if command=="access" { return ["available":true] }
     if command=="feature_get" && lamp {
         guard let size=request["size"] as? Int,(2...512).contains(size),id>0 else { try fail("Invalid feature size") }
@@ -119,7 +151,14 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     guard result==kIOReturnSuccess else { try fail("HID lighting write failed (\(result))") }
     return ["sent":true]
 }
-if CommandLine.arguments.contains("--inventory") {
+if CommandLine.arguments.contains("--self-test") {
+    let inbox=LightingInbox();inbox.receive([2,0xa4,8]);precondition(inbox.reply==nil)
+    inbox.prefix=[2,0xa4,8];inbox.receive([2,0xa4,9]);precondition(inbox.reply==nil)
+    inbox.receive([2,0xa4,8,1]);precondition(inbox.reply==[2,0xa4,8,1])
+    inbox.reply=nil;inbox.prefix=[0,0x12,0x12];inbox.receive([0x12,0x12,1]);precondition(inbox.reply==[0,0x12,0x12,1])
+    inbox.reply=nil;inbox.prefix=[];inbox.receive([0x12,0x12,1]);precondition(inbox.reply==nil)
+    print("Lighting ACK matching, zero-ID framing and stale-input rejection verified without hardware access")
+} else if CommandLine.arguments.contains("--inventory") {
     let result:[String:Any]=["devices":inventory(deviceList()),"usb":usbInventory()]
     let data=try JSONSerialization.data(withJSONObject:result,options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self))
 } else {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 struct CenterZone: Codable { let name:String;let led_count:Int }
 struct CenterMode: Codable { let name:String;let flags:Int }
@@ -39,11 +40,13 @@ struct CenterDevice: Codable, Identifiable {
 }
 struct CenterScene: Codable {
     var mode = "static"
-    var palette = ["c6ed91","42d6ce","9f8bff"]
-    var brightness = 70.0
+    var palette = ["ffffff","42d6ce","9f8bff"]
+    var brightness = 100.0
     var speed = 35.0
     var axis = "x"
 }
+private struct PublicRelease:Decodable { let tag_name:String;let html_url:String;let draft:Bool;let prerelease:Bool }
+private struct StringError:LocalizedError { let message:String;init(_ message:String) { self.message=message };var errorDescription:String? { message } }
 struct SavedCenterScene: Codable, Identifiable { var id:String { name }; let name: String; let config:CenterScene }
 struct CenterPosition: Codable { var x:Double;var y:Double;var width:Double }
 struct CenterState: Codable {
@@ -63,14 +66,38 @@ private struct CoreDiscovery: Codable { let schema:Int;let port:Int;let credenti
 
 final class CenterModel: ObservableObject {
     @Published var state = CenterState.empty
-    @Published var selected = Set<String>()
-    @Published var scene = CenterScene()
+    @Published var selected = Set<String>() { didSet { if selected != oldValue { scheduleLive() } } }
+    @Published var scene = CenterScene() { didSet { scheduleLive() } }
     @Published var filter = "lighting"
     @Published var busy = false
     @Published var online = false
     @Published var error = ""
     @Published var sceneName = "My scene"
     @Published var activeDevice: CenterDevice?
+    @Published var loginEnabled = UserDefaults.standard.object(forKey:"LaunchAtLogin") as? Bool ?? true
+    @Published var loginMessage = "Launch automatically after macOS sign-in."
+    func configureLoginAtLaunch() { setLaunchAtLogin(loginEnabled) }
+    func setLaunchAtLogin(_ enabled:Bool) {
+        loginEnabled=enabled;UserDefaults.standard.set(enabled,forKey:"LaunchAtLogin")
+        guard Bundle.main.bundleURL.path.hasPrefix("/Applications/") else { loginMessage="Install HackinFX in Applications to enable login launch.";return }
+        do {
+            if enabled && SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
+            if !enabled && SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }
+            switch SMAppService.mainApp.status {
+            case .enabled:loginMessage="Enabled · starts after macOS sign-in and sets ready devices to white."
+            case .requiresApproval:loginMessage="Allow HackinFX in System Settings → General → Login Items."
+            default:loginMessage=enabled ? "Login launch is unavailable. Check Login Items in System Settings.":"Launch at login is off."
+            }
+        } catch { loginMessage="Login launch: \(error.localizedDescription)" }
+    }
+    @Published var liveStatus = "Connecting to your devices…"
+    @Published var checkingUpdates = false
+    @Published var updateMessage = "Check GitHub for the latest public release."
+    @Published var updateURL:URL?
+    private var liveWork:DispatchWorkItem?
+    private var livePending=false
+    private var suppressLive=false
+    private var liveRequest=false
     private var process:Process?
     private var discovery:CoreDiscovery?
     private var timer:Timer?
@@ -79,6 +106,12 @@ final class CenterModel: ObservableObject {
     private var logHandle:FileHandle?
     private var sessionFile:URL?
     private let session=URLSession(configuration:.ephemeral)
+    private var mutationQueue:[()->Void]=[]
+    private var mutating=false
+    private func nextMutation() {
+        guard !mutating && !mutationQueue.isEmpty && !shuttingDown else { return }
+        mutating=true;mutationQueue.removeFirst()()
+    }
     var controllable:[CenterDevice] { state.devices.filter { $0.controllable } }
     var visible:[CenterDevice] { state.devices.filter { device in filter == "all" || (filter == "lighting" && (device.controllable || device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || (filter == "attention" && !device.controllable && (device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || device.category == filter } }
     var chosen:[CenterDevice] { state.devices.filter { selected.contains($0.id) } }
@@ -109,17 +142,23 @@ final class CenterModel: ObservableObject {
         if let data=try? Data(contentsOf:url),let info=try? JSONDecoder().decode(CoreDiscovery.self,from:data),info.schema == 1,(1...65535).contains(info.port),info.credential.count >= 32,info.pid == Int(process?.processIdentifier ?? -1) {
             discovery=info;online=true;busy=false
             timer=Timer.scheduledTimer(withTimeInterval:2,repeats:true) { [weak self] _ in self?.poll() }
-            discover();return
+            busy=true
+            request("/v1/initialize") { result in
+                self.suppressLive=true;self.accept(result)
+                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable }.map { $0.id });self.liveStatus="Startup white · live control ready" }
+                self.suppressLive=false;self.busy=false
+            };return
         }
         guard attempt<60,process?.isRunning == true else { busy=false;error="Core did not become available. Check its local log or close another HackinFX instance.";return }
         DispatchQueue.main.asyncAfter(deadline:.now()+0.1) { self.awaitDiscovery(url,attempt:attempt+1) }
     }
     private func request(_ path:String,method:String="POST",body:[String:Any]=[:],completion:@escaping(Result<CenterState,Error>)->Void) {
         guard let info=discovery else { return }
-        var request=URLRequest(url:URL(string:"http://127.0.0.1:\(info.port)\(path)")!);request.httpMethod=method;request.timeoutInterval=90
+        var request=URLRequest(url:URL(string:"http://127.0.0.1:\(info.port)\(path)")!);request.httpMethod=method;request.timeoutInterval=180
         request.setValue("Bearer "+info.credential,forHTTPHeaderField:"Authorization")
         if method == "POST" { request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.httpBody=try? JSONSerialization.data(withJSONObject:body) }
-        session.dataTask(with:request) { data,response,error in
+        let launch = {
+        self.session.dataTask(with:request) { data,response,error in
             let result:Result<CenterState,Error>
             if let error=error { result = .failure(error) }
             else if let data=data,(response as? HTTPURLResponse)?.statusCode == 200,let state=try? JSONDecoder().decode(CenterState.self,from:data),state.schema == 1 { result = .success(state) }
@@ -127,8 +166,13 @@ final class CenterModel: ObservableObject {
                 let object=data.flatMap { try? JSONSerialization.jsonObject(with:$0) as? [String:Any] }
                 result = .failure(NSError(domain:"HackinFXCore",code:1,userInfo:[NSLocalizedDescriptionKey:object?["error"] as? String ?? "Core returned an unreadable response"]))
             }
-            DispatchQueue.main.async { completion(result) }
+            DispatchQueue.main.async {
+                completion(result)
+                if method == "POST" { self.mutating=false;self.nextMutation() }
+            }
         }.resume()
+        }
+        if method == "POST" { mutationQueue.append(launch);nextMutation() } else { launch() }
     }
     private func accept(_ result:Result<CenterState,Error>,clearError:Bool=true) {
         switch result {
@@ -137,37 +181,82 @@ final class CenterModel: ObservableObject {
         }
     }
     func poll() {
-        guard online && !busy && !polling else { return };polling=true
-        request("/v1/status",method:"GET") { result in self.polling=false;self.accept(result,clearError:false) }
+        guard online && !busy && !liveRequest && !mutating && !polling else { return };polling=true
+        request("/v1/status",method:"GET") { result in self.polling=false;self.accept(result,clearError:false);self.flushLive() }
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.busy=false;self.accept(result) }
+        request("/v1/discover") { result in self.busy=false;self.accept(result);self.flushLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
-    func apply() {
-        guard online && !busy && sceneCompatible else { return };busy=true
-        let encoded=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(scene))) as? [String:Any] ?? [:]
-        request("/v1/scene/start",body:["config":encoded,"devices":Array(selected).sorted()]) { result in self.busy=false;self.accept(result) }
+    func scheduleLive() {
+        guard !suppressLive && !shuttingDown && discovery != nil else { return }
+        liveWork?.cancel();livePending=true
+        liveStatus=selected.isEmpty ? "Select devices to control" : "Updating lighting…"
+        let work=DispatchWorkItem { [weak self] in self?.flushLive() }
+        liveWork=work;DispatchQueue.main.asyncAfter(deadline:.now()+0.14,execute:work)
     }
-    func stop() { guard online && !busy else { return };busy=true;request("/v1/scene/stop") { result in self.busy=false;self.accept(result) } }
-    func blackout() { scene.mode="static";scene.brightness=0;apply() }
+    private func flushLive() {
+        guard livePending && online && !busy && !liveRequest && !shuttingDown else { return }
+        let targets=chosen.filter { $0.controllable && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
+        guard !targets.isEmpty else { liveStatus=selected.isEmpty ? "Select devices to control":"No selected device supports this effect";livePending=false;return }
+        let skipped=selected.count-targets.count
+        livePending=false;liveRequest=true;liveStatus="Updating lighting…"
+        let encoded=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(scene))) as? [String:Any] ?? [:]
+        request("/v1/scene/start",body:["config":encoded,"devices":targets.map { $0.id }.sorted()]) { result in
+            self.liveRequest=false;self.accept(result)
+            switch result { case .success:self.liveStatus=skipped>0 ? "Live · \(targets.count) devices · \(skipped) skipped":"Live · changes sent";case .failure:self.liveStatus="Update failed · see details" }
+            if self.livePending { self.scheduleLive() }
+        }
+    }
+    func apply() { scheduleLive() } // Used by menu actions; the editor has no Apply step.
+    func stop() {
+        guard online && !busy else { return };liveWork?.cancel();livePending=false;busy=true
+        request("/v1/scene/stop") { result in self.busy=false;self.accept(result);self.liveStatus="Animation paused · last colors kept" }
+    }
+    func blackout() { scene.mode="static";scene.brightness=0 }
+    func checkForUpdates() {
+        guard !checkingUpdates else { return };checkingUpdates=true;updateURL=nil;updateMessage="Checking GitHub…"
+        var request=URLRequest(url:URL(string:"https://api.github.com/repos/aleopho/HackinFX/releases/latest")!)
+        request.timeoutInterval=20;request.setValue("application/vnd.github+json",forHTTPHeaderField:"Accept");request.setValue("HackinFX",forHTTPHeaderField:"User-Agent")
+        session.dataTask(with:request) { data,response,error in
+            let result:Result<PublicRelease,StringError>
+            do {
+                if let error=error { throw error }
+                guard (response as? HTTPURLResponse)?.statusCode == 200,let data=data else { throw StringError("GitHub is unavailable or its request limit was reached. Try again later.") }
+                let release=try JSONDecoder().decode(PublicRelease.self,from:data)
+                guard !release.draft && !release.prerelease,let url=URL(string:release.html_url),url.scheme=="https",url.host=="github.com",url.path.hasPrefix("/aleopho/HackinFX/releases/tag/") else { throw StringError("GitHub returned an invalid release.") }
+                result = .success(release)
+            } catch { result = .failure(StringError(error.localizedDescription)) }
+            DispatchQueue.main.async {
+                self.checkingUpdates=false
+                switch result {
+                case .success(let release):
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.0.3"
+                    let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
+                    self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
+                    if newer { self.updateURL=URL(string:release.html_url) }
+                case .failure(let error):self.updateMessage=error.localizedDescription
+                }
+            }
+        }.resume()
+    }
     func probeRAM() {
         guard online && !busy else { return };busy=true;error=""
-        request("/v1/ram/probe") { result in self.busy=false;self.accept(result) }
+        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);self.flushLive() }
     }
     func saveScene() {
         guard online && !busy else { return };busy=true
         let encoded=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(scene))) as? [String:Any] ?? [:]
-        request("/v1/scenes/save",body:["name":sceneName,"config":encoded]) { result in self.busy=false;self.accept(result) }
+        request("/v1/scenes/save",body:["name":sceneName,"config":encoded]) { result in self.busy=false;self.accept(result);self.flushLive() }
     }
     func move(_ id:String,x:Double,y:Double,width:Double?=nil) {
         guard online && !busy else { return };busy=true
         let w=width ?? state.layout[id]?.width ?? 0.22
-        request("/v1/layout",body:[id:["x":min(1,max(0,x)),"y":min(1,max(0,y)),"width":w]]) { result in self.busy=false;self.accept(result) }
+        request("/v1/layout",body:[id:["x":min(1,max(0,x)),"y":min(1,max(0,y)),"width":w]]) { result in self.busy=false;self.accept(result);self.flushLive() }
     }
     func shutdown() {
-        shuttingDown=true;timer?.invalidate();timer=nil
+        shuttingDown=true;liveWork?.cancel();livePending=false;timer?.invalidate();timer=nil
         if process?.isRunning == true { process?.terminate() }
         process=nil;discovery=nil;try? logHandle?.close();logHandle=nil
     }
@@ -211,35 +300,82 @@ private struct CenterAction:View {
     var body:some View { Button(action:action) { HStack { Text(title);Image(systemName:symbol) }.font(.system(size:12,weight:.semibold)).foregroundStyle(CenterTheme.background).padding(.horizontal,17).frame(height:38).background(CenterTheme.accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle()) }
 }
 
+private struct CenterScenePreview:View {
+    let scene:CenterScene
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private func rgb(_ hex:String)->(Double,Double,Double) {
+        let v=UInt32(hex,radix:16) ?? 0xffffff
+        return (Double((v>>16)&255)/255,Double((v>>8)&255)/255,Double(v&255)/255)
+    }
+    private func tint(_ index:Int,_ time:Double)->Color {
+        let t=Double(index)/39;let speed=scene.speed/100;var level=scene.brightness/100
+        if scene.mode=="aurora" { return Color(hue:0.38+((t*0.28+time*speed*0.06).truncatingRemainder(dividingBy:1))*0.36,saturation:0.78,brightness:level*(0.6+0.4*pow(sin(t*5+time*speed),2))) }
+        if scene.mode=="comet" { let d=((time*speed*0.25).truncatingRemainder(dividingBy:1)-t+1).truncatingRemainder(dividingBy:1);level *= exp(-d*12) }
+        if scene.mode=="twinkle" { level *= 0.08+0.92*pow(max(0,sin(Double(index)*12.9898+t*78.233+time*speed*3)),12) }
+        if scene.mode=="color shift" {
+            let offset=(time*speed*0.12).truncatingRemainder(dividingBy:Double(scene.palette.count));let a=Int(offset),b=(a+1)%scene.palette.count,f=offset-Double(a)
+            let x=rgb(scene.palette[a]),y=rgb(scene.palette[b]);return Color(red:(x.0*(1-f)+y.0*f)*level,green:(x.1*(1-f)+y.1*f)*level,blue:(x.2*(1-f)+y.2*f)*level)
+        }
+        if scene.mode=="spectrum" { return Color(hue:(time*speed*0.2).truncatingRemainder(dividingBy:1),saturation:0.8,brightness:level) }
+        if scene.mode=="breathing" { level *= 0.08+0.92*(0.5-0.5*cos(time*speed*Double.pi)) }
+        if ["gradient","wave"].contains(scene.mode) {
+            let phase=scene.mode=="wave" ? (t+time*speed*0.25).truncatingRemainder(dividingBy:1):t
+            let offset=phase*Double(max(1,scene.palette.count-1));let a=min(scene.palette.count-1,Int(offset));let b=min(scene.palette.count-1,a+1);let f=offset-Double(a)
+            let x=rgb(scene.palette[a]),y=rgb(scene.palette[b]);return Color(red:(x.0*(1-f)+y.0*f)*level,green:(x.1*(1-f)+y.1*f)*level,blue:(x.2*(1-f)+y.2*f)*level)
+        }
+        let c=rgb(scene.palette.first ?? "ffffff");return Color(red:c.0*level,green:c.1*level,blue:c.2*level)
+    }
+    var body:some View {
+        TimelineView(.animation(minimumInterval:0.05,paused:reduceMotion || ["static","gradient"].contains(scene.mode))) { context in
+            let time=reduceMotion ? 0:context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3600)
+            VStack(alignment:.leading,spacing:20) {
+                HStack { Text(scene.mode.capitalized).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text("EFFECT VISUALIZATION").font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
+                HStack(spacing:4) { ForEach(0..<40) { i in Capsule().fill(tint(i,time)).frame(height:34).shadow(color:tint(i,time).opacity(0.45),radius:8) } }
+            }.padding(20).background(LinearGradient(colors:[CenterTheme.background,CenterTheme.elevated.opacity(0.35)],startPoint:.topLeading,endPoint:.bottomTrailing)).clipShape(RoundedRectangle(cornerRadius:14))
+        }.accessibilityLabel("Effect visualization. Not live LED feedback.")
+    }
+}
+
 struct CenterNavigation:View {
     @ObservedObject var model:Model
     @ObservedObject var center:CenterModel
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @State private var advanced=false
     @Namespace private var selection
-    private let pages=[("Overview","square.grid.2x2"),("Devices","externaldrive.connected.to.line.below"),("Scenes","slider.horizontal.3"),("Layout","rectangle.3.group"),("Connections","point.3.connected.trianglepath.dotted"),("Studio","cpu"),("Hardware","waveform.path.ecg"),("Credits","heart")]
+    private let pages=[("Overview","sun.max"),("Devices","externaldrive.connected.to.line.below"),("Scenes","square.stack"),("Layout","rectangle.3.group")]
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:11) { Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:36,height:36);VStack(alignment:.leading,spacing:3) { Text("HackinFX").font(.system(size:21,weight:.semibold,design:.rounded));Text("CONTROL CENTER").font(.system(size:7,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted) } }.padding(.bottom,35)
             Text("WORKSPACE").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,12)
             ForEach(pages,id:\.0) { page,symbol in
                 Button { model.page=page } label: {
-                    HStack(spacing:12) { Image(systemName:symbol).font(.system(size:14)).frame(width:18);Text(page == "Studio" ? "GPU Lab" : page == "Hardware" ? "Diagnostics" : page).font(.system(size:12,weight:.medium));Spacer();if page == "Devices" { Text("\(center.state.devices.count)").font(.system(size:10,design:.monospaced)) } }.foregroundStyle(model.page == page ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,13).frame(height:43).background { if model.page == page { RoundedRectangle(cornerRadius:10).fill(CenterTheme.accent.opacity(0.08)).matchedGeometryEffect(id:"center-nav",in:selection) } }
+                    HStack(spacing:12) { Image(systemName:symbol).font(.system(size:14)).frame(width:18);Text(page == "Overview" ? "Lighting" : page).font(.system(size:12,weight:.medium));Spacer();if page == "Devices" { Text("\(center.state.devices.count)").font(.system(size:10,design:.monospaced)) } }.foregroundStyle(model.page == page ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,13).frame(height:43).background { if model.page == page { RoundedRectangle(cornerRadius:10).fill(CenterTheme.accent.opacity(0.08)).matchedGeometryEffect(id:"center-nav",in:selection) } }
                 }.buttonStyle(PressFeedbackStyle()).padding(.bottom,5)
             }
             Spacer(minLength:20)
+            DisclosureGroup("Advanced",isExpanded:$advanced) {
+                VStack(alignment:.leading,spacing:8) {
+                    ForEach([("Studio","GPU Lab","cpu"),("Hardware","Diagnostics","waveform.path.ecg"),("Credits","Credits","heart")],id:\.0) { key,title,symbol in
+                        Button { model.page=key } label: { Label(title,systemImage:symbol).font(.system(size:11)).foregroundStyle(model.page == key ? CenterTheme.accent:CenterTheme.muted).frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,6) }.buttonStyle(.plain)
+                    }
+                }.padding(.top,10)
+            }.font(.system(size:11)).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,18)
+            Button { model.page="Settings" } label: { Label("Settings",systemImage:"gearshape").font(.system(size:12,weight:.medium)).foregroundStyle(model.page == "Settings" ? CenterTheme.accent:CenterTheme.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }.buttonStyle(PressFeedbackStyle()).padding(.bottom,16)
             VStack(alignment:.leading,spacing:12) {
                 HStack { Image(systemName:"circle.hexagongrid").foregroundStyle(CenterTheme.accent);Text("HACKINFX CORE").font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(1) }
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.0.2");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
-        }.padding(22).frame(width:232).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
+            HStack { Text("2.0.3");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+        }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
 
 private struct CenterDeviceCard:View {
     @ObservedObject var center:CenterModel
     let device:CenterDevice
+    @State private var hovered=false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body:some View {
         Button { center.toggle(device) } label: {
             VStack(alignment:.leading,spacing:17) {
@@ -248,13 +384,15 @@ private struct CenterDeviceCard:View {
                 HStack { CenterBadge(text:device.controllable ? "Ready" : device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable);Spacer();if device.led_count>0 { Text("\(device.led_count) \(device.backend == "native" || device.backend == "native-ram" || device.driver == "asus-spatha" || device.driver == "asus-keyboard" ? "zones" : "LEDs")").font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
                 Text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : device.backend == "native-ram" ? "Native Corsair / SMBus" : device.backend == "native-usb" ? "Native USB / HID" : "No lighting driver attached").font(.system(size:9)).foregroundStyle(CenterTheme.muted)
             }.padding(19).frame(maxWidth:.infinity,alignment:.leading).background(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.045) : CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:17)).overlay(RoundedRectangle(cornerRadius:17).stroke(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.5) : .white.opacity(0.065),lineWidth:1))
-        }.buttonStyle(PressFeedbackStyle()).help(device.detail).contextMenu { Button("Device details") { center.activeDevice=device } }
+        }.buttonStyle(PressFeedbackStyle()).offset(y:hovered && !reduceMotion ? -3:0).shadow(color:CenterTheme.accent.opacity(hovered ? 0.06:0),radius:16,y:6).onHover { hovered=$0 }.animation(reduceMotion ? nil:.spring(duration:0.25,bounce:0.15),value:hovered).animation(reduceMotion ? nil:.spring(duration:0.28,bounce:0.15),value:center.selected.contains(device.id)).help(device.detail).contextMenu { Button("Device details") { center.activeDevice=device } }
     }
 }
 
 struct CenterWorkspace:View {
     @ObservedObject var center:CenterModel
     let page:String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var effectSelection
     @State private var dragLocations:[String:CGPoint] = [:]
     var body:some View {
         VStack(alignment:.leading,spacing:24) {
@@ -265,28 +403,30 @@ struct CenterWorkspace:View {
             else { connections }
             if !center.error.isEmpty { CenterPanel { HStack { Label(center.error,systemImage:"exclamationmark.triangle").font(.system(size:12)).foregroundStyle(.orange).textSelection(.enabled);Spacer();Button { center.error="" } label: { Image(systemName:"xmark") }.help("Dismiss error") } } }
             if !center.state.errors.isEmpty { DisclosureGroup("Connection & device details") { ForEach(Array(center.state.errors.enumerated()),id:\.offset) { _,value in Text(value).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted).textSelection(.enabled) } } }
-        }.buttonStyle(CenterSecondaryStyle()).foregroundStyle(Color(red:0.91,green:0.94,blue:0.93)).sheet(item:$center.activeDevice) { device in CenterDeviceInspector(center:center,device:device) }
+        }.animation(reduceMotion ? nil:.smooth(duration:0.24),value:center.filter).buttonStyle(CenterSecondaryStyle()).foregroundStyle(Color(red:0.91,green:0.94,blue:0.93)).sheet(item:$center.activeDevice) { device in CenterDeviceInspector(center:center,device:device) }
     }
     private var overview:some View {
-        VStack(alignment:.leading,spacing:25) {
-            CenterHeading(eyebrow:"Workspace / local",title:"Control Center",subtitle:"Manage your setup, compose scenes and control compatible devices together.")
-            ZStack(alignment:.leading) {
-                RoundedRectangle(cornerRadius:23).fill(LinearGradient(colors:[Color(red:0.10,green:0.16,blue:0.13),CenterTheme.surface],startPoint:.topLeading,endPoint:.bottomTrailing))
-                HStack(alignment:.center,spacing:22) {
-                    VStack(alignment:.leading,spacing:14) { CenterBadge(text:center.state.running ? "Host scene active" : center.state.frames>0 ? "Last requested scene" : "Workspace ready",good:center.online);Text(center.state.running || center.state.frames>0 ? center.state.scene.mode.capitalized : "Your lighting workspace").font(.system(size:25,weight:.semibold,design:.rounded));Text("Native GPU, USB lighting and OpenRGB devices.\nOne local engine, shared scenes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);HStack { CenterAction(title:center.busy ? "Working…" : "Discover devices",symbol:"arrow.clockwise",action:center.discover).disabled(!center.online || center.busy);if !center.online { Button("Start Core",action:center.start) } } }
-                    Spacer(minLength:0)
-                    ZStack { ForEach(0..<4) { i in RoundedRectangle(cornerRadius:CGFloat(22+i*6)).stroke(CenterTheme.accent.opacity(0.05+Double(i)*0.02),lineWidth:1).frame(width:CGFloat(82+i*30),height:CGFloat(82+i*30)).rotationEffect(.degrees(20)) };Image(systemName:"circle.hexagongrid").font(.system(size:54,weight:.ultraLight)).foregroundStyle(CenterTheme.accent.opacity(0.85)) }.frame(width:185,height:185)
-                }.padding(27)
-            }.frame(height:245)
-            HStack(spacing:14) { metric("Controllable",value:"\(center.controllable.count)",symbol:"slider.horizontal.3");metric("Detected entries",value:"\(center.state.devices.count)",symbol:"externaldrive.connected.to.line.below");metric("Host engine",value:center.state.running ? "Running" : "Idle",symbol:"waveform.path") }
-            HStack { Text("Devices in your workspace").font(.system(size:17,weight:.semibold));Spacer();Text("\(center.selected.count) selected").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
-            grid(Array(center.state.devices.prefix(4)))
-            if center.state.devices.isEmpty { emptyState }
+        VStack(alignment:.leading,spacing:22) {
+            HStack(alignment:.top) {
+                CenterHeading(eyebrow:"Your workspace",title:"Lighting",subtitle:"One place for your setup. Every adjustment goes live.")
+                Spacer();CenterBadge(text:center.online ? "Live control":"Connecting",good:center.online)
+            }
+            lightingControls
+            HStack {
+                VStack(alignment:.leading,spacing:5) { Text("Connected lighting").font(.system(size:17,weight:.semibold));Text("\(center.controllable.count) ready · \(center.selected.count) selected").font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+                Spacer();Button(center.busy ? "Discovering…":"Rediscover",action:center.discover).disabled(center.busy || !center.online)
+                if !center.online { Button("Start Core",action:center.start) }
+            }
+            grid(center.visible.filter { $0.controllable }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
+            if center.controllable.isEmpty { emptyState }
+            if center.state.devices.contains(where:{ !$0.controllable && $0.driver != nil }) {
+                Label("Some devices need setup. Open Devices → Needs attention for details.",systemImage:"info.circle").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            }
         }
     }
     private func metric(_ title:String,value:String,symbol:String)->some View { CenterPanel { HStack(alignment:.top) { VStack(alignment:.leading,spacing:10) { Text(title).font(.system(size:10)).foregroundStyle(CenterTheme.muted);Text(value).font(.system(size:25,weight:.medium,design:.rounded)) };Spacer();Image(systemName:symbol).foregroundStyle(CenterTheme.aqua) } } }
     private func grid(_ devices:[CenterDevice])->some View { LazyVGrid(columns:[GridItem(.adaptive(minimum:210),spacing:14)],spacing:14) { ForEach(devices) { device in CenterDeviceCard(center:center,device:device) } } }
-    private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text("Connect your lighting hardware").font(.headline);Text("Discovery reads native GPU, IOKit USB/HID and memory inventory, then connects to an OpenRGB SDK server on 127.0.0.1:6742. Inventory-only entries cannot receive lighting commands.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
+    private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text("Connect your lighting hardware").font(.headline);Text("HackinFX starts its bundled OpenRGB engine and discovers native GPU, USB/HID and memory devices. Inventory-only entries remain visible for diagnostics.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
     private var devices:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Device library",title:"Your devices",subtitle:"GPU, memory, USB peripherals and cooling — grouped by actual control capability.")
@@ -303,29 +443,37 @@ struct CenterWorkspace:View {
 
             grid(center.visible)
             if center.visible.isEmpty { emptyState }
-            Text("Select controllable cards to include them in a scene. Detected-only devices are shown for inventory and driver development; recognition does not enable writes.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            Text("Select devices to control together. Click an unavailable device for setup details.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
     private func sceneColor(_ index:Int)->Binding<Color> { Binding(get:{ let hex=center.scene.palette[min(index,center.scene.palette.count-1)];let rgb=UInt32(hex,radix:16) ?? 0;return Color(red:Double((rgb>>16)&255)/255,green:Double((rgb>>8)&255)/255,blue:Double(rgb&255)/255) },set:{ value in while center.scene.palette.count<=index { center.scene.palette.append(center.scene.palette.last ?? "ffffff") };let c=NSColor(value).usingColorSpace(.sRGB) ?? .white;center.scene.palette[index]=[c.redComponent,c.greenComponent,c.blueComponent].map { String(format:"%02x",Int(($0*255).rounded())) }.joined() }) }
-    private var sceneEditor:some View {
-        VStack(alignment:.leading,spacing:22) {
-            CenterHeading(eyebrow:"Shared lighting engine",title:"Scenes",subtitle:"A common clock and palette across selected devices. Changes apply only when you start the scene.")
-            CenterPanel {
+    private var lightingControls:some View {
+        CenterPanel {
                 VStack(alignment:.leading,spacing:20) {
-                    HStack { ForEach([("static","Static","circle.fill"),("gradient","Gradient","slider.horizontal.3"),("spectrum","Spectrum","circle.lefthalf.filled"),("breathing","Breathing","waveform.path"),("wave","Wave","water.waves")],id:\.0) { key,label,symbol in Button { center.scene.mode=key } label: { VStack(spacing:11) { Image(systemName:symbol).font(.system(size:22,weight:.light));Text(label).font(.system(size:10,weight:.medium)) }.frame(maxWidth:.infinity).frame(height:83).foregroundStyle(center.scene.mode == key ? CenterTheme.accent : CenterTheme.muted).background(center.scene.mode == key ? CenterTheme.accent.opacity(0.09) : CenterTheme.background.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(center.scene.mode == key ? CenterTheme.accent.opacity(0.4) : .clear,lineWidth:1)) }.buttonStyle(PressFeedbackStyle()) } }
-                    if center.scene.mode != "spectrum" { HStack { ForEach(0..<( ["wave","gradient"].contains(center.scene.mode) ? 3 : 1),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
+                    CenterScenePreview(scene:center.scene)
+                    LazyVGrid(columns:[GridItem(.adaptive(minimum:108),spacing:8)],spacing:8) { ForEach([("static","Static","circle.fill"),("gradient","Gradient","slider.horizontal.3"),("spectrum","Spectrum","circle.lefthalf.filled"),("breathing","Breathing","waveform.path"),("wave","Wave","water.waves"),("aurora","Aurora","sparkles"),("comet","Comet","sparkle"),("twinkle","Twinkle","star"),("color shift","Color shift","circle.hexagongrid")],id:\.0) { key,label,symbol in Button { center.scene.mode=key } label: { VStack(spacing:11) { Image(systemName:symbol).font(.system(size:22,weight:.light));Text(label).font(.system(size:10,weight:.medium)) }.frame(maxWidth:.infinity).frame(height:83).foregroundStyle(center.scene.mode == key ? CenterTheme.accent : CenterTheme.muted).background(center.scene.mode == key ? CenterTheme.accent.opacity(0.09) : CenterTheme.background.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(center.scene.mode == key ? CenterTheme.accent.opacity(0.4) : .white.opacity(0.04),lineWidth:1)).overlay(alignment:.bottom) { if center.scene.mode == key { Capsule().fill(CenterTheme.accent).frame(width:28,height:2).matchedGeometryEffect(id:"effect-selection",in:effectSelection).padding(.bottom,8) } } }.buttonStyle(PressFeedbackStyle()) } }
+                    if !["spectrum","aurora"].contains(center.scene.mode) { HStack { ForEach(0..<( ["wave","gradient","color shift","twinkle"].contains(center.scene.mode) ? 3 : 1),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
                     HStack { Text("Brightness").frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                     if !["static","gradient"].contains(center.scene.mode) { HStack { Text("Speed").frame(width:75,alignment:.leading);Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-                    Picker("Spatial axis",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented)
-                    HStack { CenterAction(title:"Start scene",symbol:"play.fill",action:center.apply).disabled(!center.online || center.busy || !center.sceneCompatible);Button("Stop",action:center.stop).disabled(!center.state.running || center.busy);Button("Blackout",action:center.blackout).disabled(center.selected.isEmpty || center.busy);Spacer();Text("\(center.selected.count) TARGETS").font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
-                    if !center.sceneCompatible && !center.selected.isEmpty { Text("This scene needs Direct-mode devices. Static-only native controllers can join Static and supported Gradient scenes; use GPU Lab for onboard GPU effects.").font(.system(size:11)).foregroundStyle(.orange) }
+                    if ["wave","gradient"].contains(center.scene.mode) { Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented) }
+                    HStack(spacing:10) {
+                        Label(center.liveStatus,systemImage:"bolt.fill").font(.system(size:10)).foregroundStyle(center.error.isEmpty ? CenterTheme.aqua:.orange)
+                        Spacer();Button("Pause animation",action:center.stop).disabled(!center.state.running || center.busy)
+                        Button("Lights off",action:center.blackout).disabled(center.selected.isEmpty)
+                    }
+                    if !center.sceneCompatible && !center.selected.isEmpty { Text("Devices that cannot play this effect keep their last color. Choose Static to control all ready devices.").font(.system(size:11)).foregroundStyle(.orange) }
                     if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text("ASUS keyboard effects run onboard. Direct devices share the host clock; onboard effects continue after Stop until changed or blacked out.").font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
-                    Text(center.state.message).font(.system(size:10)).foregroundStyle(CenterTheme.muted)
+
                 }
-            }
+            }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode)
+    }
+    private var sceneEditor:some View {
+        VStack(alignment:.leading,spacing:22) {
+            CenterHeading(eyebrow:"Scene library",title:"Scenes",subtitle:"Save your favorite looks. Loading a scene updates selected devices immediately.")
+            lightingControls
             HStack { Text("Scene targets").font(.system(size:16,weight:.semibold));Spacer();Button("Select compatible") { center.selected=Set(center.controllable.filter { $0.direct || ($0.static_modes ?? ["static"]).contains(center.scene.mode) }.map { $0.id }) };Button("Clear") { center.selected=[] } }
             grid(center.state.devices.filter { $0.controllable })
-            CenterPanel { VStack(alignment:.leading,spacing:15) { HStack { TextField("Scene name",text:$center.sceneName).textFieldStyle(.roundedBorder);Button("Save scene",action:center.saveScene).disabled(center.busy || !center.online) };Text("Saved scenes contain effect settings. Loading a scene never writes to hardware or guesses device bindings.").font(.system(size:10)).foregroundStyle(CenterTheme.muted);ForEach(center.state.scenes) { saved in Button { center.scene=saved.config } label: { HStack { Image(systemName:"square.stack");Text(saved.name);Spacer();Text(saved.config.mode.capitalized).foregroundStyle(CenterTheme.muted);Image(systemName:"arrow.up.right") } }.buttonStyle(.plain) } } }
+            CenterPanel { VStack(alignment:.leading,spacing:15) { HStack { TextField("Scene name",text:$center.sceneName).textFieldStyle(.roundedBorder);Button("Save scene",action:center.saveScene).disabled(center.busy || !center.online) };Text("Scenes store colors and effect settings. Your current device selection stays in place.").font(.system(size:10)).foregroundStyle(CenterTheme.muted);ForEach(center.state.scenes) { saved in Button { center.scene=saved.config } label: { HStack { Image(systemName:"square.stack");Text(saved.name);Spacer();Text(saved.config.mode.capitalized).foregroundStyle(CenterTheme.muted);Image(systemName:"arrow.up.right") } }.buttonStyle(.plain) } } }
         }
     }
     private var layout:some View {
@@ -348,10 +496,22 @@ struct CenterWorkspace:View {
     }
     private var connections:some View {
         VStack(alignment:.leading,spacing:22) {
-            CenterHeading(eyebrow:"Backend connections",title:"Connections",subtitle:"Hardware adapters stay separate from the shared engine. All Core API access remains on this Mac.")
-            CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("OpenRGB bridge",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("127.0.0.1 : 6742").font(.system(size:20,weight:.medium,design:.monospaced));Text("Enable the SDK server in OpenRGB, then discover devices. Keyboards, mice, DRAM, USB coolers and controllers can be controlled when that server provides a working Direct-mode device. The OpenRGB device catalog alone does not prove macOS compatibility.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Connect & discover",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
-            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other USB families need an adapter or OpenRGB bridge. DRAM host-SMBus access remains development work.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
+            CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
+            CenterPanel { VStack(alignment:.leading,spacing:14) {
+                HStack { Label("HackinFX",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.0.3").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
+                HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }
+            } }
+            CenterPanel { VStack(alignment:.leading,spacing:12) {
+                Toggle("Launch at login",isOn:Binding(get:{center.loginEnabled},set:{center.setLaunchAtLogin($0)})).toggleStyle(.switch)
+                Text(center.loginMessage).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+                Label("Startup & live control",systemImage:"sun.max").font(.headline);Text("On launch, ready devices receive Static white at 100% brightness. Unverified devices and RAM awaiting setup stay untouched. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+            DisclosureGroup("Device connections & advanced details") {
+            CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("Bundled OpenRGB 1.1",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("LOCAL ENGINE").font(.system(size:20,weight:.medium,design:.monospaced));Text("OpenRGB starts and stops with HackinFX. Its macOS device drivers are included; no separate OpenRGB installation is required. Direct-mode devices join live scenes. Native adapters own their matching hardware to avoid duplicate writes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Rediscover devices",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
+            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other supported USB families use the bundled OpenRGB engine. DRAM access depends on the chipset, module and required macUSPCIO driver.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
             CenterPanel { VStack(alignment:.leading,spacing:12) { Label("Private local Core",systemImage:"lock.shield").font(.headline);Text("The API uses a per-process credential and binds only to 127.0.0.1. No LAN listener, cloud account or Android access is enabled. Saved scenes stay in Documents/HackinFX. The engine stops when HackinFX quits.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+            }
         }
     }
 }
@@ -369,7 +529,7 @@ private struct CenterDeviceInspector:View {
             if let usb=device.usb_id { Text("USB ID · "+usb).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             if let matches=device.catalog_matches,!matches.isEmpty { Text("OpenRGB identities: "+matches.joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
             Text(device.detail).font(.system(size:12)).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
-            if let modes=device.static_modes,!modes.isEmpty { Text("Supported scenes: "+(device.direct ? ["Static","Gradient","Spectrum","Breathing","Wave"] : modes.map { $0.capitalized }).joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            if let modes=device.static_modes,!modes.isEmpty { Text("Supported scenes: "+(device.direct ? ["Static","Gradient","Spectrum","Breathing","Wave","Aurora","Comet","Twinkle","Color shift"] : modes.map { $0.capitalized }).joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
             if device.driver == "corsair-ddr5-i801" {
                 HStack { Button("Probe RAM RGB") { center.probeRAM();dismiss() }.disabled(center.busy || !center.online || device.status.hasPrefix("unsupported"));Button("RAM setup guide") { if let path=Bundle.main.resourceURL?.appendingPathComponent("Source/docs/RAM-SETUP.md") { NSWorkspace.shared.open(path) } } }
                 Text("The initial RAM adapter requires a separately installed macUSPCIO driver and exact Corsair identity/CRC checks. The app never changes OpenCore or installs a kernel extension.").font(.system(size:10)).foregroundStyle(CenterTheme.muted)

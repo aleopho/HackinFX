@@ -30,3 +30,7 @@ The ABI checks reject incompatible local structure sizes/alignment. They do not 
 ## Current validation status
 
 The transport has been exercised on the development Mac; exact supported PNY RGB behavior is described in docs/COMPATIBILITY.md at the repository root. Offline/native/network validation and remaining interactive checks are listed in docs/DEVELOPMENT.md. The pinned source references above describe the implementation basis, not compatibility with every driver version or card.
+
+Bundled OpenRGB 1.1 CLI provenance, dependency licenses and source delivery:
+Source/vendor/openrgb-runtime/README.md. Corresponding release source archives
+are included in Source/ThirdPartySources and notices in OpenRGB-Notices.

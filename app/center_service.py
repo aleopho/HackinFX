@@ -55,7 +55,8 @@ class Handler(BaseHTTPRequestHandler):
             value=json.loads(raw)
             if not isinstance(value,dict):raise ValueError('JSON object required')
             core=self.server.center
-            if self.path=='/v1/discover':result=core.refresh()
+            if self.path=='/v1/initialize':result=core.initialize()
+            elif self.path=='/v1/discover':result=core.refresh()
             elif self.path=='/v1/ram/probe':result=core.probe_ram()
             elif self.path=='/v1/scene/start':result=core.start(value)
             elif self.path=='/v1/scene/stop':core.stop();result=core.status()

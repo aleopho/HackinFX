@@ -87,3 +87,11 @@ Created by **aleopho**. HackinFX application/source: **GPL-2.0-or-later**, see [
 [Full attribution and source references](THIRD-PARTY-NOTICES.md). Independent community project; no endorsement by Apple, NVIDIA, PNY, NullMoth or OpenRGB. Provided without warranty.
 
 Confirmed profiles are saved in the current user’s `~/Documents/HackinFX/` directory, one JSON file per hardware fingerprint. Existing matching profiles are migrated automatically.
+
+### Control Center development build 2.0.3
+
+Bundled OpenRGB 1.1 macOS engine, live lighting, white on app/login launch, nine
+shared effects, a lighting-first interface, update checks and a macOS 15+ x86-64
+PKG installer. See [changes, build instructions and validation limits](docs/RELEASE-2.0.3.md).
+The current public release is separate from this development branch; device
+control still requires a working macOS driver, not merely a catalog entry.

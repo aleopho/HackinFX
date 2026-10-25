@@ -4,6 +4,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import WidgetKit
+import Carbon
 
 private let ink = Color(red: 0.043, green: 0.055, blue: 0.063)
 private let panel = Color(red: 0.075, green: 0.090, blue: 0.098)
@@ -59,7 +60,7 @@ final class Model: ObservableObject {
     @Published var brightness = 50.0
     @Published var speed = 50.0
     @Published var busy = false
-    @Published var message = "Ready. Changes are sent only when you click Apply."
+    @Published var message = "Live control ready. Changes are sent automatically."
     @Published var lastSuccess: Bool? = nil
     @Published var lastReport: URL?
     @Published var page = "Overview"
@@ -155,6 +156,16 @@ final class Model: ObservableObject {
         let c = NSColor(color).usingColorSpace(.sRGB) ?? .white
         return [c.redComponent, c.greenComponent, c.blueComponent].map { String(format: "%02x", Int(($0 * 255).rounded())) }.joined()
     }
+    private var gpuLiveWork:DispatchWorkItem?
+    private var gpuLivePending=false
+    func scheduleGPULive() {
+        guard !setupTesting && canControlLighting else { return }
+        gpuLiveWork?.cancel();gpuLivePending=true
+        let work=DispatchWorkItem { [weak self] in
+            guard let self=self,!self.working,self.gpuLivePending else { return }
+            self.gpuLivePending=false;self.apply()
+        };gpuLiveWork=work;DispatchQueue.main.asyncAfter(deadline:.now()+0.18,execute:work)
+    }
     func apply(off: Bool = false, testHex: String? = nil, testEffect: String? = nil) {
         guard !busy && !scanning && !submitting && (!setupTesting || testEffect != nil) else { return }
         guard canControlLighting || (testEffect != nil && configurationStatus == "supported") else { page = "Hardware"; message = configurationReason; return }
@@ -198,6 +209,7 @@ final class Model: ObservableObject {
     }
     func finish(_ success: Bool, _ text: String) {
         busy = false; lastSuccess = success; message = text
+        if gpuLivePending && !setupTesting { scheduleGPULive() }
         if success { UserDefaults.standard.set(pendingWidgetColors,forKey:"LastLightingColors"); UserDefaults.standard.set(pendingWidgetBrightness,forKey:"LastLightingBrightness"); UserDefaults.standard.set(pendingCommand,forKey:"LastLightingCommand"); UserDefaults.standard.set(fingerprint,forKey:"LastLightingFingerprint") }
         record("lighting", success ? "accepted" : "failed")
         if let url = lastReport, let bytes = try? Data(contentsOf: url), let report = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] {
@@ -567,8 +579,8 @@ struct StudioFooter: View {
             HStack(spacing:12) {
                 Button { model.apply(off:true) } label: { Label("Lights off",systemImage:"power").font(.system(size:12,weight:.medium)).padding(.horizontal,16).frame(height:40).background(.white.opacity(0.045)).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle())
                 Spacer()
-                Text("CHANGES APPLY ON REQUEST").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted)
-                Button { model.apply() } label: { HStack(spacing:10) { if model.busy { ProgressView().controlSize(.small) }; Text(model.busy ? "Applying…" : "Apply lighting");Image(systemName:"arrow.up.right") }.font(.system(size:12,weight:.semibold)).foregroundColor(ink).padding(.horizontal,20).frame(height:40).background(accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle())
+                Label(model.busy ? "Updating…":"Live control",systemImage:"bolt.fill").font(.system(size:10,weight:.medium)).foregroundColor(muted)
+
             }.disabled(model.working || !model.canControlLighting)
         }.padding(.horizontal,28).padding(.vertical,16).background(panel.opacity(0.9)).overlay(alignment:.top) { Rectangle().fill(.white.opacity(0.07)).frame(height:1) }
     }
@@ -615,6 +627,12 @@ struct Studio: View {
             }
 
         }
+        .onChange(of:model.effect) { model.scheduleGPULive() }
+        .onChange(of:model.hex(model.colorA)) { model.scheduleGPULive() }
+        .onChange(of:model.hex(model.colorB)) { model.scheduleGPULive() }
+        .onChange(of:model.hex(model.colorC)) { model.scheduleGPULive() }
+        .onChange(of:model.brightness) { model.scheduleGPULive() }
+        .onChange(of:model.speed) { model.scheduleGPULive() }
     }
 }
 
@@ -891,13 +909,14 @@ struct StartupScanView: View {
 }
 struct Root: View {
     @ObservedObject var model: Model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing:0) {
             CenterNavigation(model:model,center:model.center)
             Rectangle().fill(.white.opacity(0.06)).frame(width:1)
             VStack(spacing:0) {
                 HStack(spacing:8) { Text("HACKINFX").foregroundColor(muted);Text("/").foregroundColor(muted.opacity(0.4));Text(model.page.uppercased());Spacer();Text("x86-64 / LOCAL WORKSPACE").foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
-                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.padding(28).frame(maxWidth:.infinity,alignment:.leading) }
+                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
                 if model.page == "Studio" { StudioFooter(model:model) }
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
         }.frame(minWidth:1050,minHeight:760).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
@@ -950,7 +969,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         sceneStopItem=add(menu,"Stop scene",#selector(stopCenterScene))
         sceneBlackoutItem=add(menu,"Blackout selected devices",#selector(blackoutCenter))
         menu.addItem(NSMenuItem.separator())
-        actionItems.append(add(menu,"Apply GPU Lab settings",#selector(applyCurrent)))
         actionItems.append(add(menu,"Turn GPU lighting off",#selector(turnOff)))
         let effects = NSMenu()
         for (index,effect) in Lighting.allCases.enumerated() {
@@ -976,7 +994,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         edit.addItem(withTitle:"Paste", action:#selector(NSText.paste(_:)), keyEquivalent:"v")
         edit.addItem(withTitle:"Select All", action:#selector(NSText.selectAll(_:)), keyEquivalent:"a")
         editItem.submenu = edit; main.addItem(editItem); NSApp.mainMenu = main
-        show()
+        let loginLaunch=NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword:keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        if !loginLaunch { show() }
+        model.center.configureLoginAtLaunch()
         model.center.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self.model.launching = false; self.model.scanHardware() }
     }

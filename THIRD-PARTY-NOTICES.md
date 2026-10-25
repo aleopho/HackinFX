@@ -71,3 +71,17 @@ The Fractal Radius adapter ports aleopho/signalrgb-fractal-radius at e86cabf7154
 ASUS keyboard/OMNI protocol references include dvalfrid/rigstats at bf0f1f3e8ab1b387dd7cd914a44ba0d95ad1cd96 (MIT; Copyright 2026 Daniel Valfridsson); original reference files and license are retained in vendor/rigstats.
 
 Corsair DRAM and macOS i801 protocol references are from the existing pinned OpenRGB tree and preserved under vendor/openrgb/ram, with original contributor/license notices. Credits include Adam Honse, Erik Gilling and Shady Nawara. macUSPCIO is a separately installed GPL-3.0 driver; it is not embedded, installed or loaded by the HackinFX application. The external OpenCore preparation package retains its original archives, source and license separately.
+
+## Bundled OpenRGB 1.1 runtime
+
+The official Intel macOS CLI executable and its dynamic dependency closure are
+bundled with complete OpenRGB source, Qt base/GLib/gettext/libusb release source
+archives and license notices. See [runtime provenance and licenses](vendor/openrgb-runtime/README.md)
+and the hash-pinned [manifest](vendor/openrgb-runtime/manifest.json). Existing
+OpenRGB, NullMoth and Radius credits above continue to apply.
+
+## macUSPCIO optional OpenCore transport
+
+Unchanged ShadyNawara/macUSPCIO v1.0 driver and corresponding source archive,
+GPL-3.0 license and checksums are retained in vendor/macUSPCIO and the app Source.
+The optional installer component copies the original kext; no driver code is changed.
