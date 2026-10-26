@@ -208,7 +208,10 @@ class EngineTests(unittest.TestCase):
 class APITests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.core=core.Center(Path(self.tmp.name)/'scenes.json',self.tmp.name,FakeSDK(),FakeNative())
-        self.server=LocalServer(self.core,'private-test-credential');self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
+
+        with patch('socket.getfqdn',side_effect=AssertionError('Loopback API must not resolve DNS')):
+            self.server=LocalServer(self.core,'private-test-credential')
+        self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
     def tearDown(self):self.server.shutdown();self.server.server_close();self.thread.join();self.core.close();self.tmp.cleanup()
     def request(self,path='/v1/status',headers=None,body=None):
         url='http://127.0.0.1:'+str(self.server.server_port)+path

@@ -12,6 +12,7 @@ with the bundled OpenRGB 1.1 engine and native NVIDIA / USB adapters.
 - Native ASUS whole-keyboard color, Spatha X, HID LampArray and Radius paths,
   alongside available OpenRGB macOS drivers and confirmed native NVIDIA profiles.
 - White at app/login startup, menu-bar persistence and software-update checks.
+- Loopback Core startup avoids unnecessary reverse DNS that can delay discovery.
 - Feedback with a fresh allowlisted system scan, user description, JSON review,
   explicit private submission/receipt and local export.
 - Rebuilt WidgetKit state: mode, palette, brightness, GPU, ready count and status.

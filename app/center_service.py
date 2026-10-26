@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socketserver
 import signal
 import threading
 from center_core import Center, atomic_json
@@ -19,6 +20,11 @@ class LocalServer(ThreadingHTTPServer):
     def __init__(self,center,token):
         self.center,self.token=center,token
         super().__init__(('127.0.0.1',0),Handler)
+    def server_bind(self):
+        # The API is loopback-only. HTTPServer's reverse DNS can stall startup
+        # on hosts without a working resolver; no hostname lookup is needed.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name='localhost';self.server_port=self.server_address[1]
 
 
 class Handler(BaseHTTPRequestHandler):

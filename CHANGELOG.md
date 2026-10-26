@@ -10,6 +10,7 @@
 - Feedback with fresh allowlisted system specifications, user notes, review, explicit private submission and export.
 - Rebuilt Core-fed WidgetKit view; actual desktop registration/refresh needs wider validation.
 - Optional backed-up OpenCore transport installation recognizes GPT and FAT/MBR boot volumes. **RAM remains non-working on the development system.**
+- Avoid unnecessary reverse DNS during local Core startup.
 - Refresh repository documentation, current fan branding, real desktop screenshot, licenses and regular-release packaging.
 
 [Release details and known limits](docs/RELEASE-NOTES-2.1.1.md).
