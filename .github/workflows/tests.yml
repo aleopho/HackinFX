@@ -32,6 +32,10 @@ jobs:
       - uses: actions/checkout@v4
       - run: swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests
       - run: /tmp/hackinfx-profile-tests
+      - uses: actions/cache@v4
+        with:
+          path: .build-cache/openrgb
+          key: openrgb-macos-${{ hashFiles('vendor/openrgb-runtime/manifest.json') }}
       - run: python3 tools/prepare_openrgb_runtime.py
       - run: python3 tools/import_openrgb_smbus_safety.py
       - run: git diff --exit-code -- app/openrgb_smbus_detectors.json vendor/openrgb-runtime/smbus-detector-provenance.json
