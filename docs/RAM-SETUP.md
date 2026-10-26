@@ -1,5 +1,9 @@
 # Corsair Titanium DDR5 RAM RGB setup
 
+**Release 2.1.1 status: RAM RGB is not yet working on the development system.**
+The installer correction and scoped transport are included for continued
+investigation, not a general working-RAM claim.
+
 The first native RAM adapter is deliberately limited to the development machine's **Intel Arrow Lake SMBus 8086:7f23** and CRC-validated **Corsair Dominator Titanium DDR5** lighting controllers (PIDs 0800/0801/0810/0811, 12 LEDs). The known installed modules are CMP32GX5M2B6000Z30. This is not generic support for every RAM kit or AMD/Intel host controller.
 
 ## Required transport
@@ -9,8 +13,8 @@ RAM lighting is attached to the motherboard SMBus, not GPU NVRM or USB. HackinFX
 ## Installer-assisted OpenCore setup
 
 The PKG installer offers **OpenCore SMBus driver (RAM RGB)** under Customize.
-Selecting it detects EFI partitions, prefers the actual boot partition GUID
-using the documented OpenCore NVRAM boot-path, and otherwise accepts only one unambiguous OpenCore
+Selecting it detects GPT EFI and FAT/MBR OpenCore partitions, prefers the actual boot partition identity
+using the OpenCore NVRAM boot-path (GPT UUID or MBR disk signature plus partition number), and otherwise accepts only one unambiguous OpenCore
 installation. If that path is unavailable or ambiguous, an interactive EFI selection dialog
 asks which OpenCore installation to use. Cancelling changes nothing. Malformed
 configurations stop the component without writing to an EFI. The component is optional and off by default.

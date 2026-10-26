@@ -1,6 +1,6 @@
 # Reports, privacy and community data
 
-HackinFX can be used locally. Hardware inventory and lighting reports are saved under `~/Library/Application Support/HackinFX`. Reusable profile and sharing preferences use macOS application preferences.
+HackinFX can be used locally. Hardware inventory and lighting reports are saved under `~/Library/Application Support/HackinFX`. Confirmed native GPU profiles and scenes are stored in `~/Documents/HackinFX`; sharing preferences use macOS application preferences.
 
 ## Minimal compatibility confirmations
 
@@ -14,7 +14,7 @@ The confirmation includes PCI/subsystem IDs, GPU and board names, local profile 
 
 ## Private troubleshooting reports
 
-The user writes a description, reviews the exact JSON and explicitly presses Send. The report includes allowlisted PCI/model/driver/OS inventory, query status/timings, bounded command results, setup outcome, session events and the notes as entered. Free text can contain personal information if the user types it; review it before sending. The scanner does not intentionally collect serial numbers, hostnames, complete IORegistry trees or kernel addresses.
+The user writes a description, reviews the exact JSON and explicitly presses Send. The feedback action runs a fresh read-only scan. The report includes allowlisted CPU, memory, USB, PCI and storage specifications, PCI/model/driver/OS inventory, query status/timings, bounded command results, setup outcome, Core device states/errors, session events and the notes as entered. Broader hardware fields are stored under `setup.system_hardware`; raw profiler output, volume labels and mount paths are excluded. An incomplete scan records errors rather than inventing missing hardware. Free text can contain personal information if the user types it; review it before sending. The scanner does not intentionally collect serial numbers, hostnames, complete IORegistry trees or kernel addresses.
 
 `POST /reports` enforces a 128 KiB body limit, format/key restrictions, prepared database statements and rate limits. A successful storage receipt contains a report ID; the app does not claim receipt when that acknowledgement is missing. Repeated submission IDs return the same stored receipt. There is no unauthenticated public read endpoint for private reports. The account owner can read them in the authenticated Cloudflare D1 console.
 
@@ -29,3 +29,5 @@ The shared catalog is fetched and cached even when sending new compatibility con
 Local folders: `Reports`, `Scans`, `Troubleshooting`, `VerificationQueue` and `compatibility.json`. Local exports persist until the user deletes them. Quitting/reinstalling the app does not automatically erase Application Support data or preferences.
 
 For sensitive material, do not post raw reports publicly on GitHub. Use in-app review/send or describe the issue with personal information removed.
+
+SourceForge is not an automatic destination for private reports. No SourceForge token or public-ticket submission is bundled; the existing HTTPS inbox remains the configured pool. Reports require human triage and do not promise a driver in the next release.

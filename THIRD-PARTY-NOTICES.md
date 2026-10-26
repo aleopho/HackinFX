@@ -17,7 +17,7 @@ PNY lighting packet/effect construction in `app/rgb.py` is adapted from the Open
 
 The 1.1 development catalog also vendors pinned OpenRGB GPU detector/header source inputs with original author/license notices preserved under vendor/openrgb. tools/import_openrgb_catalog.py derives passive identity metadata from those files; they are not executed as a universal macOS driver.
 
-The adaptation is acknowledged in the Python file, the app's Credits page, this document and README. OpenRGB itself is not bundled as an executable. Upstream master links are moving references; they do not imply all later upstream changes are in HackinFX.
+The adaptation is acknowledged in the Python file, the app's Credits page, this document and README. HackinFX 2.1.1 bundles the pinned OpenRGB 1.1 Intel macOS executable, its dependency closure, corresponding source archives and original notices. See `vendor/openrgb-runtime/manifest.json` and the runtime section below. Upstream master links are moving references; they do not imply all later upstream changes are in HackinFX.
 
 ## NullMoth
 
@@ -56,13 +56,13 @@ EVGA Turing volatile unlock/color/mode/relock sequences are adapted from TheRogu
 
 ## OpenRGB SDK protocol references
 
-The new Python SDK client is implemented from OpenRGB's network protocol and SDK-3 controller serialization. Original protocol/interface/serialization sources at commit `817834cfab034c97927451e31c4a2deb60a44725` are preserved with their original Adam Honse/OpenRGB author notices and per-file hashes under `vendor/openrgb/sdk/`. They remain GPL-2.0-or-later and are protocol references, not a bundled OpenRGB executable. HackinFX does not claim OpenRGB's entire catalog as working macOS hardware support.
+The new Python SDK client is implemented from OpenRGB's network protocol and SDK-3 controller serialization. Original protocol/interface/serialization sources at commit `817834cfab034c97927451e31c4a2deb60a44725` are preserved with their original Adam Honse/OpenRGB author notices and per-file hashes under `vendor/openrgb/sdk/`. They remain GPL-2.0-or-later protocol references; the separately pinned bundled executable and its sources are documented below. HackinFX does not claim OpenRGB's entire catalog as working macOS hardware support.
 
 ## OpenRGB USB/HID identities and lighting protocols
 
 The USB/HID identity catalog is deterministically imported from OpenRGB commit `817834cfab034c97927451e31c4a2deb60a44725`. Original detector/header bytes and the upstream GPL license are retained in `vendor/openrgb/usb-sources.zip`. `tools/import_openrgb_usb_catalog.py` rebuilds the catalog offline. Unsupported/disabled registrations do not authorize hardware writes.
 
-Native lighting protocol references are preserved under `vendor/openrgb/usb-protocols`, with exact paths and hashes in `SOURCES.json`. Credits include Adam Honse (HID LampArray, GPL-2.0-only; ASUS Aura Mouse, GPL-2.0-or-later), Martin Hartl (NZXT Kraken, GPL-2.0-or-later), and the per-file contributors and copyright notices. HackinFX uses Apple's IOKit transport rather than bundling hidapi. Distribution remains compatible with GPL version 2; all original notices are retained.
+Native lighting protocol references are preserved under `vendor/openrgb/usb-protocols`, with exact paths and hashes in `SOURCES.json`. Credits include Adam Honse (HID LampArray, GPL-2.0-only; ASUS Aura Mouse, GPL-2.0-or-later), Martin Hartl (NZXT Kraken, GPL-2.0-or-later), and the per-file contributors and copyright notices. The native HackinFX USB adapter uses Apple's IOKit transport. The bundled OpenRGB engine retains its own runtime dependencies, including hidapi, with original licenses/notices. Distribution remains compatible with GPL version 2; all original notices are retained.
 
 ## Radius, ASUS keyboard and RAM references (2.0.2)
 
