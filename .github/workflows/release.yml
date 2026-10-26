@@ -26,7 +26,7 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "HACKINFX_VERSION=$version" >> "$GITHUB_ENV"
           test -f "docs/RELEASE-NOTES-$version.md"
-      - run: python3 -m unittest discover -s app/tests
+      - run: PYTHONPATH=app python3 -m unittest discover -s app/tests
       - run: node app/tests/verify-radius-port.mjs
       - run: node --test report-inbox/*.test.mjs
       - run: python3 -m unittest test_schema.py
