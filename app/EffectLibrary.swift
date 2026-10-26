@@ -8,6 +8,10 @@ enum EffectLibrary {
         guard let url=Bundle.main.url(forResource:"effects_catalog",withExtension:"json"),let data=try? Data(contentsOf:url),let catalog=try? JSONDecoder().decode(EffectCatalog.self,from:data),catalog.schema==1 else { return EffectCatalog(schema:1,categories:[],effects:[],looks:[]) }
         return catalog
     }()
+    static func favoriteIDs(_ raw:String)->Set<String> {
+        guard let data=raw.data(using:.utf8),let ids=try? JSONDecoder().decode([String].self,from:data) else { return [] };return Set(ids)
+    }
+    static func encodedFavorites(_ ids:Set<String>)->String { String(decoding:(try? JSONEncoder().encode(ids.sorted())) ?? Data("[]".utf8),as:UTF8.self) }
     static func effect(_ id:String)->LibraryEffect? { catalog.effects.first { $0.id==id } }
     static func palette(_ values:[String])->[[Double]] { values.map { let v=UInt32($0,radix:16) ?? 0;return [Double(v>>16&255),Double(v>>8&255),Double(v&255)] } }
 }

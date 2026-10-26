@@ -57,13 +57,13 @@ private struct GalleryCard:View {
 struct EffectGallery:View {
     @ObservedObject var center:CenterModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("hackinfx-effect-favorites") private var favorites=""
+    @AppStorage("hackinfx-effect-favorites") private var favorites="[]"
     @State private var tab="Effects"
     @State private var category="All"
     @State private var search=""
     @State private var favoritesOnly=false
-    private var favoriteIDs:Set<String> { Set(favorites.split(separator:"|").map(String.init)) }
-    private func toggleFavorite(_ id:String) { var values=favoriteIDs;if values.contains(id) { values.remove(id) } else { values.insert(id) };favorites=values.sorted().joined(separator:"|") }
+    private var favoriteIDs:Set<String> { EffectLibrary.favoriteIDs(favorites) }
+    private func toggleFavorite(_ id:String) { var values=favoriteIDs;if values.contains(id) { values.remove(id) } else { values.insert(id) };favorites=EffectLibrary.encodedFavorites(values) }
     private func scene(_ effect:LibraryEffect,_ look:LibraryLook?=nil)->CenterScene {
         var value=CenterScene();value.mode=effect.id;value.palette=look?.palette ?? effect.palette;value.speed=look?.speed ?? effect.speed;value.scale=look?.scale ?? effect.scale;value.density=look?.density ?? effect.density;value.brightness=100;return value
     }
