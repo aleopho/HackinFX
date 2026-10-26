@@ -1,0 +1,22 @@
+{
+  "upstream": "OpenRGB 1.1",
+  "commit": "8e16de27858cf2be6af54a33ce003df74cb9fd3e",
+  "files": [
+    {
+      "path": "openrgb/Controllers/AsusAuraUSBController/AsusAuraTUFKeyboardController/AsusAuraTUFKeyboardController.cpp",
+      "sha256": "d5de85a9491d862f655ea9b9ccece88cdbd6b1c5f854fe65fcb5bbd831bf7c50"
+    },
+    {
+      "path": "openrgb/Controllers/AsusAuraUSBController/AsusAuraTUFKeyboardController/AsusAuraTUFKeyboardController.h",
+      "sha256": "88e46b47c9859583cc8b50bb84b1eaf9184867b796c939a3b699d39af09040fe"
+    },
+    {
+      "path": "openrgb/Controllers/AsusAuraUSBController/AsusAuraTUFKeyboardController/RGBController_AsusAuraTUFKeyboard.cpp",
+      "sha256": "6971a0c5414fcb1d44d308c4832aedbe57cfc8c6db9d9b8a8542141523617ede"
+    },
+    {
+      "path": "openrgb/Controllers/AsusAuraUSBController/AsusAuraTUFKeyboardController/AsusAuraTUFKeyboardLayouts.h",
+      "sha256": "0abe247762de87ee220ea47307108f7836f029ae5dda789c7ae4beef934ce84d"
+    }
+  ]
+}

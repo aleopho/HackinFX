@@ -193,8 +193,12 @@ class RGB(p.RM):
 def acquire_write_lock(directory=None):
     folder=Path(directory) if directory else Path.home()/'Library/Application Support/HackinFX/Core'
     folder.mkdir(parents=True,exist_ok=True,mode=0o700)
-    fd=os.open(str(folder/'nvidia-write.lock'),os.O_RDWR|os.O_CREAT|getattr(os,'O_NOFOLLOW',0),0o600)
-    handle=os.fdopen(fd,'a')
+    path=str(folder/'nvidia-write.lock');flags=getattr(os,'O_NOFOLLOW',0)
+    # flock does not write file contents. Reuse an existing lock read-only;
+    # create it only on first use, so a lighting frame needs no report writes.
+    try:fd=os.open(path,os.O_RDONLY|flags)
+    except FileNotFoundError:fd=os.open(path,os.O_RDONLY|os.O_CREAT|flags,0o600)
+    handle=os.fdopen(fd,'r')
     try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except Exception:handle.close();raise p.ProbeError('Another native GPU request is active; wait for it to finish')
     return handle

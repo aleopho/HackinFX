@@ -95,7 +95,7 @@ class GroupBarrierTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as folder:
    a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
    try:
-    c.start(dict(devices=['0','1'],config=dict(mode='wave')))
+    c.start(dict(devices=['0','1'],config=dict(mode='wave',sync_policy='lockstep')))
     self.assertTrue(a.started.wait(3));self.assertTrue(a.first_group.wait(3));time.sleep(.05)
     self.assertEqual(len(a.calls),2);self.assertEqual(a.calls[0][1],a.calls[1][1])
     a.release.set();self.assertTrue(a.next_group.wait(5));c.stop()
@@ -113,3 +113,27 @@ class PresentationDelayTests(unittest.TestCase):
   with patch.object(core.time,'monotonic',return_value=10),patch.object(event,'wait',return_value=False) as wait:
    c.timed_output({'id':'fast'},[(1,2,3)],'wave',10.1,event)
    self.assertAlmostEqual(wait.call_args.args[0],.08);self.assertEqual(len(writes),1)
+
+class AdaptiveOutputTests(unittest.TestCase):
+ def test_slow_output_never_stalls_fast_device_and_queue_is_bounded(self):
+  class Adapter:
+   name='fixture'
+   def __init__(self):self.calls={'0':0,'1':0};self.started=threading.Event();self.release=threading.Event();self.fast=threading.Event()
+   def discover(self):return [dict(device(i),id=str(i)) for i in range(2)]
+   def activate(self,d):pass
+   def close(self):pass
+   def write_frame(self,d,pixels,mode):
+    self.calls[d['id']]+=1
+    if d['id']=='0':self.started.set();self.release.wait(5)
+    elif self.calls['1']>=6:self.fast.set()
+  with tempfile.TemporaryDirectory() as folder:
+   a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
+   try:
+    c.start(dict(devices=['0','1'],config=dict(mode='twinkle',fps=60,synchronized=True,sync_policy='adaptive')))
+    self.assertTrue(a.started.wait(3));self.assertTrue(a.fast.wait(3));self.assertEqual(a.calls['0'],1)
+    self.assertGreater(c.status()['sync']['outputs']['1']['fps'],0)
+   finally:a.release.set();c.close()
+ def test_invalid_rate_and_policy_are_rejected(self):
+  for value in (0,121,True,float('nan')):
+   with self.assertRaises(ValueError):core.scene_config(dict(fps=value))
+  with self.assertRaises(ValueError):core.scene_config(dict(sync_policy='unbounded'))

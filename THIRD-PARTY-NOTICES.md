@@ -85,3 +85,10 @@ OpenRGB, NullMoth and Radius credits above continue to apply.
 Unchanged ShadyNawara/macUSPCIO v1.0 driver and corresponding source archive,
 GPL-3.0 license and checksums are retained in vendor/macUSPCIO and the app Source.
 The optional installer component copies the original kext; no driver code is changed.
+
+## Scope II 96 per-key layout and packets (2.2.0)
+
+Wired Scope II 96 RGB packet construction, ANSI/ISO key IDs and matrix positions
+are adapted from Mola19 and OpenRGB contributors, GPL-2.0-or-later. Exact original
+OpenRGB 1.1 sources at 8e16de27858cf2be6af54a33ce003df74cb9fd3e are preserved in
+vendor/openrgb/keyboard with per-file hashes. OMNI per-key support is not claimed.

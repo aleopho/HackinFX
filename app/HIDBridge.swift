@@ -83,6 +83,7 @@ final class LightingChannel {
     func receive(_ report:[UInt8]) { inbox.receive(report) }
 }
 var lightingChannels=[String:LightingChannel]()
+var openedLighting=Set<String>()
 func lightingChannel(_ device:IOHIDDevice)throws->LightingChannel {
     let key=entryID(IOHIDDeviceGetService(device))
     if let channel=lightingChannels[key] { return channel }
@@ -107,6 +108,17 @@ func lightingExchange(_ device:IOHIDDevice,_ packet:[UInt8])throws->[UInt8] {
 }
 struct BridgeError:Error { let message:String }
 func fail(_ message:String)throws->Never { throw BridgeError(message:message) }
+func scopePackets(_ encoded:[String])throws->[[UInt8]] {
+    guard (1...7).contains(encoded.count) else { try fail("Invalid Scope packet count") }
+        var packets=[[UInt8]]()
+        for value in encoded {
+            guard let data=Data(base64Encoded:value),data.count==65 else { try fail("Invalid per-key packet size") }
+            let p=[UInt8](data);guard p.prefix(3)==[0,0xc0,0x81],(1...15).contains(p[3]),p[4]==0 else { try fail("Per-key packet outside RGB allowlist") }
+            for i in 0..<Int(p[3]) { guard p[5+4*i]<=0x94 else { try fail("Unknown Scope LED address") } }
+            guard p.dropFirst(5+4*Int(p[3])).allSatisfy({ $0==0 }) else { try fail("Invalid per-key padding") };packets.append(p)
+        }
+    return packets
+}
 func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     let command=request["command"] as? String ?? ""
     if command=="inventory" { return ["devices":inventory(devices),"usb":usbInventory()] }
@@ -121,11 +133,17 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     guard let id=request["report_id"] as? Int,(0...255).contains(id) else { try fail("Invalid report ID") }
     let persistent=radius || keyboard
     if persistent { _=try lightingChannel(device) }
-    else {
+    else if !openedLighting.contains(handle) {
         let opened=IOHIDDeviceOpen(device,IOOptionBits(kIOHIDOptionsTypeNone))
         guard opened==kIOReturnSuccess else { try fail("macOS denied HID lighting access (\(opened)). Close other lighting software and check device permissions.") }
     }
-    defer { if !persistent { IOHIDDeviceClose(device,IOOptionBits(kIOHIDOptionsTypeNone)) } }
+    if !persistent { openedLighting.insert(handle) } // Reuse the opened lighting collection across frames.
+    if command=="output_batch" {
+        guard keyboard,pid==0x1aae,page==0xff00,id==0,let encoded=request["packets"] as? [String],(1...7).contains(encoded.count) else { try fail("Per-key batch requires the exact wired Scope II 96 lighting collection") }
+        let packets=try scopePackets(encoded)
+        for p in packets { let payload=Array(p.dropFirst());let result=IOHIDDeviceSetReport(device,kIOHIDReportTypeOutput,0,payload,payload.count);guard result==kIOReturnSuccess else { try fail("Per-key lighting write failed (\(result)); stopped") } }
+        return ["sent":packets.count]
+    }
     if command=="access" { return ["available":true] }
     if command=="feature_get" && lamp {
         guard let size=request["size"] as? Int,(2...512).contains(size),id>0 else { try fail("Invalid feature size") }
@@ -157,13 +175,18 @@ if CommandLine.arguments.contains("--self-test") {
     inbox.receive([2,0xa4,8,1]);precondition(inbox.reply==[2,0xa4,8,1])
     inbox.reply=nil;inbox.prefix=[0,0x12,0x12];inbox.receive([0x12,0x12,1]);precondition(inbox.reply==[0,0x12,0x12,1])
     inbox.reply=nil;inbox.prefix=[];inbox.receive([0x12,0x12,1]);precondition(inbox.reply==nil)
-    print("Lighting ACK matching, zero-ID framing and stale-input rejection verified without hardware access")
+    var packet=[UInt8](repeating:0,count:65);packet[1]=0xc0;packet[2]=0x81;packet[3]=1;packet[5]=0x94
+    precondition((try? scopePackets([Data(packet).base64EncodedString()]))?.count==1)
+    packet[1]=0x50;precondition((try? scopePackets([Data(packet).base64EncodedString()]))==nil)
+    packet[1]=0xc0;packet[5]=0xff;precondition((try? scopePackets([Data(packet).base64EncodedString()]))==nil)
+    print("Scope per-key packet bounds, lighting-only batch, ACK matching, zero-ID framing and stale-input rejection verified without hardware access")
 } else if CommandLine.arguments.contains("--inventory") {
     let result:[String:Any]=["devices":inventory(deviceList()),"usb":usbInventory()]
     let data=try JSONSerialization.data(withJSONObject:result,options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self))
 } else {
     // Session-scoped handles remain bound to the retained IOKit objects, never reused by index.
     let devices=deviceList()
+    defer { for device in devices where openedLighting.contains(entryID(IOHIDDeviceGetService(device))) { IOHIDDeviceClose(device,IOOptionBits(kIOHIDOptionsTypeNone)) } }
     while let line=readLine() {
         if line.utf8.count>65536 { print("{\"error\":\"Request too large\"}");fflush(stdout);continue }
         do {

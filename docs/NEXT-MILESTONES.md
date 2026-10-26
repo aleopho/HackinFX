@@ -63,3 +63,10 @@ Display real LED/zone capabilities and output limits clearly. Keep controls
 reachable, reduce panel noise, preserve accessibility/Reduce Motion and retain
 menu-bar behavior. Hardware performance work takes precedence over decorative
 animation. UI previews must not be confused with physical-device validation.
+
+## Long-term device families
+
+Corsair/iCUE and Razer are priority families across keyboards, mice, lighting
+controllers, coolers, fans and DRAM where appropriate. Coverage requires actual
+macOS transports, exact device identities/topology, licensed protocol references
+and physical tests. This is roadmap scope, not a claim that all products work.
