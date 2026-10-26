@@ -15,6 +15,7 @@ import uuid
 import center_sdk
 import usb_devices
 import ram_control
+import nanoleaf_control
 
 
 def atomic_json(path,value,mode=0o600):
@@ -203,13 +204,13 @@ class AdapterRegistry:
 
 class Center:
     def __init__(self,store,profiles_dir,sdk=None,native=None,adapters=None):
-        self.store=Path(store);self.sdk=sdk or center_sdk.SDKClient();self.native=native or NativeGPU(profiles_dir)
+        self.nanoleaf_candidates=[];self.store=Path(store);self.sdk=sdk or center_sdk.SDKClient();self.native=native or NativeGPU(profiles_dir)
         self.engine=None
         if sdk is None and adapters is None:
             from openrgb_runtime import ManagedEngine
             self.engine=ManagedEngine(Path.home()/'Library/Application Support/HackinFX/Core/OpenRGB')
         defaults=[OpenRGBAdapter(self.sdk,self.engine),NativeGPUAdapter(self.native)]
-        if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
+        if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter(),nanoleaf_control.NanoleafAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
         self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['a7f3d0'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
@@ -224,9 +225,9 @@ class Center:
         except (OSError,ValueError,KeyError,TypeError):pass
     def performance(self):
         now=time.monotonic()
-        return {key:dict(frames=v['frames'],fps=round(v['fps'],1),command_ms=round(v['latency']*1000,2),age_ms=round(max(0,now-v['last'])*1000),missed=v['missed']) for key,v in self.output_stats.items()}
+        return {key:dict(frames=v['frames'],fps=round(v['fps'],1),command_ms=round(v['latency']*1000,2),age_ms=round(max(0,now-v['last'])*1000),missed=v['missed'],interval_ms=round(v.get('interval',0)*1000,2),jitter_ms=round(v.get('jitter',0)*1000,2),max_interval_ms=round(v.get('max_interval',0)*1000,2)) for key,v in self.output_stats.items()}
     def status(self):
-        with self.lock:return dict(schema=1,devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
+        with self.lock:return dict(schema=1,nanoleaf_candidates=list(self.nanoleaf_candidates),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
     def refresh(self,inventory=True):
         with self.operation:
             self.stop();self.leased_frames={};rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
@@ -286,14 +287,26 @@ class Center:
             except Exception:
                 self.refresh();raise
             return self.refresh()
+    def scan_nanoleaf(self):
+        with self.operation:
+            self.nanoleaf_candidates=nanoleaf_control.discover_shapes()
+            return self.status()
+    def pair_nanoleaf(self,value):
+        with self.operation:
+            adapter=self.registry.adapters.get('native-nanoleaf')
+            if adapter is None:raise ValueError('Native Nanoleaf adapter is unavailable')
+            ip=nanoleaf_control.local_ip(value.get('address'))
+            candidate=next((d for d in self.nanoleaf_candidates if d['address']==ip),None)
+            self.stop();adapter.pair(ip,candidate['id'] if candidate else None)
+            return self.refresh()
     def initialize(self,inventory=True):
         # Exactly once per Core session; later discovery never resets a user's colors.
         with self.operation:
             if self.initialized:return self.status()
             self.refresh(inventory=inventory);self.initialized=True
             # RAM is never automatically activated or colored at launch.
-            direct=[d['id'] for d in self.devices if d['controllable'] and d['direct'] and d['category']!='dram']
-            fallback=[d['id'] for d in self.devices if d['controllable'] and not d['direct'] and 'static' in d['static_modes'] and d['category']!='dram']
+            direct=[d['id'] for d in self.devices if d['controllable'] and d['direct'] and d['category']!='dram' and not d.get('startup_excluded')]
+            fallback=[d['id'] for d in self.devices if d['controllable'] and not d['direct'] and 'static' in d['static_modes'] and d['category']!='dram' and not d.get('startup_excluded')]
             errors=list(self.errors)
             if fallback:
                 self.start(dict(config=dict(mode='static',palette=['a7f3d0'],brightness=100),devices=fallback),isolate_failures=True,initial_errors=errors)
@@ -354,7 +367,7 @@ class Center:
         try:
             while active and not event.is_set():
                 tick=time.monotonic();grouped=animated and config['synchronized'] and config['sync_policy']=='lockstep'
-                latency=max([self.output_latencies.get(key,.05) for key in active]+[.05]) if grouped else 0
+                latency=max([self.output_latencies.get(key,.05)+active[key].get('presentation_delay',0) for key in active]+[.05]) if grouped else 0
                 presentation=tick+latency;elapsed=presentation-self.clock_started
                 for key,future in list(pending.items()):
                     if future.done():collect(key,future);del pending[key]
@@ -368,7 +381,7 @@ class Center:
                             if key in self.output_stats:self.output_stats[key]['missed']+=1
                         continue # Bounded latest-frame policy; never queue stale frames.
                     mode='static' if config['mode'] in target.get('onboard_modes',[]) else config['mode']
-                    sample_time=(tick+min(.25,self.output_latencies.get(key,0))-self.clock_started) if animated and config['synchronized'] and not grouped else elapsed
+                    sample_time=(tick+min(.25,self.output_latencies.get(key,0)+target.get('presentation_delay',0))-self.clock_started) if animated and config['synchronized'] and not grouped else elapsed
                     pixels=frame(dict(config,mode=mode),target['led_count'],dict(self.layout[key],led_positions=target.get('led_positions',[])),sample_time)
                     frames.append((key,target,pixels))
                 for key,target,pixels in frames:
@@ -388,7 +401,7 @@ class Center:
                 self.running=False
                 self.message='Some outputs failed; inspect device details.' if self.errors else 'Shared-clock streaming paused; last colors kept.' if animated else 'Static colors sent.'
     def timed_output(self,target,pixels,mode,presentation,event):
-        expected=self.output_latencies.get(target['id'],.05)
+        expected=self.output_latencies.get(target['id'],.05)+target.get('presentation_delay',0)
         delay=max(0,presentation-time.monotonic()-expected) if presentation else 0
         if event.wait(delay):return
         self.write_output(target,pixels,mode)
@@ -403,7 +416,9 @@ class Center:
             old=self.output_stats.get(key)
             interval=now-old['last'] if old else 0
             observed=1/interval if interval>0 else 0
-            self.output_stats[key]=dict(frames=(old['frames']+1 if old else 1),fps=(.2*observed+.8*old['fps'] if old and old['fps'] else observed),latency=self.output_latencies[key],last=now,missed=old['missed'] if old else 0)
+            mean_interval=(.2*interval+.8*old.get('interval',interval)) if old and interval>0 else interval
+            jitter=(.2*abs(interval-old.get('interval',interval))+.8*old.get('jitter',0)) if old and old.get('interval',0)>0 else 0
+            self.output_stats[key]=dict(interval=mean_interval,jitter=jitter,max_interval=max(interval,old.get('max_interval',0) if old else 0),frames=(old['frames']+1 if old else 1),fps=(.2*observed+.8*old['fps'] if old and old['fps'] else observed),latency=self.output_latencies[key],last=now,missed=old['missed'] if old else 0)
         if target.get('refresh_interval'):
             with self.lock:self.leased_frames[target['id']]=list(pixels)
     def pause(self):

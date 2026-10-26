@@ -10,7 +10,7 @@ import time
 
 # Native drivers own these exact controllers, including during detection.
 NATIVE_DETECTORS=('HID LampArray Device','Asus ROG Spatha X USB',
-                  'Asus ROG Spatha X 2.4GHz','NZXT Kraken X2','NZXT Kraken M2')
+                  'Asus ROG Spatha X 2.4GHz','NZXT Kraken X2','NZXT Kraken M2','Nanoleaf')
 
 class ManagedEngine:
     def __init__(self,directory,executable=None,timeout=75):

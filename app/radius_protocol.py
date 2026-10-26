@@ -58,8 +58,12 @@ class Radius:
         batch=packets(self.zones,colors) # Validate the complete batch before sending anything.
         key=tuple(tuple(c) for c in colors)
         if key==self.previous and time.monotonic()-self.last_sent<.25:return
-        deadline=time.monotonic()+12
-        for packet in batch:
-            if time.monotonic()>deadline:self.failed=True;raise RadiusError('Radius batch deadline exceeded; output stopped without retry')
-            self.exchange(packet)
+        if hasattr(self.transport,'exchange_batch'):
+            try:self.transport.exchange_batch(self.handle,batch)
+            except Exception:self.failed=True;raise
+        else:
+            deadline=time.monotonic()+12
+            for packet in batch:
+                if time.monotonic()>deadline:self.failed=True;raise RadiusError('Radius batch deadline exceeded; output stopped without retry')
+                self.exchange(packet)
         self.previous=key;self.last_sent=time.monotonic()

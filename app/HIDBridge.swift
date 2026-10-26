@@ -119,6 +119,37 @@ func scopePackets(_ encoded:[String])throws->[[UInt8]] {
         }
     return packets
 }
+// Validate an entire Radius Still-preview frame before opening/sending any packet.
+func radiusPackets(_ encoded:[String])throws->[[UInt8]] {
+    guard (3...512).contains(encoded.count) else { try fail("Invalid Radius frame packet count") }
+    let packets=try encoded.map { value -> [UInt8] in
+        guard let data=Data(base64Encoded:value),data.count==64 else { try fail("Invalid Radius packet size") }
+        return [UInt8](data)
+    }
+    var i=0;var zones=Set<UInt8>();var expectedZones:Int?=nil
+    while i<packets.count {
+        let select=packets[i];i+=1
+        guard select.prefix(4)==[2,0xa4,0x0a,1],(select[4]==1 || (0x10...0x1f).contains(select[4])),!zones.contains(select[4]),select.dropFirst(5).allSatisfy({$0==0}),i<packets.count else { try fail("Invalid Radius zone selection") }
+        zones.insert(select[4]);let config=packets[i];i+=1
+        guard config.prefix(4)==[2,0xa4,0x11,1],config[7]==1,(1...19).contains(config[8]),config[9]==0x99,config[10]==1,config[11]==100,config[15]==100,config.dropFirst(16).allSatisfy({$0==0}) else { try fail("Invalid Radius preview configuration") }
+        if let count=expectedZones { guard count==Int(config[8]) else { try fail("Inconsistent Radius zone count") } } else { expectedZones=Int(config[8]) }
+        let size=Int(config[5])*256+Int(config[6])
+        guard size>=15,size<=2301,size%3==0,(size/3-2)%3==0 else { try fail("Invalid Radius RGB stream length") }
+        if select[4]==1 { guard size==204 else { try fail("Radius pump requires exactly 22 LEDs") } }
+        var stream=[UInt8]()
+        while stream.count<size {
+            guard i<packets.count else { try fail("Truncated Radius frame") };let packet=packets[i];i+=1
+            let count=min(60,size-stream.count)
+            guard packet.prefix(3)==[2,0xa4,0x12],Int(packet[3])==count,packet.dropFirst(4+count).allSatisfy({$0==0}) else { try fail("Invalid Radius RGB data packet") }
+            stream.append(contentsOf:packet[4..<4+count])
+        }
+        guard stream.reduce(UInt8(0),{ $0 &+ $1 })==config[4] else { try fail("Radius frame checksum mismatch") }
+        let part=size/3;let rgb=Array(stream[2..<part])
+        guard Array(stream[0..<2])==[0,0],Array(stream[part..<part+2])==[2,50],Array(stream[2*part..<2*part+2])==[4,100],Array(stream[part+2..<2*part])==rgb,Array(stream[2*part+2..<size])==rgb,Array(config[12..<15])==Array(rgb.prefix(3)) else { try fail("Radius preview requires three identical RGB keyframes") }
+    }
+    guard zones.contains(1),zones.count==expectedZones else { try fail("Incomplete Radius zone frame") }
+    return packets
+}
 func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     let command=request["command"] as? String ?? ""
     if command=="inventory" { return ["devices":inventory(devices),"usb":usbInventory()] }
@@ -138,6 +169,16 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
         guard opened==kIOReturnSuccess else { try fail("macOS denied HID lighting access (\(opened)). Close other lighting software and check device permissions.") }
     }
     if !persistent { openedLighting.insert(handle) } // Reuse the opened lighting collection across frames.
+    if command=="radius_batch" {
+        guard radius,id==2,let encoded=request["packets"] as? [String] else { try fail("Radius batch requires exact lighting interface") }
+        let packets=try radiusPackets(encoded);let deadline=ProcessInfo.processInfo.systemUptime+12
+        for packet in packets {
+            guard ProcessInfo.processInfo.systemUptime<deadline else { try fail("Radius frame deadline exceeded; no retry") }
+            let reply=try lightingExchange(device,packet)
+            guard reply.count==64,Array(reply.prefix(3))==Array(packet.prefix(3)),reply[3]==0 else { try fail("Radius frame acknowledgement mismatch; stopped") }
+        }
+        return ["sent":packets.count]
+    }
     if command=="output_batch" {
         guard keyboard,pid==0x1aae,page==0xff00,id==0,let encoded=request["packets"] as? [String],(1...7).contains(encoded.count) else { try fail("Per-key batch requires the exact wired Scope II 96 lighting collection") }
         let packets=try scopePackets(encoded)
@@ -179,6 +220,10 @@ if CommandLine.arguments.contains("--self-test") {
     precondition((try? scopePackets([Data(packet).base64EncodedString()]))?.count==1)
     packet[1]=0x50;precondition((try? scopePackets([Data(packet).base64EncodedString()]))==nil)
     packet[1]=0xc0;packet[5]=0xff;precondition((try? scopePackets([Data(packet).base64EncodedString()]))==nil)
+    let radiusFixture=["AqQKAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","AqQRAcwAzAECmQFkBwgJZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","AqQSPAAABwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBw==","AqQSPAgJBwgJBwgJAjIHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCA==","AqQSPAkHCAkHCAkHCAkHCAkHCAkEZAcICQcICQcICQcICQcICQcICQcICQcICQcICQcICQcICQcICQcICQcICQ==","AqQSGAcICQcICQcICQcICQcICQcICQcICQcICQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","AqQKAREAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","AqQRARwAlgECmQFkBwgJZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","AqQSPAAABwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJBwgJAjIHCAkHCAkHCA==","AqQSPAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkHCAkEZAcICQcICQcICQcICQcICQcICQ==","AqQSHgcICQcICQcICQcICQcICQcICQcICQcICQcICQcICQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="]
+    precondition((try? radiusPackets(radiusFixture))?.count==11)
+    var badRadius=radiusFixture;badRadius.removeLast();precondition((try? radiusPackets(badRadius))==nil)
+    badRadius=radiusFixture;var badBytes=[UInt8](Data(base64Encoded:badRadius[1])!);badBytes[2]=0x50;badRadius[1]=Data(badBytes).base64EncodedString();precondition((try? radiusPackets(badRadius))==nil)
     print("Scope per-key packet bounds, lighting-only batch, ACK matching, zero-ID framing and stale-input rejection verified without hardware access")
 } else if CommandLine.arguments.contains("--inventory") {
     let result:[String:Any]=["devices":inventory(deviceList()),"usb":usbInventory()]

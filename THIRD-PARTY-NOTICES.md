@@ -92,3 +92,12 @@ Wired Scope II 96 RGB packet construction, ANSI/ISO key IDs and matrix positions
 are adapted from Mola19 and OpenRGB contributors, GPL-2.0-or-later. Exact original
 OpenRGB 1.1 sources at 8e16de27858cf2be6af54a33ce003df74cb9fd3e are preserved in
 vendor/openrgb/keyboard with per-file hashes. OMNI per-key support is not claimed.
+
+## Nanoleaf local protocol integration
+
+The native Shapes adapter implements Nanoleaf's documented OpenAPI and
+extControl v2 wire format. Protocol references include OpenRGB's
+`NanoleafController.cpp/.h` and detector, by Nikita Rushmanov (2022),
+GPL-2.0-or-later, and the official Nanoleaf OpenAPI documentation.
+See [Nanoleaf setup and protocol notes](docs/NANOLEAF.md).
+No Nanoleaf cloud SDK or vendor firmware is bundled.

@@ -69,7 +69,9 @@ def scope_topology(product_id,reply):
     if product_id!=0x1aae or len(reply)!=65 or reply[:3]!=bytes([0,0x12,0x12]):return None
     from pathlib import Path
     import json
-    code=reply[4]*100+reply[5]
+    # LightingInbox prepends the report-zero byte to macOS input payloads.
+    # OpenRGB hid_read indexes 4/5 in the unprefixed payload; ours are 5/6.
+    code=reply[5]*100+reply[6]
     if code//100 not in (1,2):return None
     # Same documented fallback as OpenRGB: 2xx ISO, 1xx ANSI.
     variant='NO' if code%100==11 else 'UK' if code//100==2 else 'US'

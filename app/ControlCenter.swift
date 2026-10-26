@@ -24,6 +24,7 @@ struct CenterDevice: Codable, Identifiable {
     let controllable: Bool
     let status: String
     let detail: String
+    var startup_excluded:Bool? = nil
     var hardware_state:[String:JSONScalar]? = nil
     var led_positions:[CenterLEDPosition]? = nil
     var color_scope:String? = nil
@@ -52,7 +53,7 @@ struct CenterDevice: Codable, Identifiable {
     var lightCountLabel:String {
         if color_scope == "whole-device" { return "1 color zone · LED count unknown" }
         if driver == "asus-keyboard",color_scope == "per-led" { return "\(led_count) mapped LEDs" }
-        if backend == "native" || backend == "native-ram" || driver == "asus-spatha" { return "\(led_count) color zones" }
+        if backend == "native" || driver == "asus-spatha" { return "\(led_count) color zones" }
         return "\(led_count) LEDs"
     }
     var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
@@ -72,9 +73,11 @@ private struct PublicRelease:Decodable { let tag_name:String;let html_url:String
 private struct StringError:LocalizedError { let message:String;init(_ message:String) { self.message=message };var errorDescription:String? { message } }
 struct SavedCenterScene: Codable, Identifiable { var id:String { name }; let name: String; let config:CenterScene }
 struct CenterPosition: Codable { var x:Double;var y:Double;var width:Double }
-struct CoreOutput:Codable { let frames:Int;let fps:Double;let command_ms:Double;let age_ms:Double;let missed:Int }
+struct CoreOutput:Codable { let frames:Int;let fps:Double;let command_ms:Double;let age_ms:Double;let missed:Int;var interval_ms:Double?=nil;var jitter_ms:Double?=nil;var max_interval_ms:Double?=nil }
 struct CoreSync:Codable { let clock:String;let dropped:Int;let frames:Int;var outputs:[String:CoreOutput]? = nil }
+struct NanoleafCandidate:Codable,Identifiable { let id:String;let address:String;let name:String;let model:String }
 struct CenterState: Codable {
+    var nanoleaf_candidates:[NanoleafCandidate]? = nil
     var sync:CoreSync? = nil
     let schema:Int
     let devices:[CenterDevice]
@@ -91,6 +94,7 @@ struct CenterState: Codable {
 private struct CoreDiscovery: Codable { let schema:Int;let port:Int;let credential:String;let pid:Int }
 
 final class CenterModel: ObservableObject {
+    @Published var nanoleafAddress=""
     @Published var state = CenterState.empty
     @Published var selected = Set<String>() { didSet { if selected != oldValue { scheduleLive() } } }
     @Published var scene = CenterScene() { didSet { scheduleLive() } }
@@ -172,7 +176,7 @@ final class CenterModel: ObservableObject {
             busy=true
             request("/v1/initialize") { result in
                 self.suppressLive=true;self.accept(result)
-                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
+                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
                 self.suppressLive=false;self.busy=false;self.livePending=false;self.publishWidget()
             };return
         }
@@ -213,7 +217,7 @@ final class CenterModel: ObservableObject {
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
+        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
     func scheduleLive() {
@@ -264,7 +268,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.1"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.3.0"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -272,6 +276,19 @@ final class CenterModel: ObservableObject {
                 }
             }
         }.resume()
+    }
+    func findNanoleaf() {
+        guard online && !busy else { return };busy=true;error=""
+        request("/v1/nanoleaf/scan") { result in
+            self.busy=false;self.accept(result)
+            if case .success(let state)=result { self.nanoleafAddress=state.nanoleaf_candidates?.first?.address ?? "";if self.nanoleafAddress.isEmpty { self.error="No Shapes found. Check that the controller and Mac are on the same network and Bonjour is allowed." } }
+        }
+    }
+    func pairNanoleaf() {
+        guard online && !busy else { return };busy=true;error=""
+        request("/v1/nanoleaf/pair",body:["address":nanoleafAddress.trimmingCharacters(in:.whitespacesAndNewlines)]) { result in
+            self.busy=false;self.accept(result);if case .success=result { self.livePending=true };self.flushLive()
+        }
     }
     func probeRAM() {
         guard online && !busy else { return };busy=true;error=""
@@ -419,7 +436,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.2.1");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.3.0");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -435,7 +452,7 @@ private struct CenterDeviceCard:View {
                 HStack { ZStack { RoundedRectangle(cornerRadius:13).fill(CenterTheme.aqua.opacity(0.07)).frame(width:46,height:46);Image(systemName:device.symbol).font(.system(size:23,weight:.light)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted) };Spacer();Image(systemName:!device.controllable ? "info.circle" : center.selected.contains(device.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(center.selected.contains(device.id) ? CenterTheme.accent : CenterTheme.muted.opacity(0.4)) }
                 VStack(alignment:.leading,spacing:5) { Text(device.name).font(.system(size:13,weight:.semibold)).lineLimit(2).frame(height:34,alignment:.topLeading);Text(device.vendor.isEmpty ? device.categoryLabel : device.vendor+" · "+device.categoryLabel).font(.system(size:10)).foregroundStyle(CenterTheme.muted).lineLimit(1) }
                 HStack { CenterBadge(text:device.controllable ? "Ready" : device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable);Spacer();if device.led_count>0 { Text(device.lightCountLabel).font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
-                if let output=center.state.sync?.outputs?[device.id],center.state.running,!(["static","gradient"].contains(center.state.scene.mode)) { HStack { Text(String(format:"%.1f FPS",output.fps)).foregroundStyle(CenterTheme.aqua);Spacer();Text(String(format:"%.1f ms",output.command_ms)).foregroundStyle(CenterTheme.muted) }.font(.system(size:9,design:.monospaced)) }
+                if let output=center.state.sync?.outputs?[device.id],center.state.running,!(["static","gradient"].contains(center.state.scene.mode)) { HStack { Text(String(format:"%.1f FPS",output.fps)).foregroundStyle(CenterTheme.aqua);Spacer();Text(String(format:"%.1f ms jitter",output.jitter_ms ?? 0)).foregroundStyle(CenterTheme.muted) }.font(.system(size:9,design:.monospaced)) }
                 Text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : device.backend == "native-ram" ? "Native Corsair / SMBus" : device.backend == "native-usb" ? "Native USB / HID" : "No lighting driver attached").font(.system(size:9)).foregroundStyle(CenterTheme.muted)
             }.padding(19).frame(maxWidth:.infinity,alignment:.leading).background(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.045) : CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:17)).overlay(RoundedRectangle(cornerRadius:17).stroke(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.5) : .white.opacity(0.065),lineWidth:1))
         }.buttonStyle(PressFeedbackStyle()).offset(y:hovered && !reduceMotion ? -3:0).shadow(color:CenterTheme.accent.opacity(hovered ? 0.06:0),radius:16,y:6).onHover { hovered=$0 }.animation(reduceMotion ? nil:.spring(duration:0.25,bounce:0.15),value:hovered).animation(reduceMotion ? nil:.spring(duration:0.28,bounce:0.15),value:center.selected.contains(device.id)).help(device.detail).contextMenu { Button("Device details") { center.activeDevice=device } }
@@ -579,14 +596,14 @@ struct CenterWorkspace:View {
                     if center.controllable.isEmpty { Text("Discover and confirm a controllable device first").font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
                 }.coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
             }.frame(height:560)
-            Text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; keyboard matrix placement is not yet mapped. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            Text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; reported keyboard/panel coordinates are used when available. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
     private var connections:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.1").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.3.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
                 Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }
@@ -596,6 +613,17 @@ struct CenterWorkspace:View {
                 Text(center.loginMessage).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                 Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
                 Label("Startup & live control",systemImage:"sun.max").font(.headline);Text("On launch, ready devices receive mint Twinkle at 65% speed. RAM stays untouched until you explicitly probe and select its DIMMs. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+            CenterPanel { VStack(alignment:.leading,spacing:12) {
+                Label("Nanoleaf Shapes",systemImage:"triangle").font(.headline)
+                Text("Find Shapes Triangles on your local network, select your controller, then hold its power button for 5–7 seconds until flashing and click Pair Shapes within 30 seconds.").font(.system(size:12)).foregroundStyle(CenterTheme.muted)
+                HStack { Button("Find Nanoleaf",action:center.findNanoleaf).disabled(center.busy || !center.online)
+                    if let candidates=center.state.nanoleaf_candidates,!candidates.isEmpty {
+                        Picker("Controller",selection:$center.nanoleafAddress) { ForEach(candidates) { candidate in Text(candidate.name).tag(candidate.address) } }.labelsHidden()
+                        Button("Pair Shapes",action:center.pairNanoleaf).disabled(center.busy || center.nanoleafAddress.isEmpty)
+                    }
+                }
+                Text("Pairing stores a private local token and reads the real panel layout. Select the panels in Lighting to start control. Streaming uses 10 Hz with panel interpolation; it does not change saved Nanoleaf scenes.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            } }
             DisclosureGroup("Device connections & advanced details") {
             CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("Bundled OpenRGB 1.1",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("LOCAL ENGINE").font(.system(size:20,weight:.medium,design:.monospaced));Text("OpenRGB starts and stops with HackinFX. Its macOS device drivers are included; no separate OpenRGB installation is required. Direct-mode devices join live scenes. Native adapters own their matching hardware to avoid duplicate writes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Rediscover devices",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
             CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other supported USB families use the bundled OpenRGB engine. DRAM access depends on the chipset, module and required macUSPCIO driver.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
