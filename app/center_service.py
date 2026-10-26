@@ -64,6 +64,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/v1/initialize':result=core.initialize()
             elif self.path=='/v1/discover':result=core.refresh()
             elif self.path=='/v1/ram/probe':result=core.probe_ram()
+            elif self.path=='/v1/nanoleaf/scan':result=core.scan_nanoleaf()
+            elif self.path=='/v1/nanoleaf/pair':result=core.pair_nanoleaf(value)
             elif self.path=='/v1/scene/start':result=core.start(value)
             elif self.path=='/v1/scene/stop':result=core.pause()
             elif self.path=='/v1/layout':result=core.set_layout(value)

@@ -61,7 +61,7 @@ def lamp_descriptor(data):
 class HIDTransport:
     def __init__(self,executable=None,timeout=4):
         self.executable=Path(executable) if executable else Path(__file__).with_name('HackinFXHID');self.process=None;self.lock=threading.RLock();self.timeout=timeout
-    def call(self,value):
+    def call(self,value,timeout=None):
         with self.lock:
             if self.process is None or self.process.poll() is not None:
                 if not self.executable.is_file():raise HIDError('Native HID helper missing; rebuild or reinstall HackinFX')
@@ -69,7 +69,7 @@ class HIDTransport:
             data=json.dumps(value).encode()+b'\n'
             if len(data)>65536:raise HIDError('HID request too large')
             try:
-                self.process.stdin.write(data);self.process.stdin.flush();output=bytearray();deadline=time.monotonic()+self.timeout
+                self.process.stdin.write(data);self.process.stdin.flush();output=bytearray();deadline=time.monotonic()+(self.timeout if timeout is None else timeout)
                 while b'\n' not in output:
                     if time.monotonic()>=deadline or not select.select([self.process.stdout],[],[],max(0,deadline-time.monotonic()))[0]:raise TimeoutError('HID transport timed out')
                     part=os.read(self.process.stdout.fileno(),65536)
@@ -80,6 +80,9 @@ class HIDTransport:
                 if 'error' in response:raise HIDError(response['error'])
                 return response
             except (BrokenPipeError,TimeoutError,json.JSONDecodeError):self.close();raise
+    def exchange_batch(self,handle,packets):
+        response=self.call(dict(command='radius_batch',handle=handle,report_id=2,packets=[base64.b64encode(p).decode() for p in packets]),timeout=14)
+        if response.get('sent')!=len(packets):raise HIDError('Incomplete Radius acknowledged frame')
     def inventory(self):return self.call(dict(command='inventory'))
     def check(self,handle):return self.call(dict(command='access',handle=handle,report_id=0))
     def get(self,handle,report):

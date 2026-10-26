@@ -43,3 +43,10 @@ assert (app/'Resources/Source/docs/RAM-SETUP.md').is_file()
 assert (app/'Resources/Source/vendor/radius/LICENSE').is_file()
 assert (app/'Resources/Source/vendor/rigstats/LICENSE').is_file()
 print('Scoped RAM helper, setup guide and Radius/ASUS protocol notices included')
+
+effects=json.loads((app/'Resources/effects_catalog.json').read_text())
+assert effects['schema']==1 and len(effects['effects'])==40 and len(effects['looks'])==80
+assert (app/'Resources/effects.py').is_file()
+assert (app/'Resources/Source/EffectLibrary.swift').is_file()
+assert (app/'Resources/Source/EffectGallery.swift').is_file()
+print('Shared 40-effect catalog, 80 looks, native gallery and hardware renderer are bundled')

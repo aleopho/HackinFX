@@ -1,4 +1,4 @@
-# Using HackinFX 2.1.1
+# Using HackinFX 2.4.0
 
 ## Install and start
 
@@ -9,14 +9,14 @@ macOS can request approval. Do not disable system protection globally.
 
 Native NVIDIA control needs the separately installed NullMoth NVRM driver.
 Ordinary USB lighting does not require that driver. The optional OpenCore SMBus
-installer component is for RAM development only; RAM is not yet working on the
-development system. See [RAM setup](RAM-SETUP.md) before enabling it.
+installer component is only needed for the scoped RAM transport. Four Corsair
+Titanium DIMMs are confirmed on Intel 8086:7f23 with the loaded driver. See [RAM setup](RAM-SETUP.md) before enabling it.
 
 ## Lighting and devices
 
 Launch opens Lighting. The bundled OpenRGB engine starts locally and discovery
-combines native and OpenRGB adapters. Ready devices are selected automatically
-and receive static white at 100% once per session. Inventory-only or access-
+combines native and OpenRGB adapters. Ready non-RAM, non-network devices are selected automatically
+and receive mint Twinkle at 65% speed once per session. Inventory-only or access-
 required entries remain visible under Devices; identification alone grants no
 lighting access. Rediscover refreshes devices and applies the current look.
 
@@ -25,21 +25,35 @@ apply after a short debounce without Apply. Lights off sends black. Pause stops
 animation and retains the last color; Radius preview renewal continues where
 needed. The visualization shows requested colors, not LED feedback.
 
-## Canvas and Effect Studio
+## Effect Gallery and Canvas
 
-Mirrored group output is the default: the same timeline/frame reaches each
-output, and the next frame waits for the whole group. Measured command durations
-help delay faster outputs. Slow devices reduce group frame rate. Physical LED
-latency is not measured; exact optical synchronization is not guaranteed.
+Effects opens the gallery: 40 distinct algorithms and 80 curated looks in five
+categories. Search by name/description, filter categories and star favorites.
+Click a card to apply it to selected compatible devices. Built-in cards preserve
+brightness and device selection; saved looks restore their full configuration.
+Use speed, brightness, scale, density, reverse and palette controls to customize
+then Save look. Lighting also has a compact effect menu and Browse 40 effects.
+Preview cards illustrate algorithms rather than live physical feedback.
+Reduce Motion pauses animated preview playback.
 
-Canvas provides device placement and a choice between mirroring and spatial
-mapping across the setup. Animated groups require streaming-capable devices;
-independently timed hardware effects cannot be treated as synchronized streams.
-ASUS native keyboard effects currently change the whole keyboard, not each key.
+Canvas places devices in a shared spatial field. Mirroring uses each device's
+local layout; Canvas mapping uses its position across the setup. Recognized
+keyboards and Shapes panels supply actual LED/panel coordinates. Adaptive output
+keeps fast devices moving when another device is slower. Lockstep waits for all
+outputs. Latency compensation is an estimate; exact optical sync is not guaranteed.
 
-Effects is a parameter editor: palette stops, animation, speed, brightness,
-direction, preview and saved looks. Profiles/scenes are stored in the current
-user's `~/Documents/HackinFX`.
+## Memory and Nanoleaf
+
+For the supported Corsair/Intel setup, open a Memory device in Devices, choose
+Probe RAM RGB, then select the resulting DIMMs in Lighting. RAM is not colored
+automatically at startup. Existing macUSPCIO installations need no reinstallation.
+[RAM setup and boundaries](RAM-SETUP.md).
+
+For Shapes, choose Settings → Find Nanoleaf and select the discovered controller.
+Hold its power button for 5–7 seconds until flashing, then Pair Shapes within
+30 seconds. Pairing reads layout and stores a private local token. Select the
+paired Shapes in Lighting to start control. No fixed IP or cloud account is needed.
+The stream uses up to 10Hz with panel interpolation. [Nanoleaf details](NANOLEAF.md).
 
 ## Menu bar, startup and updates
 
@@ -47,7 +61,7 @@ Window close leaves HackinFX running in the menu bar. Reopen from there; choose
 Quit to stop the Core and managed OpenRGB engine. Host-generated animations need
 the app to remain running; onboard lighting may retain its last state.
 
-Settings includes launch at login and software updates. White is applied after
+Settings includes launch at login and software updates. The startup look begins after
 sign-in and app discovery, not before macOS login. Updates are checked at launch
 and can also be checked manually. An update check is separate from a lighting
 command failure.

@@ -36,6 +36,7 @@ jobs:
       - run: swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests && /tmp/hackinfx-profile-tests
       - run: swiftc app/ReleaseVersion.swift app/tests/ReleaseVersionTests.swift -o /tmp/hackinfx-version-tests && /tmp/hackinfx-version-tests
       - run: python3 tools/prepare_openrgb_runtime.py
+      - run: python3 tools/verify_effect_previews.py
       - run: python3 app/build_community.py
       - run: python3 tools/check_app_bundle.py
       - run: python3 tools/verify_openrgb_runtime.py

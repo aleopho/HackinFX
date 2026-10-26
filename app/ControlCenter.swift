@@ -24,6 +24,7 @@ struct CenterDevice: Codable, Identifiable {
     let controllable: Bool
     let status: String
     let detail: String
+    var startup_excluded:Bool? = nil
     var hardware_state:[String:JSONScalar]? = nil
     var led_positions:[CenterLEDPosition]? = nil
     var color_scope:String? = nil
@@ -52,14 +53,17 @@ struct CenterDevice: Codable, Identifiable {
     var lightCountLabel:String {
         if color_scope == "whole-device" { return "1 color zone · LED count unknown" }
         if driver == "asus-keyboard",color_scope == "per-led" { return "\(led_count) mapped LEDs" }
-        if backend == "native" || backend == "native-ram" || driver == "asus-spatha" { return "\(led_count) color zones" }
+        if backend == "native" || driver == "asus-spatha" { return "\(led_count) color zones" }
         return "\(led_count) LEDs"
     }
     var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
 }
-struct CenterScene: Codable {
+struct CenterScene: Codable,Equatable {
     var synchronized = true
     var mapping = "mirror"
+    var scale = 1.0
+    var density = 55.0
+    var reverse = false
     var mode = "twinkle"
     var palette = ["a7f3d0"]
     var brightness = 100.0
@@ -72,9 +76,11 @@ private struct PublicRelease:Decodable { let tag_name:String;let html_url:String
 private struct StringError:LocalizedError { let message:String;init(_ message:String) { self.message=message };var errorDescription:String? { message } }
 struct SavedCenterScene: Codable, Identifiable { var id:String { name }; let name: String; let config:CenterScene }
 struct CenterPosition: Codable { var x:Double;var y:Double;var width:Double }
-struct CoreOutput:Codable { let frames:Int;let fps:Double;let command_ms:Double;let age_ms:Double;let missed:Int }
+struct CoreOutput:Codable { let frames:Int;let fps:Double;let command_ms:Double;let age_ms:Double;let missed:Int;var interval_ms:Double?=nil;var jitter_ms:Double?=nil;var max_interval_ms:Double?=nil }
 struct CoreSync:Codable { let clock:String;let dropped:Int;let frames:Int;var outputs:[String:CoreOutput]? = nil }
+struct NanoleafCandidate:Codable,Identifiable { let id:String;let address:String;let name:String;let model:String }
 struct CenterState: Codable {
+    var nanoleaf_candidates:[NanoleafCandidate]? = nil
     var sync:CoreSync? = nil
     let schema:Int
     let devices:[CenterDevice]
@@ -91,6 +97,7 @@ struct CenterState: Codable {
 private struct CoreDiscovery: Codable { let schema:Int;let port:Int;let credential:String;let pid:Int }
 
 final class CenterModel: ObservableObject {
+    @Published var nanoleafAddress=""
     @Published var state = CenterState.empty
     @Published var selected = Set<String>() { didSet { if selected != oldValue { scheduleLive() } } }
     @Published var scene = CenterScene() { didSet { scheduleLive() } }
@@ -172,7 +179,7 @@ final class CenterModel: ObservableObject {
             busy=true
             request("/v1/initialize") { result in
                 self.suppressLive=true;self.accept(result)
-                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
+                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
                 self.suppressLive=false;self.busy=false;self.livePending=false;self.publishWidget()
             };return
         }
@@ -213,7 +220,7 @@ final class CenterModel: ObservableObject {
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
+        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
     func scheduleLive() {
@@ -264,7 +271,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.1"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.4.0"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -272,6 +279,19 @@ final class CenterModel: ObservableObject {
                 }
             }
         }.resume()
+    }
+    func findNanoleaf() {
+        guard online && !busy else { return };busy=true;error=""
+        request("/v1/nanoleaf/scan") { result in
+            self.busy=false;self.accept(result)
+            if case .success(let state)=result { self.nanoleafAddress=state.nanoleaf_candidates?.first?.address ?? "";if self.nanoleafAddress.isEmpty { self.error="No Shapes found. Check that the controller and Mac are on the same network and Bonjour is allowed." } }
+        }
+    }
+    func pairNanoleaf() {
+        guard online && !busy else { return };busy=true;error=""
+        request("/v1/nanoleaf/pair",body:["address":nanoleafAddress.trimmingCharacters(in:.whitespacesAndNewlines)]) { result in
+            self.busy=false;self.accept(result);if case .success=result { self.livePending=true };self.flushLive()
+        }
     }
     func probeRAM() {
         guard online && !busy else { return };busy=true;error=""
@@ -315,7 +335,7 @@ final class CenterModel: ObservableObject {
     }
 }
 
-private enum CenterTheme {
+enum CenterTheme {
     static let background=Color(red:0.035,green:0.047,blue:0.055)
     static let surface=Color(red:0.065,green:0.082,blue:0.09)
     static let elevated=Color(red:0.085,green:0.105,blue:0.11)
@@ -323,7 +343,7 @@ private enum CenterTheme {
     static let aqua=Color(red:0.31,green:0.82,blue:0.79)
     static let muted=Color(red:0.51,green:0.58,blue:0.59)
 }
-private struct CenterPanel<Content:View>:View {
+struct CenterPanel<Content:View>:View {
     let content:Content
     init(@ViewBuilder content:()->Content) { self.content=content() }
     var body:some View { content.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:20)).overlay(RoundedRectangle(cornerRadius:20).stroke(.white.opacity(0.06),lineWidth:1)) }
@@ -356,33 +376,17 @@ private struct CenterAction:View {
 private struct CenterScenePreview:View {
     let scene:CenterScene
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private func rgb(_ hex:String)->(Double,Double,Double) {
-        let v=UInt32(hex,radix:16) ?? 0xffffff
-        return (Double((v>>16)&255)/255,Double((v>>8)&255)/255,Double(v&255)/255)
-    }
     private func tint(_ index:Int,_ time:Double)->Color {
-        let t=Double(index)/39;let speed=scene.speed/100;var level=scene.brightness/100
-        if scene.mode=="aurora" { return Color(hue:0.38+((t*0.28+time*speed*0.06).truncatingRemainder(dividingBy:1))*0.36,saturation:0.78,brightness:level*(0.6+0.4*pow(sin(t*5+time*speed),2))) }
-        if scene.mode=="comet" { let d=((time*speed*0.25).truncatingRemainder(dividingBy:1)-t+1).truncatingRemainder(dividingBy:1);level *= exp(-d*12) }
-        if scene.mode=="twinkle" { level *= 0.08+0.92*pow(max(0,sin(Double(index)*12.9898+t*78.233+time*speed*3)),12) }
-        if scene.mode=="color shift" {
-            let offset=(time*speed*0.12).truncatingRemainder(dividingBy:Double(scene.palette.count));let a=Int(offset),b=(a+1)%scene.palette.count,f=offset-Double(a)
-            let x=rgb(scene.palette[a]),y=rgb(scene.palette[b]);return Color(red:(x.0*(1-f)+y.0*f)*level,green:(x.1*(1-f)+y.1*f)*level,blue:(x.2*(1-f)+y.2*f)*level)
-        }
-        if scene.mode=="spectrum" { return Color(hue:(time*speed*0.2).truncatingRemainder(dividingBy:1),saturation:0.8,brightness:level) }
-        if scene.mode=="breathing" { level *= 0.08+0.92*(0.5-0.5*cos(time*speed*Double.pi)) }
-        if ["gradient","wave"].contains(scene.mode) {
-            let phase=scene.mode=="wave" ? (t+time*speed*0.25).truncatingRemainder(dividingBy:1):t
-            let offset=phase*Double(max(1,scene.palette.count-1));let a=min(scene.palette.count-1,Int(offset));let b=min(scene.palette.count-1,a+1);let f=offset-Double(a)
-            let x=rgb(scene.palette[a]),y=rgb(scene.palette[b]);return Color(red:(x.0*(1-f)+y.0*f)*level,green:(x.1*(1-f)+y.1*f)*level,blue:(x.2*(1-f)+y.2*f)*level)
-        }
-        let c=rgb(scene.palette.first ?? "ffffff");return Color(red:c.0*level,green:c.1*level,blue:c.2*level)
+        let u=Double(index)/39
+        let rgb=EffectMath.sample(mode:scene.mode,palette:EffectLibrary.palette(scene.palette),index:index,u:u,v:u,coord:u,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse)
+        let level=scene.brightness/25500
+        return Color(red:max(0,min(1,rgb[0]*level)),green:max(0,min(1,rgb[1]*level)),blue:max(0,min(1,rgb[2]*level)))
     }
     var body:some View {
         TimelineView(.animation(minimumInterval:0.05,paused:reduceMotion || ["static","gradient"].contains(scene.mode))) { context in
             let time=reduceMotion ? 0:context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3600)
             VStack(alignment:.leading,spacing:20) {
-                HStack { Text(scene.mode.capitalized).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text("EFFECT VISUALIZATION").font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
+                HStack { Text(EffectLibrary.effect(scene.mode)?.name ?? scene.mode.capitalized).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text("EFFECT VISUALIZATION").font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
                 HStack(spacing:4) { ForEach(0..<40) { i in Capsule().fill(tint(i,time)).frame(height:34).shadow(color:tint(i,time).opacity(0.45),radius:8) } }
             }.padding(20).background(LinearGradient(colors:[CenterTheme.background,CenterTheme.elevated.opacity(0.35)],startPoint:.topLeading,endPoint:.bottomTrailing)).clipShape(RoundedRectangle(cornerRadius:14))
         }.accessibilityLabel("Effect visualization. Not live LED feedback.")
@@ -419,7 +423,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.2.1");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.4.0");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -435,7 +439,7 @@ private struct CenterDeviceCard:View {
                 HStack { ZStack { RoundedRectangle(cornerRadius:13).fill(CenterTheme.aqua.opacity(0.07)).frame(width:46,height:46);Image(systemName:device.symbol).font(.system(size:23,weight:.light)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted) };Spacer();Image(systemName:!device.controllable ? "info.circle" : center.selected.contains(device.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(center.selected.contains(device.id) ? CenterTheme.accent : CenterTheme.muted.opacity(0.4)) }
                 VStack(alignment:.leading,spacing:5) { Text(device.name).font(.system(size:13,weight:.semibold)).lineLimit(2).frame(height:34,alignment:.topLeading);Text(device.vendor.isEmpty ? device.categoryLabel : device.vendor+" · "+device.categoryLabel).font(.system(size:10)).foregroundStyle(CenterTheme.muted).lineLimit(1) }
                 HStack { CenterBadge(text:device.controllable ? "Ready" : device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable);Spacer();if device.led_count>0 { Text(device.lightCountLabel).font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
-                if let output=center.state.sync?.outputs?[device.id],center.state.running,!(["static","gradient"].contains(center.state.scene.mode)) { HStack { Text(String(format:"%.1f FPS",output.fps)).foregroundStyle(CenterTheme.aqua);Spacer();Text(String(format:"%.1f ms",output.command_ms)).foregroundStyle(CenterTheme.muted) }.font(.system(size:9,design:.monospaced)) }
+                if let output=center.state.sync?.outputs?[device.id],center.state.running,!(["static","gradient"].contains(center.state.scene.mode)) { HStack { Text(String(format:"%.1f FPS",output.fps)).foregroundStyle(CenterTheme.aqua);Spacer();Text(String(format:"%.1f ms jitter",output.jitter_ms ?? 0)).foregroundStyle(CenterTheme.muted) }.font(.system(size:9,design:.monospaced)) }
                 Text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : device.backend == "native-ram" ? "Native Corsair / SMBus" : device.backend == "native-usb" ? "Native USB / HID" : "No lighting driver attached").font(.system(size:9)).foregroundStyle(CenterTheme.muted)
             }.padding(19).frame(maxWidth:.infinity,alignment:.leading).background(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.045) : CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:17)).overlay(RoundedRectangle(cornerRadius:17).stroke(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.5) : .white.opacity(0.065),lineWidth:1))
         }.buttonStyle(PressFeedbackStyle()).offset(y:hovered && !reduceMotion ? -3:0).shadow(color:CenterTheme.accent.opacity(hovered ? 0.06:0),radius:16,y:6).onHover { hovered=$0 }.animation(reduceMotion ? nil:.spring(duration:0.25,bounce:0.15),value:hovered).animation(reduceMotion ? nil:.spring(duration:0.28,bounce:0.15),value:center.selected.contains(device.id)).help(device.detail).contextMenu { Button("Device details") { center.activeDevice=device } }
@@ -447,12 +451,13 @@ struct CenterWorkspace:View {
     let page:String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var effectSelection
+    @State private var galleryPresented=false
     @State private var dragLocations:[String:CGPoint] = [:]
     var body:some View {
         VStack(alignment:.leading,spacing:24) {
             if page == "Overview" { overview }
             else if page == "Devices" { devices }
-            else if page == "Effects" || page == "Scenes" { sceneEditor }
+            else if page == "Effects" || page == "Scenes" { EffectGallery(center:center) }
             else if page == "Canvas" || page == "Layout" { layout }
             else { connections }
             if !center.error.isEmpty { CenterPanel { HStack { Label(center.error,systemImage:"exclamationmark.triangle").font(.system(size:12)).foregroundStyle(.orange).textSelection(.enabled);Spacer();Button { center.error="" } label: { Image(systemName:"xmark") }.help("Dismiss error") } } }
@@ -506,11 +511,18 @@ struct CenterWorkspace:View {
         CenterPanel {
                 VStack(alignment:.leading,spacing:20) {
                     CenterScenePreview(scene:center.scene)
-                    LazyVGrid(columns:[GridItem(.adaptive(minimum:108),spacing:8)],spacing:8) { ForEach([("static","Static","circle.fill"),("gradient","Gradient","slider.horizontal.3"),("spectrum","Spectrum","circle.lefthalf.filled"),("breathing","Breathing","waveform.path"),("wave","Wave","water.waves"),("aurora","Aurora","sparkles"),("comet","Comet","sparkle"),("twinkle","Twinkle","star"),("color shift","Color shift","circle.hexagongrid")],id:\.0) { key,label,symbol in Button { center.scene.mode=key } label: { VStack(spacing:11) { Image(systemName:symbol).font(.system(size:22,weight:.light));Text(label).font(.system(size:10,weight:.medium)) }.frame(maxWidth:.infinity).frame(height:83).foregroundStyle(center.scene.mode == key ? CenterTheme.accent : CenterTheme.muted).background(center.scene.mode == key ? CenterTheme.accent.opacity(0.09) : CenterTheme.background.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(center.scene.mode == key ? CenterTheme.accent.opacity(0.4) : .white.opacity(0.04),lineWidth:1)).overlay(alignment:.bottom) { if center.scene.mode == key { Capsule().fill(CenterTheme.accent).frame(width:28,height:2).matchedGeometryEffect(id:"effect-selection",in:effectSelection).padding(.bottom,8) } } }.buttonStyle(PressFeedbackStyle()) } }
-                    if !["spectrum","aurora"].contains(center.scene.mode) { HStack { ForEach(0..<( ["wave","gradient","color shift","twinkle"].contains(center.scene.mode) ? 3 : 1),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
+                    HStack(spacing:12) {
+                        Menu {
+                            ForEach(EffectLibrary.catalog.categories,id:\.self) { category in
+                                Menu(category) { ForEach(EffectLibrary.catalog.effects.filter {$0.category==category}) { effect in Button(effect.name) { center.scene.mode=effect.id } } }
+                            }
+                        } label: { Label(EffectLibrary.effect(center.scene.mode)?.name ?? center.scene.mode.capitalized,systemImage:EffectLibrary.effect(center.scene.mode)?.symbol ?? "sparkles") }
+                        Spacer();Button { galleryPresented=true } label: { Label("Browse 40 effects",systemImage:"square.grid.2x2") }
+                    }
+                    if EffectLibrary.effect(center.scene.mode)?.colors != false { HStack { ForEach(0..<min(4,center.scene.palette.count),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
                     HStack { Text("Brightness").frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                     if !["static","gradient"].contains(center.scene.mode) { HStack { Text("Speed").frame(width:75,alignment:.leading);Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-                    if ["wave","gradient"].contains(center.scene.mode) { Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented) }
+                    if !["static","spectrum","breathing","color shift","pulse","heartbeat"].contains(center.scene.mode) { Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented) }
                     HStack(spacing:10) {
                         Label(center.liveStatus,systemImage:"bolt.fill").font(.system(size:10)).foregroundStyle(center.error.isEmpty ? CenterTheme.aqua:.orange)
                         Spacer();Button("Pause animation",action:center.stop).disabled(!center.state.running || center.busy)
@@ -520,41 +532,9 @@ struct CenterWorkspace:View {
                     if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text("Onboard effects use their own clocks. Use Canvas with shared-clock streaming devices for synchronized effects.").font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
 
                 }
-            }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode)
-    }
-    private var sceneEditor:some View {
-        VStack(alignment:.leading,spacing:22) {
-            CenterHeading(eyebrow:"Your effect library",title:"Effect Studio",subtitle:"Build reusable looks. Lighting handles live controls; Canvas places your devices.")
-            CenterPanel { VStack(alignment:.leading,spacing:16) {
-                Text("Design an effect").font(.headline)
-                CenterScenePreview(scene:center.scene)
-                Picker("Animation",selection:$center.scene.mode) { ForEach(["static","gradient","spectrum","breathing","wave","aurora","comet","twinkle","color shift"],id:\.self) { Text($0.capitalized).tag($0) } }.pickerStyle(.menu)
-                Text("Palette stops").font(.system(size:11,weight:.semibold))
-                LazyVGrid(columns:[GridItem(.adaptive(minimum:140))]) { ForEach(Array(center.scene.palette.indices),id:\.self) { index in ColorPicker("Stop \(index+1)",selection:sceneColor(index),supportsOpacity:false) } }
-                HStack { Button("Add color stop") { if center.scene.palette.count<8 { center.scene.palette.append("42d6ce") } }.disabled(center.scene.palette.count>=8);Button("Remove last stop") { if center.scene.palette.count>1 { center.scene.palette.removeLast() } }.disabled(center.scene.palette.count<=1) }
-                HStack { Text("Speed");Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%") }
-                HStack { Text("Brightness");Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%") }
-                Picker("Mapping",selection:$center.scene.mapping) { Text("Mirror devices").tag("mirror");Text("Canvas space").tag("canvas") }.pickerStyle(.segmented)
-                Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented)
-                HStack { Button("Ocean") { center.scene.palette=["0066ff","42d6ce","b7fff3"];center.scene.mode="wave" };Button("Ember") { center.scene.palette=["ff2200","ff9900","ffcc66"];center.scene.mode="breathing" };Button("Aurora") { center.scene.palette=["24ff99","4277ff","b34fff"];center.scene.mode="aurora" } }
-                Divider()
-
-                TextField("Preset name",text:$center.sceneName).textFieldStyle(.roundedBorder)
-                HStack { Text(center.scene.mode.capitalized+" · \(Int(center.scene.brightness))% brightness").foregroundStyle(CenterTheme.muted);Spacer();Button("Save preset",action:center.saveScene).disabled(center.busy || !center.online) }.font(.system(size:12))
-                Text("Presets store effect, palette, speed, direction and shared-clock preference. Device selection stays local to your workspace.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
-            } }
-            if center.state.scenes.isEmpty { CenterPanel { Label("Create a look in Lighting, then save your first preset here.",systemImage:"sparkles").foregroundStyle(CenterTheme.muted) } }
-            LazyVGrid(columns:[GridItem(.adaptive(minimum:240),spacing:16)],spacing:16) {
-                ForEach(center.state.scenes) { saved in
-                    Button { center.scene=saved.config } label: {
-                        VStack(alignment:.leading,spacing:18) {
-                            HStack(spacing:4) { ForEach(Array(saved.config.palette.enumerated()),id:\.offset) { _,hex in RoundedRectangle(cornerRadius:5).fill(Color(nsColor:NSColor(srgbRed:Double((UInt32(hex,radix:16) ?? 0)>>16&255)/255,green:Double((UInt32(hex,radix:16) ?? 0)>>8&255)/255,blue:Double((UInt32(hex,radix:16) ?? 0)&255)/255,alpha:1))).frame(height:36) } }
-                            Text(saved.name).font(.headline);HStack { Text(saved.config.mode.capitalized);Spacer();Image(systemName:"play.fill") }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
-                        }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:16))
-                    }.buttonStyle(PressFeedbackStyle())
-                }
+            }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode).sheet(isPresented:$galleryPresented) {
+                VStack(spacing:0) { HStack { Text("HackinFX / Effects").font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted);Spacer();Button("Done") { galleryPresented=false } }.padding(20);Divider();ScrollView { EffectGallery(center:center).padding(28) } }.frame(minWidth:1000,idealWidth:1120,minHeight:760,idealHeight:860).background(CenterTheme.background).preferredColorScheme(.dark)
             }
-        }
     }
     private var layout:some View {
         VStack(alignment:.leading,spacing:22) {
@@ -579,14 +559,14 @@ struct CenterWorkspace:View {
                     if center.controllable.isEmpty { Text("Discover and confirm a controllable device first").font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
                 }.coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
             }.frame(height:560)
-            Text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; keyboard matrix placement is not yet mapped. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            Text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; reported keyboard/panel coordinates are used when available. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
     private var connections:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.1").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.4.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
                 Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }
@@ -596,6 +576,17 @@ struct CenterWorkspace:View {
                 Text(center.loginMessage).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                 Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
                 Label("Startup & live control",systemImage:"sun.max").font(.headline);Text("On launch, ready devices receive mint Twinkle at 65% speed. RAM stays untouched until you explicitly probe and select its DIMMs. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+            CenterPanel { VStack(alignment:.leading,spacing:12) {
+                Label("Nanoleaf Shapes",systemImage:"triangle").font(.headline)
+                Text("Find Shapes Triangles on your local network, select your controller, then hold its power button for 5–7 seconds until flashing and click Pair Shapes within 30 seconds.").font(.system(size:12)).foregroundStyle(CenterTheme.muted)
+                HStack { Button("Find Nanoleaf",action:center.findNanoleaf).disabled(center.busy || !center.online)
+                    if let candidates=center.state.nanoleaf_candidates,!candidates.isEmpty {
+                        Picker("Controller",selection:$center.nanoleafAddress) { ForEach(candidates) { candidate in Text(candidate.name).tag(candidate.address) } }.labelsHidden()
+                        Button("Pair Shapes",action:center.pairNanoleaf).disabled(center.busy || center.nanoleafAddress.isEmpty)
+                    }
+                }
+                Text("Pairing stores a private local token and reads the real panel layout. Select the panels in Lighting to start control. Streaming uses 10 Hz with panel interpolation; it does not change saved Nanoleaf scenes.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            } }
             DisclosureGroup("Device connections & advanced details") {
             CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("Bundled OpenRGB 1.1",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("LOCAL ENGINE").font(.system(size:20,weight:.medium,design:.monospaced));Text("OpenRGB starts and stops with HackinFX. Its macOS device drivers are included; no separate OpenRGB installation is required. Direct-mode devices join live scenes. Native adapters own their matching hardware to avoid duplicate writes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Rediscover devices",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
             CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other supported USB families use the bundled OpenRGB engine. DRAM access depends on the chipset, module and required macUSPCIO driver.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }

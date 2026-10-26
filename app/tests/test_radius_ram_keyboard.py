@@ -169,7 +169,7 @@ class RadiusLeaseTests(unittest.TestCase):
 
 class ScopeTopologyTests(unittest.TestCase):
  def topology(self,major=2):
-  raw=bytearray(65);raw[:3]=bytes([0,0x12,0x12]);raw[4:6]=bytes([major,3 if major==2 else 17]);return keyboard.scope_topology(0x1aae,bytes(raw))
+  raw=bytearray(65);raw[:3]=bytes([0,0x12,0x12]);raw[5:7]=bytes([major,3 if major==2 else 17]);return keyboard.scope_topology(0x1aae,bytes(raw))
  def test_iso_ansi_counts_key_ids_and_spatial_map(self):
   for major,count in ((1,101),(2,102)):
    t=self.topology(major);self.assertEqual(len(t['keys']),count);self.assertEqual(len(t['positions']),count);self.assertEqual(len(set(k['id'] for k in t['keys'])),count)
@@ -197,3 +197,26 @@ class RAMFailureDiagnosticsTests(unittest.TestCase):
   adapter=RAMAdapter(Failed(loaded=True),lambda:[dict(manufacturer='Corsair',part_number='CMP32',size='16 GB')])
   with self.assertRaises(ValueError):adapter.probe()
   rows=adapter.discover();self.assertEqual(rows[0]['status'],'probe-failed');self.assertIn('0x18',rows[0]['detail']);self.assertEqual(rows[0]['hardware_state']['status'],8);self.assertFalse(rows[0]['controllable'])
+
+class LiveScopeLayoutRegression(unittest.TestCase):
+    def test_actual_mac_report_zero_reply_selects_iso_203_with_102_leds(self):
+        reply=bytes.fromhex('0012120000020300').ljust(65,b'\0')
+        layout=keyboard.scope_topology(0x1aae,reply)
+        self.assertEqual(layout['layout_code'],203);self.assertEqual(layout['layout'],'UK')
+        self.assertEqual(len(layout['keys']),102)
+        packets=keyboard.per_key_packets(layout,[(i,0,0) for i in range(102)])
+        self.assertEqual(len(packets),7)
+        self.assertTrue(all(p[:3]==bytes([0,0xc0,0x81]) for p in packets))
+    def test_radius_frame_is_one_acknowledged_batch_and_failure_is_sticky(self):
+        class Batched(RadiusTransport):
+            def __init__(self):super().__init__();self.batches=[];self.fail=False
+            def exchange_batch(self,handle,packets):
+                self.batches.append(packets)
+                if self.fail:raise RuntimeError('batch ACK failed')
+        t=Batched();d=radius.Radius(t,'radius');d.discover();before=len(t.calls)
+        d.write([(3,2,1)]*38)
+        self.assertEqual(len(t.batches),1);self.assertEqual(len(t.batches[0]),11);self.assertEqual(len(t.calls),before)
+        t.fail=True
+        with self.assertRaises(RuntimeError):d.write([(4,5,6)]*38)
+        with self.assertRaises(radius.RadiusError):d.write([(3,2,1)]*38)
+        self.assertEqual(len(t.batches),2)
