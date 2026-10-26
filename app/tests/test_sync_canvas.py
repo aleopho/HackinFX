@@ -22,14 +22,14 @@ class SyncTests(unittest.TestCase):
    seen=[];real=core.frame
    def capture(scene,count,pos,elapsed):seen.append(elapsed);return real(scene,count,pos,elapsed)
    with patch.object(core,'frame',side_effect=capture):
-    c.start(dict(devices=['0','1'],config=dict(mode='wave',synchronized=True)));time.sleep(.24);c.stop()
+    c.start(dict(devices=['0','1'],config=dict(mode='wave',synchronized=False)));time.sleep(.24);c.stop()
    self.assertAlmostEqual(seen[0],seen[1]);self.assertTrue(a.overlap)
    self.assertGreater(c.sync_stats['dropped'],0);self.assertGreater(len([v for v in a.calls if v[0]=='1']),len([v for v in a.calls if v[0]=='0']));c.close()
  def test_canvas_rejects_independent_hardware_clocks(self):
   with tempfile.TemporaryDirectory() as folder:
    d=device();d.update(direct=False,controllable=True,static_modes=['static','breathing'])
    c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK([d]),native=FakeNative());c.refresh(False)
-   with self.assertRaisesRegex(ValueError,'Canvas sync'):c.start(dict(devices=[c.devices[0]['id']],config=dict(synchronized=True)))
+   with self.assertRaisesRegex(ValueError,'Canvas sync'):c.start(dict(devices=[c.devices[0]['id']],config=dict(mode='breathing',synchronized=True)))
    c.close()
  def test_scene_restart_preserves_shared_epoch(self):
   with tempfile.TemporaryDirectory() as folder:
@@ -78,3 +78,36 @@ class LeasePauseTests(unittest.TestCase):
    a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
    c.start(dict(devices=['r'],config=dict(mode='static',palette=['ffffff'])));time.sleep(.07);c.pause();count=len(a.calls);time.sleep(.6)
    self.assertGreater(len(a.calls),count);self.assertFalse(c.running);c.close()
+
+class GroupBarrierTests(unittest.TestCase):
+ def test_group_never_advances_before_slowest_output_finishes(self):
+  class Adapter:
+   name='fixture'
+   def __init__(self):self.calls=[];self.started=threading.Event();self.release=threading.Event()
+   def discover(self):return [dict(device(i),id=str(i)) for i in range(2)]
+   def activate(self,d):pass
+   def close(self):pass
+   def write_frame(self,d,pixels,mode):
+    self.calls.append((d['id'],pixels))
+    if d['id']=='0' and not self.started.is_set():self.started.set();self.release.wait(2)
+  with tempfile.TemporaryDirectory() as folder:
+   a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
+   try:
+    c.start(dict(devices=['0','1'],config=dict(mode='wave')))
+    self.assertTrue(a.started.wait(1));time.sleep(.1)
+    self.assertEqual(len(a.calls),2);self.assertEqual(a.calls[0][1],a.calls[1][1])
+    a.release.set();time.sleep(.12);c.stop()
+    self.assertGreaterEqual(len(a.calls),4);self.assertEqual(c.sync_stats['dropped'],0)
+   finally:a.release.set();c.close()
+ def test_default_mirror_ignores_device_position(self):
+  scene=core.scene_config(dict(mode='wave'))
+  self.assertTrue(scene['synchronized']);self.assertEqual(scene['mapping'],'mirror')
+  self.assertEqual(core.frame(scene,1,dict(x=0),1),core.frame(scene,1,dict(x=.5),1))
+
+class PresentationDelayTests(unittest.TestCase):
+ def test_fast_output_waits_until_predicted_completion_window(self):
+  c=object.__new__(core.Center);c.output_latencies={'fast':.02};writes=[];c.write_output=lambda *args:writes.append(args)
+  event=threading.Event()
+  with patch.object(core.time,'monotonic',return_value=10),patch.object(event,'wait',return_value=False) as wait:
+   c.timed_output({'id':'fast'},[(1,2,3)],'wave',10.1,event)
+   self.assertAlmostEqual(wait.call_args.args[0],.08);self.assertEqual(len(writes),1)

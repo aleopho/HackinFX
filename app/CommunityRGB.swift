@@ -80,6 +80,7 @@ final class Model: ObservableObject {
     @Published var testTransportOK = false
     @Published var setupMessage = "Confirm lighting before saving a local profile."
     @Published var showReportPreview = false
+    var feedbackScanPending = false
     @Published var showSetupWizard = false
     @Published var manualVendor = ""
     @Published var manualModel = ""
@@ -395,7 +396,9 @@ final class Model: ObservableObject {
         report["submission_id"] = submissionID
         report["app_session_events"] = sessionEvents
         report["community_notes"] = ["exact_card_model": boardLabel, "observed_behavior": observedBehavior, "reported_board_vendor": manualVendor, "reported_exact_model": manualModel, "identity_source": identitySource]
-        report["setup"] = ["outcome": setupState, "successful_test_steps": testStep, "transport_test_completed": testTransportOK, "visual_confirmation": setupState == "confirmed", "confirmation_source": confirmationSource] as [String: Any]
+        var collectedSetup = report["setup"] as? [String:Any] ?? [:]
+        collectedSetup.merge(["outcome": setupState, "successful_test_steps": testStep, "transport_test_completed": testTransportOK, "visual_confirmation": setupState == "confirmed", "confirmation_source": confirmationSource] as [String: Any]) { _,new in new }
+        report["setup"] = collectedSetup
         var setup = report["setup"] as? [String:Any] ?? [:]
         setup["control_center"] = ["online":center.online,"bridge":center.state.bridge,"running":center.state.running,"frames_sent":center.state.frames,"errors":center.state.errors.map { $0.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~") },"detected_count":center.state.devices.count,"devices":center.state.devices.prefix(32).map { ["name":$0.name,"vendor":$0.vendor,"category":$0.category,"backend":$0.backend,"status":$0.status,"detail":$0.detail.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~"),"led_count":$0.led_count,"direct":$0.direct,"usb_id":$0.usb_id ?? "","driver":$0.driver ?? "","catalog_matches":$0.catalog_matches ?? []] as [String:Any] }] as [String:Any]
         report["setup"] = setup
@@ -412,6 +415,11 @@ final class Model: ObservableObject {
             if draftURL == nil { draftURL = folder.appendingPathComponent("troubleshooting-\(UUID().uuidString).json") }
             try data.write(to: draftURL!, options: .atomic)
         } catch { submissionMessage = "Local report could not be saved: \(error.localizedDescription)" }
+    }
+    func prepareFeedback() {
+        guard !working else { return }
+        feedbackScanPending = true
+        scanHardware()
     }
     func reviewReport() { submissionMessage = ""; saveTroubleshooting(); showReportPreview = true }
     func feedbackChanged() {
@@ -450,7 +458,7 @@ final class Model: ObservableObject {
         configurationStatus = "checking"
         configurationReason = "Checking hardware configuration…"
         scanJSON = ""; scanReport = nil; adapters = []
-        scanSummary = "Scanning display adapters and graphics driver versions…"
+        scanSummary = "Scanning graphics, CPU, memory, USB, PCI and storage specifications…"
         record("scan", "started")
         let resources = Bundle.main.resourceURL!
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX/Scans", isDirectory: true)
@@ -483,7 +491,7 @@ final class Model: ObservableObject {
                 let errors = report["errors"] as? [[String: Any]] ?? []
                 let raw = String(data: data, encoding: .utf8) ?? ""
                 let summary = errors.isEmpty ? "Scan complete. \(found.count) display adapter(s) found." : "Scan finished with \(errors.count) query error(s). Export the report for analysis."
-                DispatchQueue.main.asyncAfter(deadline:.now()+0.8) { self.configurationStatus = configStatus; self.configurationReason = configReason; self.scanJSON = raw; self.identifyHardware(report); self.restoreSetup(report); self.flushVerifications(); self.fetchCommunityCatalog(); if self.initialHardwareCheck { self.page = "Overview" }; self.initialHardwareCheck = false; self.adapters = found; self.scanJSON = raw; self.scanReport = output; self.scanSummary = summary; self.scanning = false; self.record("scan", errors.isEmpty ? "completed" : "completed-with-errors"); if self.setupState == "required" && configStatus == "supported" { self.startSetupTest() } }
+                DispatchQueue.main.asyncAfter(deadline:.now()+0.8) { self.configurationStatus = configStatus; self.configurationReason = configReason; self.scanJSON = raw; self.identifyHardware(report); self.restoreSetup(report); self.flushVerifications(); self.fetchCommunityCatalog(); if self.initialHardwareCheck { self.page = "Overview" }; self.initialHardwareCheck = false; self.adapters = found; self.scanJSON = raw; self.scanReport = output; self.scanSummary = summary; self.scanning = false; self.record("scan", errors.isEmpty ? "completed" : "completed-with-errors"); if self.feedbackScanPending { self.feedbackScanPending = false; self.reviewReport() } else if self.setupState == "required" && configStatus == "supported" { self.startSetupTest() } }
             } catch { DispatchQueue.main.async { self.scanning = false; self.configurationStatus = "unknown"; self.configurationReason = "Hardware check failed"; self.page = "Hardware"; self.scanSummary = "Could not start or read the scan. \(error.localizedDescription)"; self.record("scan", "failed") } }
         }
     }
@@ -758,7 +766,7 @@ struct Community: View {
                         Button("Submit diagnostics…", action:model.reviewReport).buttonStyle(.borderedProminent).disabled(model.scanJSON.isEmpty || model.working)
                         Spacer()
                     }
-                    Text("Exports PCI IDs, model labels, driver versions and query logs. No serial numbers, hostname, raw device tree or kernel addresses. No automatic uploads.").font(.system(size: 10)).foregroundColor(muted)
+                    Text("Exports hardware specifications, PCI / USB IDs, model labels, driver versions and query logs. No serial numbers, hostname, raw device tree or kernel addresses. No automatic uploads.").font(.system(size: 10)).foregroundColor(muted)
                 }
             }
             PeripheralDiagnostics(center:model.center)
@@ -786,14 +794,14 @@ struct Community: View {
             }
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Community report").font(.headline)
+                    Text("Feedback & compatibility").font(.headline)
                     if model.needsIdentity {
                         TextField("Board manufacturer",text:$model.manualVendor).onChange(of:model.manualVendor) { model.feedbackChanged() }
                         TextField("Exact card model / board revision",text:$model.manualModel).onChange(of:model.manualModel) { model.feedbackChanged() }
                     } else { TextField("Board revision or additional model details (optional)", text: $model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() } }
                     TextEditor(text: $model.observedBehavior).onChange(of: model.observedBehavior) { model.feedbackChanged() }.frame(height: 90).overlay(RoundedRectangle(cornerRadius: 4).stroke(muted.opacity(0.3)))
-                    Text("Describe missing colors, unlit zones, errors, or no response at all. Notes are exported as entered.").font(.system(size: 10)).foregroundColor(muted)
-                    Button("Submit diagnostics…", action: model.reviewReport).disabled(model.scanJSON.isEmpty || model.working)
+                    Text("Tell us which device or effect fails, what you expected, and what happened. The scan attaches CPU, memory, USB, PCI and storage specifications. Review everything before sending.").font(.system(size: 10)).foregroundColor(muted)
+                    Button("Scan & submit feedback…", action: model.prepareFeedback).disabled(model.working)
                     Text("These reports help identify boards and compare drivers. They do not reveal the RGB protocol, controller address or physical LED mapping. Those still need source research and targeted hardware tests.").font(.system(size: 11)).foregroundColor(muted)
                 }
             }

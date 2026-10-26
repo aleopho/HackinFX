@@ -43,14 +43,16 @@ def scene_config(value):
     if not isinstance(value,dict):raise ValueError('Scene must be an object')
     mode=value.get('mode','static')
     if mode not in ('static','gradient','spectrum','breathing','wave','aurora','comet','twinkle','color shift'):raise ValueError('Unknown scene')
-    synchronized=value.get('synchronized',False)
+    synchronized=value.get('synchronized',True)
     if type(synchronized) is not bool:raise ValueError('Synchronized must be boolean')
     palette=value.get('palette',['c6ed91','42d6ce','9f8bff'])
     if not isinstance(palette,list) or not 1<=len(palette)<=8:raise ValueError('One to eight colors required')
     for item in palette:color(item)
+    mapping=value.get('mapping','mirror')
+    if mapping not in ('mirror','canvas'):raise ValueError('Invalid effect mapping')
     axis=value.get('axis','x')
     if axis not in ('x','y'):raise ValueError('Invalid scene axis')
-    return dict(synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
+    return dict(mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
 
 
 def frame(scene,count,position,elapsed):
@@ -60,7 +62,7 @@ def frame(scene,count,position,elapsed):
         local=index/max(1,count-1)
         x=position.get('x',0.5)+(local-0.5)*position.get('width',0.3)
         y=position.get('y',0.5)
-        coord=x if scene['axis']=='x' else y
+        coord=local if scene.get('mapping','canvas')=='mirror' else x if scene['axis']=='x' else y
         phase=(elapsed*speed*0.25+coord)%1
         mode=scene['mode']
         if mode=='spectrum':rgb=tuple(round(c*255) for c in colorsys.hsv_to_rgb((elapsed*speed*0.2)%1,0.8,1))
@@ -192,7 +194,7 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -278,7 +280,7 @@ class Center:
                 for key in ids:
                     target=next((d for d in self.devices if d['id']==key),None)
                     if not target or not target['controllable']:raise ValueError('A selected device is not controllable; refresh or complete its setup')
-                    if config['synchronized'] and not target['direct']:raise ValueError('Canvas sync requires host-streamed Direct devices; onboard effects have independent clocks')
+                    if config['synchronized'] and config['mode'] not in ('static','gradient') and not target['direct']:raise ValueError('Canvas sync requires host-streamed Direct devices; onboard effects have independent clocks')
                     if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('A selected device cannot play this effect. Select only compatible targets.')
                     targets.append(dict(target,scene_brightness=config['brightness']))
                 if sum(d['led_count'] for d in targets)>16384:raise ValueError('Scene exceeds the 16,384 LED limit')
@@ -318,7 +320,9 @@ class Center:
         targets_by_id={d['id']:d for d in targets}
         try:
             while active and not event.is_set():
-                tick=time.monotonic();elapsed=tick-self.clock_started
+                tick=time.monotonic();grouped=animated and config['synchronized']
+                latency=max([self.output_latencies.get(key,.05) for key in active]+[.05]) if grouped else 0
+                presentation=tick+latency;elapsed=presentation-self.clock_started
                 for key,future in list(pending.items()):
                     if future.done():collect(key,future);del pending[key]
                 # Render ALL outputs from the same timestamp before any I/O.
@@ -333,7 +337,9 @@ class Center:
                     frames.append((key,target,pixels))
                 for key,target,pixels in frames:
                     if event.is_set():break
-                    pending[key]=pool.submit(self.write_output,target,pixels,config['mode']);last_sent[key]=tick
+                    pending[key]=pool.submit(self.timed_output,target,pixels,config['mode'],presentation if grouped else 0,event);last_sent[key]=tick
+                if grouped:
+                    for key,future in list(pending.items()):collect(key,future);del pending[key]
                 with self.lock:self.frames+=1;self.sync_stats['frames']+=1
                 if not animated and not any(d.get('refresh_interval') for d in active.values()):break
                 event.wait(max(0,.05-(time.monotonic()-tick)))
@@ -343,8 +349,17 @@ class Center:
             with self.lock:
                 self.running=False
                 self.message='Some outputs failed; inspect device details.' if self.errors else 'Shared-clock streaming paused; last colors kept.' if animated else 'Static colors sent.'
+    def timed_output(self,target,pixels,mode,presentation,event):
+        expected=self.output_latencies.get(target['id'],.05)
+        delay=max(0,presentation-time.monotonic()-expected) if presentation else 0
+        if event.wait(delay):return
+        self.write_output(target,pixels,mode)
     def write_output(self,target,pixels,mode):
+        started=time.monotonic()
         self.registry.write_frame(target,pixels,mode)
+        measured=time.monotonic()-started
+        previous=self.output_latencies.get(target['id'],measured)
+        self.output_latencies[target['id']]=.5*previous+.5*measured
         if target.get('refresh_interval'):
             with self.lock:self.leased_frames[target['id']]=list(pixels)
     def pause(self):

@@ -128,7 +128,7 @@ class EngineTests(unittest.TestCase):
     def test_shared_gradient_uses_global_layout_and_exact_targets(self):
         ids=[d['id'] for d in self.core.devices]
         self.core.set_layout({ids[0]:dict(x=.1,y=.5,width=.1),ids[1]:dict(x=.9,y=.5,width=.1)})
-        self.core.start(dict(config=dict(mode='gradient',palette=['ff0000','0000ff'],brightness=100),devices=ids))
+        self.core.start(dict(config=dict(mode='gradient',mapping='canvas',palette=['ff0000','0000ff'],brightness=100),devices=ids))
         self.core.worker.join(2)
         calls=[v for v in self.sdk.calls if v[0]=='colors']
         self.assertEqual(len(calls),2);self.assertGreater(calls[0][2][0][0],calls[1][2][0][0])
@@ -201,7 +201,7 @@ class EngineTests(unittest.TestCase):
     def test_common_clock_produces_matching_spectrum_and_bounded_wave(self):
         scene=core.scene_config(dict(mode='spectrum'))
         self.assertEqual(core.frame(scene,1,dict(x=0),2),core.frame(scene,1,dict(x=1),2))
-        scene=core.scene_config(dict(mode='wave',brightness=100,palette=['ff0000','0000ff']))
+        scene=core.scene_config(dict(mode='wave',mapping='canvas',brightness=100,palette=['ff0000','0000ff']))
         self.assertNotEqual(core.frame(scene,1,dict(x=0),0),core.frame(scene,1,dict(x=.5),0))
 
 

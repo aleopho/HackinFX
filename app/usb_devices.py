@@ -138,7 +138,7 @@ class NativeUSBAdapter:
             if keyboard:
                 kind='asus-keyboard';count=1;category='keyboard';direct=False
                 if keyboard['error']:status='setup-required';detail=keyboard['error']
-                else:detail='Native ASUS OMNI keyboard hardware effects. Static, Breathing and Spectrum; no device profile saves. Onboard effects do not share the host animation clock.'
+                else:detail='Host-streamed whole-keyboard RGB. Shared timing uses volatile Static color packets; per-key mapping is not implemented.'
             elif vid==0x36bc and pid==0x1003 and page==0xff00 and record['usage']==1 and record.get('interface')==0:
                 kind='radius';category='cooler';record['radius']=radius_protocol.Radius(self.transport,handle)
                 try:
@@ -176,7 +176,7 @@ class NativeUSBAdapter:
             row=dict(id=key,fingerprint=identity,name=name,vendor='ASUS' if vid==0x0b05 else 'GIGABYTE / ITE' if vid==0x048d else record['vendor'],category=category,backend=self.name,led_count=count,direct=direct,controllable=count>0 and status=='ready',status=status,detail=detail,static_modes=['static','gradient'],zones=[dict(name='LampArray' if kind=='lamp' else 'Lighting',led_count=count)],modes=[],usb_id='%04x:%04x'%(vid,pid),catalog_matches=names[:12],ownership_names=[record['name'].strip()]+[name for name in names if kind!='asus-spatha' or 'dock' not in name.lower()],driver=kind,refresh_interval=.5 if kind=='radius' else 0)
             if kind=='radius':row['zones']=[dict(name='Pump' if z['id']==1 else 'Fan RGB %02X'%z['id'],led_count=z['count']) for z in record.get('radius_zones',[])]
             if kind=='asus-keyboard':
-                row.update(static_modes=['static','breathing','spectrum'],onboard_modes=['breathing','spectrum'])
+                row.update(direct=True,static_modes=['static','gradient'],onboard_modes=[])
                 row['zones']=[dict(name='Whole keyboard (onboard effects)',led_count=1)]
             rows.append(row);claimed.add(record['physical_id']);self.records[key]=dict(record,kind=kind,reports=reports,count=count)
         usb={r['physical_id']:r for r in snapshot.get('usb',[])}
@@ -209,13 +209,15 @@ class NativeUSBAdapter:
         if record['kind']=='radius':
             record['radius'].write(colors);return
         if record['kind']=='asus-keyboard':
-            brightness=round(device.get('scene_brightness',100)) if mode=='spectrum' else 100
-            self.transport.send(record['handle'],asus_keyboard.effect_packet(mode,colors[0],brightness,record.get('keyboard_report_id',2),record.get('keyboard_length',64)));return
+            brightness=100
+            self.transport.send(record['handle'],asus_keyboard.effect_packet('static',colors[0],brightness,record.get('keyboard_report_id',2),record.get('keyboard_length',64)));return
         if record['kind']=='asus-spatha':
             for zone,rgb in enumerate(colors):self.transport.send(record['handle'],asus_mouse_packet(zone,rgb))
             return
         now=time.monotonic()
-        if now<self.next_frame.get(key,0):return
+        if now<self.next_frame.get(key,0):
+            time.sleep(self.next_frame[key]-now)
+            now=time.monotonic()
         if record['kind']=='lamp':
             for start in range(0,len(colors),8):
                 chunk=colors[start:start+8];packet=bytearray(51);packet[0]=record['reports'][0x50]['id'];packet[1]=len(chunk);packet[2]=int(start+len(chunk)==len(colors))

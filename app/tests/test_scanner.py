@@ -1,3 +1,4 @@
+import json
 import importlib.util
 from pathlib import Path
 import plistlib
@@ -38,19 +39,21 @@ class ScannerTests(unittest.TestCase):
         calls=[]
         def run(command,**kwargs):
             calls.append(command)
-            raw=plistlib.dumps([gpu()]) if command[0].endswith('ioreg') else b'133 0 0xffffffabc 123 com.nullmoth.NVRM (2.5.2) PRIVATE-UUID\n other (1)'
+            raw=json.dumps({'SPHardwareDataType':[{'_name':'CPU','cpu_type':'Intel','serial_number':'PRIVATE'}]}).encode() if command[0].endswith('system_profiler') else plistlib.dumps([gpu()]) if command[0].endswith('ioreg') else b'133 0 0xffffffabc 123 com.nullmoth.NVRM (2.5.2) PRIVATE-UUID\n other (1)'
             return types.SimpleNamespace(returncode=0,stdout=raw)
         report=scanner.collect(run)
-        self.assertEqual(len(calls),2)
+        self.assertEqual(len(calls),3)
         self.assertEqual(report['rm_connections'],0)
         self.assertEqual(report['i2c_transactions'],0)
         self.assertEqual(report['driver_bundles'],[{'identifier':'com.nullmoth.NVRM','version':'2.5.2'}])
         self.assertNotIn('PRIVATE',str(report))
         self.assertNotIn('0xffffff',str(report))
+        self.assertEqual(report['setup']['system_hardware'][0]['cpu_type'],'Intel')
 
     def test_failure_retains_other_query_result(self):
         def run(command,**kwargs):
             if command[0].endswith('ioreg'): raise TimeoutError('PRIVATE-USER-PATH')
+            if command[0].endswith('system_profiler'):return types.SimpleNamespace(returncode=0,stdout=b'{}')
             return types.SimpleNamespace(returncode=0,stdout=b'com.nullmoth.NVRM (2.5.2)')
         report=scanner.collect(run)
         self.assertEqual(len(report['errors']),1)
@@ -86,7 +89,7 @@ class ScannerTests(unittest.TestCase):
 
     def test_fingerprint_stable_across_scans_but_changes_with_driver(self):
         def fake(version):
-            return lambda command,**kwargs: types.SimpleNamespace(returncode=0,stdout=plistlib.dumps([gpu()]) if command[0].endswith('ioreg') else ('com.nullmoth.NVRM (%s)'%version).encode())
+            return lambda command,**kwargs: types.SimpleNamespace(returncode=0,stdout=b'{}' if command[0].endswith('system_profiler') else plistlib.dumps([gpu()]) if command[0].endswith('ioreg') else ('com.nullmoth.NVRM (%s)'%version).encode())
         from unittest.mock import patch
         with patch.object(scanner.platform,"machine",return_value="x86_64"):
             first=scanner.collect(fake('2.5.2'))
@@ -99,3 +102,8 @@ class ScannerTests(unittest.TestCase):
     def test_failed_queries_do_not_produce_reusable_fingerprint(self):
         report=scanner.collect(lambda *args,**kwargs: types.SimpleNamespace(returncode=1,stdout=b''))
         self.assertIsNone(report['configuration_fingerprint'])
+
+class HardwarePrivacyTests(unittest.TestCase):
+ def test_recursive_inventory_excludes_serials_paths_and_private_fields(self):
+  rows=scanner.hardware_inventory({'SPUSBDataType':[{'_name':'Hub','serial_num':'SECRET','_items':[{'_name':'Mouse','vendor_id':'0x1234','user':'SECRET','location_id':'SECRET'}]}],'SPStorageDataType':[{'_name':'PRIVATE VOLUME','size':1000,'mount_point':'SECRET'}]})
+  self.assertIn('Mouse',str(rows));self.assertNotIn('SECRET',str(rows));self.assertNotIn('PRIVATE VOLUME',str(rows))

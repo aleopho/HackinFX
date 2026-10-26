@@ -40,7 +40,8 @@ struct CenterDevice: Codable, Identifiable {
     var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
 }
 struct CenterScene: Codable {
-    var synchronized = false
+    var synchronized = true
+    var mapping = "mirror"
     var mode = "static"
     var palette = ["ffffff","42d6ce","9f8bff"]
     var brightness = 100.0
@@ -121,7 +122,7 @@ final class CenterModel: ObservableObject {
     var visible:[CenterDevice] { state.devices.filter { device in filter == "all" || (filter == "lighting" && (device.controllable || device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || (filter == "attention" && !device.controllable && (device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || device.category == filter } }
     var chosen:[CenterDevice] { state.devices.filter { selected.contains($0.id) } }
     var canAnimate:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.direct } }
-    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && (!scene.synchronized || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
+    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && (!scene.synchronized || ["static","gradient"].contains(scene.mode) || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
     func start() {
         guard process == nil && !shuttingDown else { return }
         busy=true;error=""
@@ -203,7 +204,7 @@ final class CenterModel: ObservableObject {
     }
     private func flushLive() {
         guard livePending && online && !busy && !liveRequest && !shuttingDown else { return }
-        let targets=chosen.filter { $0.controllable && (!scene.synchronized || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
+        let targets=chosen.filter { $0.controllable && (!scene.synchronized || ["static","gradient"].contains(scene.mode) || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
         guard !targets.isEmpty else { liveStatus=selected.isEmpty ? "Select devices to control":"No selected device supports this effect";livePending=false;return }
         let skipped=selected.count-targets.count
         livePending=false;liveRequest=true;liveStatus="Updating lighting…"
@@ -505,6 +506,7 @@ struct CenterWorkspace:View {
                 HStack { Button("Add color stop") { if center.scene.palette.count<8 { center.scene.palette.append("42d6ce") } }.disabled(center.scene.palette.count>=8);Button("Remove last stop") { if center.scene.palette.count>1 { center.scene.palette.removeLast() } }.disabled(center.scene.palette.count<=1) }
                 HStack { Text("Speed");Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%") }
                 HStack { Text("Brightness");Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%") }
+                Picker("Mapping",selection:$center.scene.mapping) { Text("Mirror devices").tag("mirror");Text("Canvas space").tag("canvas") }.pickerStyle(.segmented)
                 Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented)
                 HStack { Button("Ocean") { center.scene.palette=["0066ff","42d6ce","b7fff3"];center.scene.mode="wave" };Button("Ember") { center.scene.palette=["ff2200","ff9900","ffcc66"];center.scene.mode="breathing" };Button("Aurora") { center.scene.palette=["24ff99","4277ff","b34fff"];center.scene.mode="aurora" } }
                 Divider()
@@ -530,9 +532,10 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Spatial lighting",title:"Canvas",subtitle:"Arrange your setup in one shared effect space. Move devices without resetting the animation clock.")
             CenterPanel { VStack(alignment:.leading,spacing:12) {
-                Toggle("Shared-clock Canvas",isOn:$center.scene.synchronized).toggleStyle(.switch)
-                HStack { Button("Select streaming devices") { center.selected=Set(center.controllable.filter { $0.direct }.map { $0.id }) };Spacer();Text("20 FPS target · \(center.state.sync?.dropped ?? 0) stale frames skipped").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
-                Text("Canvas mode streams one timeline to Direct-capable devices. Onboard-only effects use independent hardware clocks and are excluded; USB and controller latency can still cause a visible offset.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                Toggle("Synchronized group output",isOn:$center.scene.synchronized).toggleStyle(.switch)
+                Picker("Effect mapping",selection:$center.scene.mapping) { Text("Mirror on all devices").tag("mirror");Text("Across Canvas").tag("canvas") }.pickerStyle(.segmented)
+                HStack { Button("Select streaming devices") { center.selected=Set(center.controllable.filter { $0.direct }.map { $0.id }) };Spacer();Text("Adaptive group clock · shared frames").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
+                Text("Group output waits for every frame and delays faster outputs using measured command times. Mirror repeats the effect on each device; Canvas mapping uses placement. Actual LED timing still depends on hardware.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
             } }
             GeometryReader { geometry in
                 ZStack {

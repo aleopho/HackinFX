@@ -128,7 +128,7 @@ class NativeIntegrationTests(unittest.TestCase):
             def exchange(self,handle,packet):self.calls.append(packet);return bytes([0,0x12,0x12,1])+bytes(61)
             def send(self,handle,packet,feature=False):self.calls.append(packet)
             def close(self):pass
-        t=Transport();a=NativeUSBAdapter(t);rows=a.discover();self.assertEqual(len(rows),1);self.assertEqual(rows[0]['driver'],'asus-keyboard');self.assertIn('Scope II 96',rows[0]['name']);self.assertFalse(rows[0]['direct'])
+        t=Transport();a=NativeUSBAdapter(t);rows=a.discover();self.assertEqual(len(rows),1);self.assertEqual(rows[0]['driver'],'asus-keyboard');self.assertIn('Scope II 96',rows[0]['name']);self.assertTrue(rows[0]['direct'])
         a.activate(rows[0]);a.write_frame(rows[0],[(1,2,3)],'static');self.assertEqual(t.calls[-1][0],0);self.assertEqual(len(t.calls[-1]),65)
     def test_radius_failure_cannot_hide_behind_previous_frame_dedup(self):
         t=RadiusTransport();d=radius.Radius(t,'test');d.discover();a=[(1,2,3)]*38;d.write(a);t.bad_at=len(t.calls)+1

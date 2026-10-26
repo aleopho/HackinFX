@@ -46,9 +46,10 @@ class USBTests(unittest.TestCase):
         self.assertEqual(len(packets),2);self.assertEqual(packets[0][:3],bytes([4,8,0]));self.assertEqual(packets[1][:3],bytes([4,1,1]));self.assertEqual(struct.unpack_from('<H',packets[1],3)[0],8);self.assertEqual(packets[0][19:23],bytes([1,2,3,255]));self.assertTrue(all(feature for _,_,feature in transport.sent))
     def test_lamp_respects_hardware_minimum_interval(self):
         transport=Transport();adapter=usb.NativeUSBAdapter(transport);device=adapter.discover()[0];adapter.activate(device);transport.sent=[]
-        with patch.object(usb.time,'monotonic',side_effect=[1,1.05,1.11]):
+        with patch.object(usb.time,'monotonic',side_effect=[1,1.05,1.1,1.11,1.2]),patch.object(usb.time,'sleep') as wait:
             for _ in range(3):adapter.write_frame(device,[(1,2,3)]*9,'wave')
-        self.assertEqual(len(transport.sent),4)
+        self.assertEqual(len(transport.sent),6)
+        self.assertEqual(wait.call_count,2)
     def test_unprogrammable_metadata_never_claims_autonomous_control(self):
         transport=Transport();transport.programmable=False;adapter=usb.NativeUSBAdapter(transport);device=adapter.discover()[0]
         with self.assertRaises(usb.HIDError):adapter.activate(device)

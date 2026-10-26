@@ -73,6 +73,22 @@ def lighting_configuration(adapters, inventory_failed=False, arch=None):
     return dict(status='supported', reason='Exact OpenRGB controller profile and NVRM binding found; visual confirmation required', profile=bound[0]['verified_profile'])
 
 
+def hardware_inventory(value):
+    """Allowlist public model/specification fields; never store raw profiler output."""
+    fields={'_name','machine_model','model_name','chip_type','cpu_type','current_processor_speed','number_processors','total_number_cores','physical_memory','dimm_size','dimm_type','dimm_speed','dimm_manufacturer','dimm_part_number','vendor_id','product_id','manufacturer','device_name','sppci_vendor-id','sppci_device-id','sppci_model','sppci_name','size','physical_interconnect'}
+    rows=[]
+    def visit(node,category):
+        if isinstance(node,list):
+            for child in node[:128]:visit(child,category)
+        elif isinstance(node,dict):
+            row={key:clean_text(str(val)) for key,val in node.items() if key in fields and not (category == "SPStorageDataType" and key == "_name") and isinstance(val,(str,int,float))}
+            if row and len(rows)<128:rows.append(dict(category=category,**row))
+            for val in node.values():
+                if isinstance(val,(dict,list)):visit(val,category)
+    for category,items in value.items():visit(items,category)
+    return rows
+
+
 def collect(run=subprocess.run):
     report = dict(schema_version=1, tool='HackinFX', tool_version=VERSION,
                   scan_id=str(uuid.uuid4()), created_at=datetime.now(timezone.utc).isoformat(),
@@ -80,7 +96,8 @@ def collect(run=subprocess.run):
                   scan_mode='read-only-inventory', rm_connections=0, i2c_transactions=0,
                   adapters=[], driver_bundles=[], events=[], errors=[])
     commands = [('pci-inventory', ['/usr/sbin/ioreg','-a','-r','-c','IOPCIDevice']),
-                ('loaded-graphics-drivers', ['/usr/sbin/kextstat'])]
+                ('loaded-graphics-drivers', ['/usr/sbin/kextstat']),
+                ('system-hardware', ['/usr/sbin/system_profiler','SPHardwareDataType','SPMemoryDataType','SPUSBDataType','SPPCIDataType','SPStorageDataType','-json'])]
     for name, command in commands:
         started = time.monotonic()
         event = dict(step=name)
@@ -91,6 +108,8 @@ def collect(run=subprocess.run):
                 raise RuntimeError('System command failed with exit code %d' % process.returncode)
             if name == 'pci-inventory':
                 report['adapters'] = adapters_from_tree(plistlib.loads(process.stdout))
+            elif name == 'system-hardware':
+                report['setup'] = {'system_hardware':hardware_inventory(json.loads(process.stdout))}
             else:
                 output = process.stdout.decode('utf-8', errors='replace')
                 report['driver_bundles'] = [dict(identifier=match.group(1), version=clean_text(match.group(2))) for match in DRIVER.finditer(output)]
@@ -106,10 +125,10 @@ def collect(run=subprocess.run):
         report['events'].append(dict(step='adapter-selection', status='no-display-pci-device'))
     report['lighting_configuration'] = lighting_configuration(report['adapters'], any(error['step']=='pci-inventory' for error in report['errors']), report['runtime']['arch'])
     identity = dict(module='pny-lovelace-v1', arch=report['runtime']['arch'], macos=report['runtime']['macos'], adapters=sorted([dict(pci=a['pci'], nvrm_bound=a['nvrm_bound']) for a in report['adapters']], key=lambda a: json.dumps(a, sort_keys=True)), drivers=sorted(report['driver_bundles'], key=lambda d: d['identifier']))
-    report['configuration_fingerprint'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest() if not report['errors'] else None
+    report['configuration_fingerprint'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest() if not any(e['step'] in ('pci-inventory','loaded-graphics-drivers') for e in report['errors']) else None
     report['led_availability'] = 'documented-for-matched-profile; visual test required' if report['lighting_configuration']['status']=='supported' else 'unknown; PCI inventory cannot establish LED availability'
     report['development_assessment'] = dict(useful_for=['PCI subsystem matching', 'driver and platform comparison', 'selecting hardware for targeted testing'], not_proven=['RGB controller identity/address', 'I2C port mapping or permissions', 'lighting protocol and physical zone layout'], next_step='Identify a documented controller and transport, then validate a narrowly scoped hardware test')
-    report['privacy'] = 'Allowlisted PCI/model fields and driver versions only. No serial numbers, raw IORegistry, hostname or kernel addresses.'
+    report['privacy'] = 'Allowlisted CPU, memory, USB, PCI and storage model/specification fields and driver versions only. No serial numbers, raw IORegistry, hostname or kernel addresses.'
     return report
 
 

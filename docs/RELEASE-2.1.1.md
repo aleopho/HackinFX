@@ -33,3 +33,23 @@ Physical checks still needed: actual macUSPCIO load after installing into the
 booted MBR volume and rebooting; sustained Radius white; visible output timing;
 real desktop widget registration/rendering. Automated checks are not substitutes
 for those observations. macOS 15+, x86-64, locally ad-hoc signed.
+
+Group synchronization now defaults to mirrored output. Each group receives the
+same frame and waits for all output commands before advancing. Measured command
+durations delay faster outputs toward a common presentation time. Throughput is
+limited by the slowest device; command completion is not optical LED timing.
+Canvas mapping remains an explicit option. Supported ASUS keyboards receive
+host-rendered whole-keyboard colors instead of independent onboard animations.
+
+Feedback & compatibility adds a fresh automatic read-only system scan before
+report review. CPU, memory, USB, PCI and storage specification fields are
+allowlisted, with serials, raw trees, volume labels and mount paths excluded.
+The existing configured HTTPS report inbox stores these under setup.system_hardware
+alongside the user's description and Core device/errors. SourceForge issue
+submission is not wired up: no credentials are embedded and no private reports
+are published as public tickets. Reports are evidence for triage, not a promise
+of next-release support.
+
+Native LampArray / Kraken output rate limits now wait instead of silently dropping
+a group frame. Optional system-inventory failures cannot invalidate a valid GPU
+profile fingerprint; incomplete inventory is included as a scan error.
