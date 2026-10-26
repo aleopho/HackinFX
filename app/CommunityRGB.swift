@@ -710,6 +710,8 @@ struct Root: View {
                 ScrollView { Group { if model.page == "Feedback" { FeedbackWorkspace(model:model) } else if model.page == "Credits" { Credits() } else if model.page == "Settings" { VStack(spacing:24) { CenterWorkspace(center:model.center,page:model.page);DeviceSetupPreferences(model:model) } } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
         }.frame(minWidth:980,minHeight:650).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:language.identifier)).environment(\.layoutDirection,language.rtl ? .rightToLeft:.leftToRight).id(language.identifier).tint(accent)
+        .onAppear { model.center.gpuSetupRequested={ [weak model] device in model?.openDeviceSetup(device) } }
+        .onChange(of:language.identifier) { _ in model.center.publishWidget() }
         .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration:0.2),value:model.launching)
         .overlay { if model.scanning && model.page == "Feedback" { StartupScanView() } }
         .sheet(isPresented:$model.showDeviceLightingSetup) { DeviceLightingSetup(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
@@ -719,7 +721,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     let model = Model()
     var window: NSWindow!
     var statusItem: NSStatusItem!
-    var actionItems: [NSMenuItem] = []
     var exportItem: NSMenuItem!
     var scanItem: NSMenuItem!
     var sceneStopItem:NSMenuItem!
