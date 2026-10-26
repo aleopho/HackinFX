@@ -80,7 +80,7 @@ struct HardwareVerification: Codable {
     var identity_source: String? = nil
     var detected_gpu_name: String? = nil
     let tested_steps: Int
-    var app_version = "2.1.0"
+    var app_version = "2.1.1"
     let confirmed_at: String
 }
 final class VerificationStore {
@@ -117,6 +117,8 @@ final class VerificationStore {
 
 // Read-only WidgetKit export: no PCI IDs, reports, notes, or credentials.
 struct WidgetStatusSnapshot: Codable {
+    var readyDevices:Int? = nil
+    var statusText:String? = nil
     var schema = 1
     let gpuName: String
     let boardVendor: String

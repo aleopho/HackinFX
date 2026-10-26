@@ -42,7 +42,7 @@ def packets(zones,colors):
     return result
 
 class Radius:
-    def __init__(self,transport,handle):self.transport=transport;self.handle=handle;self.zones=[];self.previous=None;self.failed=False
+    def __init__(self,transport,handle):self.transport=transport;self.handle=handle;self.zones=[];self.previous=None;self.failed=False;self.last_sent=0
     def exchange(self,packet):
         if self.failed:raise RadiusError('Radius transaction stopped; rediscover before further writes')
         try:
@@ -57,9 +57,9 @@ class Radius:
         if self.failed:raise RadiusError('Radius transaction stopped; rediscover before further writes')
         batch=packets(self.zones,colors) # Validate the complete batch before sending anything.
         key=tuple(tuple(c) for c in colors)
-        if key==self.previous:return
+        if key==self.previous and time.monotonic()-self.last_sent<.25:return
         deadline=time.monotonic()+12
         for packet in batch:
             if time.monotonic()>deadline:self.failed=True;raise RadiusError('Radius batch deadline exceeded; output stopped without retry')
             self.exchange(packet)
-        self.previous=key
+        self.previous=key;self.last_sent=time.monotonic()

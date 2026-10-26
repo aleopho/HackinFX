@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 import SwiftUI
+import WidgetKit
 import ServiceManagement
 
 struct CenterZone: Codable { let name:String;let led_count:Int }
@@ -150,7 +151,7 @@ final class CenterModel: ObservableObject {
             request("/v1/initialize") { result in
                 self.suppressLive=true;self.accept(result)
                 if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable }.map { $0.id });self.liveStatus="Startup white · live control ready" }
-                self.suppressLive=false;self.busy=false
+                self.suppressLive=false;self.busy=false;self.livePending=false;self.publishWidget()
             };return
         }
         guard attempt<60,process?.isRunning == true else { busy=false;error="Core did not become available. Check its local log or close another HackinFX instance.";return }
@@ -180,17 +181,17 @@ final class CenterModel: ObservableObject {
     }
     private func accept(_ result:Result<CenterState,Error>,clearError:Bool=true) {
         switch result {
-        case .success(let state):self.state=state;let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
+        case .success(let state):self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
         case .failure(let error):self.error=error.localizedDescription
         }
     }
     func poll() {
         guard online && !busy && !liveRequest && !mutating && !polling else { return };polling=true
-        request("/v1/status",method:"GET") { result in self.polling=false;self.accept(result,clearError:false);self.flushLive() }
+        request("/v1/status",method:"GET") { result in self.polling=false;if !self.mutating && !self.liveRequest { self.accept(result,clearError:false) };self.flushLive() }
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.busy=false;self.accept(result);self.flushLive() }
+        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
     func scheduleLive() {
@@ -202,14 +203,14 @@ final class CenterModel: ObservableObject {
     }
     private func flushLive() {
         guard livePending && online && !busy && !liveRequest && !shuttingDown else { return }
-        let targets=chosen.filter { $0.controllable && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
+        let targets=chosen.filter { $0.controllable && (!scene.synchronized || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
         guard !targets.isEmpty else { liveStatus=selected.isEmpty ? "Select devices to control":"No selected device supports this effect";livePending=false;return }
         let skipped=selected.count-targets.count
         livePending=false;liveRequest=true;liveStatus="Updating lighting…"
         let encoded=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(scene))) as? [String:Any] ?? [:]
         request("/v1/scene/start",body:["config":encoded,"devices":targets.map { $0.id }.sorted()]) { result in
             self.liveRequest=false;self.accept(result)
-            switch result { case .success:self.liveStatus=skipped>0 ? "Live · \(targets.count) devices · \(skipped) skipped":"Live · changes sent";case .failure:self.liveStatus="Update failed · see details" }
+            switch result { case .success:self.liveStatus=skipped>0 ? "Live · \(targets.count) devices · \(skipped) skipped":"Live · changes sent";case .failure(let failure):self.liveStatus="Lighting unavailable · \(failure.localizedDescription)" }
             if self.livePending { self.scheduleLive() }
         }
     }
@@ -236,7 +237,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.1.0"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.1.1"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -258,6 +259,27 @@ final class CenterModel: ObservableObject {
         guard online && !busy else { return };busy=true
         let w=width ?? state.layout[id]?.width ?? 0.22
         request("/v1/layout",body:[id:["x":min(1,max(0,x)),"y":min(1,max(0,y)),"width":w]]) { result in self.busy=false;self.accept(result);self.scheduleLive() }
+    }
+    private var widgetKey=""
+    private var lastWidgetReload=Date.distantPast
+    private var widgetReload:DispatchWorkItem?
+    func publishWidget() {
+        guard online && !state.devices.isEmpty else { return }
+        let gpu=state.devices.first { $0.category=="gpu" && $0.controllable } ?? state.devices.first { $0.category=="gpu" }
+        let title=gpu?.name ?? "Lighting workspace"
+        let status=state.errors.isEmpty ? "Lighting commands":"Needs attention"
+        let key="\(state.scene.mode)|\(state.scene.palette)|\(state.scene.brightness)|\(controllable.count)|\(title)|\(status)"
+        guard key != widgetKey else { return }
+        let value=WidgetStatusSnapshot(readyDevices:controllable.count,statusText:status,gpuName:title,boardVendor:gpu?.vendor ?? "",profileReady:!controllable.isEmpty,lastCommand:state.scene.mode,updatedAt:Date(),colors:state.scene.palette,brightness:state.scene.brightness)
+        let folder=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("HackinFX/Widget",isDirectory:true)
+        do {
+            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+            let encoder=JSONEncoder();encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(value).write(to:folder.appendingPathComponent("snapshot.json"),options:.atomic)
+            widgetKey=key;widgetReload?.cancel()
+            let work=DispatchWorkItem { self.lastWidgetReload=Date();WidgetCenter.shared.reloadTimelines(ofKind:"HackinFXStatus") }
+            widgetReload=work;DispatchQueue.main.asyncAfter(deadline:.now()+max(0,5-Date().timeIntervalSince(lastWidgetReload)),execute:work)
+        } catch { /* Widget failure must not block hardware control. */ }
     }
     func shutdown() {
         shuttingDown=true;liveWork?.cancel();livePending=false;timer?.invalidate();timer=nil
@@ -370,7 +392,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.1.0");Spacer();Text("BY ALEOPHO") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.1.1");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -475,7 +497,18 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Your effect library",title:"Effect Studio",subtitle:"Build reusable looks. Lighting handles live controls; Canvas places your devices.")
             CenterPanel { VStack(alignment:.leading,spacing:16) {
-                Text("Save the current look").font(.headline)
+                Text("Design an effect").font(.headline)
+                CenterScenePreview(scene:center.scene)
+                Picker("Animation",selection:$center.scene.mode) { ForEach(["static","gradient","spectrum","breathing","wave","aurora","comet","twinkle","color shift"],id:\.self) { Text($0.capitalized).tag($0) } }.pickerStyle(.menu)
+                Text("Palette stops").font(.system(size:11,weight:.semibold))
+                LazyVGrid(columns:[GridItem(.adaptive(minimum:140))]) { ForEach(Array(center.scene.palette.indices),id:\.self) { index in ColorPicker("Stop \(index+1)",selection:sceneColor(index),supportsOpacity:false) } }
+                HStack { Button("Add color stop") { if center.scene.palette.count<8 { center.scene.palette.append("42d6ce") } }.disabled(center.scene.palette.count>=8);Button("Remove last stop") { if center.scene.palette.count>1 { center.scene.palette.removeLast() } }.disabled(center.scene.palette.count<=1) }
+                HStack { Text("Speed");Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%") }
+                HStack { Text("Brightness");Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%") }
+                Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented)
+                HStack { Button("Ocean") { center.scene.palette=["0066ff","42d6ce","b7fff3"];center.scene.mode="wave" };Button("Ember") { center.scene.palette=["ff2200","ff9900","ffcc66"];center.scene.mode="breathing" };Button("Aurora") { center.scene.palette=["24ff99","4277ff","b34fff"];center.scene.mode="aurora" } }
+                Divider()
+
                 TextField("Preset name",text:$center.sceneName).textFieldStyle(.roundedBorder)
                 HStack { Text(center.scene.mode.capitalized+" · \(Int(center.scene.brightness))% brightness").foregroundStyle(CenterTheme.muted);Spacer();Button("Save preset",action:center.saveScene).disabled(center.busy || !center.online) }.font(.system(size:12))
                 Text("Presets store effect, palette, speed, direction and shared-clock preference. Device selection stays local to your workspace.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
@@ -520,7 +553,7 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.1.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.1.1").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
                 Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }

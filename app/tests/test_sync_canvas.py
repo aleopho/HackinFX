@@ -48,3 +48,33 @@ class NativeStreamingTests(unittest.TestCase):
  def test_static_only_gpu_keeps_its_original_mode(self):
   driver=FakeNative();core.NativeGPUAdapter(driver).write_frame(dict(id='gpu'),[(1,2,3)],'static')
   self.assertEqual(driver.writes[0][2],'static')
+
+class StaticRefreshTests(unittest.TestCase):
+ def test_leased_static_output_is_refreshed_but_other_static_devices_are_not(self):
+  class Adapter:
+   name='fixture'
+   def __init__(self):self.writes=[]
+   def discover(self):return [dict(device(i),id=str(i),refresh_interval=.02 if i==0 else 0) for i in range(2)]
+   def activate(self,d):pass
+   def close(self):pass
+   def write_frame(self,d,colors,mode):self.writes.append((d['id'],colors))
+  with tempfile.TemporaryDirectory() as folder:
+   a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
+   c.start(dict(devices=['0','1'],config=dict(mode='static',palette=['ffffff'],brightness=100)));time.sleep(.18);c.stop()
+   self.assertGreaterEqual(len([w for w in a.writes if w[0]=='0']),2)
+   self.assertEqual(len([w for w in a.writes if w[0]=='1']),1)
+   self.assertTrue(all(color==(255,255,255) for _,colors in a.writes for color in colors));c.close()
+
+class LeasePauseTests(unittest.TestCase):
+ def test_pause_keeps_static_preview_lease_alive(self):
+  class Adapter:
+   name='fixture'
+   def __init__(self):self.calls=[]
+   def discover(self):return [dict(device(),id='r',refresh_interval=.02)]
+   def activate(self,d):pass
+   def close(self):pass
+   def write_frame(self,d,pixels,mode):self.calls.append(pixels)
+  with tempfile.TemporaryDirectory() as folder:
+   a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
+   c.start(dict(devices=['r'],config=dict(mode='static',palette=['ffffff'])));time.sleep(.07);c.pause();count=len(a.calls);time.sleep(.6)
+   self.assertGreater(len(a.calls),count);self.assertFalse(c.running);c.close()

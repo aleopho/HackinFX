@@ -24,7 +24,7 @@ class RAMAdapter:
         for i,d in enumerate(self.dimms):
             family=d.get('manufacturer','').lower()=='corsair' and d.get('part_number','').startswith('CMP')
             state='unsupported-memory' if not family else 'unsupported-host' if not supported else 'driver-required' if not loaded else 'setup-required'
-            detail='This RAM family is currently inventory-only.' if not family else 'The initial native adapter is restricted to Intel 8086:7f23.' if not supported else 'macUSPCIO is not loaded. Review the separate OpenCore setup guide; no driver is installed automatically.' if not loaded else 'Use Probe RAM RGB to validate exact Corsair identity and CRC. No SPD data or firmware commands are written.'
+            detail='This RAM family is currently inventory-only.' if not family else 'The initial native adapter is restricted to Intel 8086:7f23.' if not supported else 'macUSPCIO is not loaded. Install the optional driver into the OpenCore volume actually used at boot, then restart. An installed package is not proof of a running kernel driver.' if not loaded else 'Use Probe RAM RGB to validate exact Corsair identity and CRC. No SPD data or firmware commands are written.'
             rows.append(dict(id='ram-inventory:'+str(i),fingerprint='',name=d.get('part_number','Memory')+' · '+d.get('size',''),vendor=d.get('manufacturer',''),category='dram',backend='inventory',led_count=0,direct=False,controllable=False,status=state,detail='SMBus '+controller+'. '+detail,static_modes=[],zones=[],modes=[],driver='corsair-ddr5-i801'))
         return rows
 

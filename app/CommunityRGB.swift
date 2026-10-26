@@ -136,6 +136,7 @@ final class Model: ObservableObject {
     }
     var working: Bool { busy || scanning || setupTesting || submitting || launching }
     func writeWidgetSnapshot() {
+        if center.online && !center.state.devices.isEmpty { center.publishWidget();return }
         let last = !fingerprint.isEmpty && UserDefaults.standard.string(forKey:"LastLightingFingerprint") == fingerprint ? (UserDefaults.standard.string(forKey:"LastLightingCommand") ?? "Not applied") : "Not applied"
         let folder = verificationStore.directory.appendingPathComponent("Widget",isDirectory:true)
         let sameGPU = !fingerprint.isEmpty && UserDefaults.standard.string(forKey:"LastLightingFingerprint") == fingerprint
@@ -233,7 +234,7 @@ final class Model: ObservableObject {
     }
     func startSetupTest() {
         guard !working && configurationStatus == "supported" else { return }
-        showSetupWizard = true; page = "Hardware"; setupTesting = true; testTransportOK = false; testStep = 0; setupState = "testing"
+        showSetupWizard = true; setupTesting = true; testTransportOK = false; testStep = 0; setupState = "testing"
         lightingEvidence = []; draftURL = nil; confirmationSource = "current-test"; record("setup-test", "started"); runTestStep()
     }
     func runTestStep() {
@@ -253,7 +254,7 @@ final class Model: ObservableObject {
             do { try setupProfiles.save(data,fingerprint:fingerprint) } catch { setupMessage = "Could not save the profile in Documents/HackinFX: \(error.localizedDescription)"; return }
             UserDefaults.standard.set(data, forKey: "VerifiedLightingSetup")
             UserDefaults.standard.removeObject(forKey: "FailedLightingSetupFingerprint")
-            showSetupWizard = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Studio"; if center.online && !center.state.running { center.discover() }
+            showSetupWizard = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Overview"; if center.online { center.discover() }
         } else {
             setupState = outcome; UserDefaults.standard.set(fingerprint, forKey: "FailedLightingSetupFingerprint"); setupMessage = "Describe what did not work, then review the troubleshooting report."; record("setup-confirmation", outcome); saveTroubleshooting()
         }
@@ -951,7 +952,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(contentRect: NSRect(x:0,y:0,width:1180,height:860), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
         window.contentMinSize = NSSize(width:1050,height:760)
-        window.title = "HackinFX — by aleopho"
+        window.title = "HackinFX"
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -962,7 +963,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         statusItem.button?.title = " FX"
         statusItem.button?.toolTip = "HackinFX — Control Center"
         let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
-        let header = menu.addItem(withTitle:"HackinFX · by aleopho", action:nil, keyEquivalent:""); header.isEnabled = false
+        let header = menu.addItem(withTitle:"HackinFX", action:nil, keyEquivalent:""); header.isEnabled = false
         add(menu,"Open Control Center",#selector(show),"o")
         add(menu,"Devices",#selector(showDevices))
         add(menu,"Canvas",#selector(showScenes))
@@ -1020,8 +1021,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         return false
     }
     func application(_ application:NSApplication,open urls:[URL]) {
-        guard let url=urls.first,url.scheme == "hackinfx",["studio","hardware"].contains(url.host ?? "") else { return }
-        model.page = url.host == "hardware" || !model.canControlLighting ? "Hardware" : "Studio"
+        guard let url=urls.first,url.scheme == "hackinfx",["studio","lighting","hardware"].contains(url.host ?? "") else { return }
+        model.page = url.host == "hardware" ? "Hardware" : "Overview"
         show()
     }
     @objc func show() { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps:true); window.makeKeyAndOrderFront(nil) }

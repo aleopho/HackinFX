@@ -57,6 +57,7 @@ def parse_controller(data):
     colors=r.count(4096);r.take(colors*4)
     if colors!=led_count or r.pos!=len(data): raise ProtocolError('Inconsistent LED data')
     category=CATEGORIES[kind] if kind<len(CATEGORIES) else 'unknown'
+    name=name.strip() or ((vendor.strip()+' ') if vendor.strip() else '')+category.capitalize()+' controller'
     direct=any((m['flags'] & 32) and ('direct' in m['name'].lower() or m['name'].lower()=='custom') for m in modes)
     identity=hashlib.sha256(repr((name,vendor,category,led_count,[(z['name'],z['led_count']) for z in zones])).encode()).hexdigest()[:24]
     return dict(name=name,vendor=vendor,category=category,led_count=led_count,zones=zones,modes=modes,direct=direct and led_count>0,fingerprint=identity,backend='openrgb',status='ready' if direct and led_count else 'hardware-modes-only',detail='Live OpenRGB connection; physical lighting is not confirmed.')

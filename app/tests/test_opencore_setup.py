@@ -51,3 +51,13 @@ class BooterPathTests(unittest.TestCase):
   with patch.object(oc.os,'stat',return_value=type('Stat',(),{'st_uid':501})()),patch.object(oc.subprocess,'check_output',return_value=(b['device']+' — '+b['path']+'\n').encode()):self.assertEqual(oc.select_interactively([a,b]),b)
   with patch.object(oc.os,'stat',return_value=type('Stat',(),{'st_uid':501})()),patch.object(oc.subprocess,'check_output',return_value=b'CANCEL\n'):
    with self.assertRaises(oc.SetupError):oc.select_interactively([a,b])
+
+class MBRBootTests(unittest.TestCase):
+ def test_mbr_usb_bootevent_selects_actual_opencore_partition(self):
+  path='PciRoot(0x1)/USB(0x5)/HD(1,MBR,0x433ED488,0x800,0x2000000)/EFI\\OC\\OpenCore.efi%00'
+  ids=oc.booter_path_guids(path);self.assertEqual(ids,{'mbr:433ed488:1'})
+  internal=dict(uuid=str(uuid.uuid4()),device='disk0s1')
+  usb=dict(uuid='',device='disk3s1',boot_ids=['mbr:433ed488:1'])
+  self.assertEqual(oc.choose_candidate([internal,usb],ids),usb)
+ def test_mismatching_mbr_never_falls_back_to_unrelated_single_gpt_efi(self):
+  with self.assertRaises(oc.SetupError):oc.choose_candidate([dict(uuid=str(uuid.uuid4()))],{'mbr:433ed488:1'})

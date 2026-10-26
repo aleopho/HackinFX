@@ -192,7 +192,7 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -206,7 +206,7 @@ class Center:
         with self.lock:return dict(schema=1,devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats))
     def refresh(self,inventory=True):
         with self.operation:
-            self.stop();rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
+            self.stop();self.leased_frames={};rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
             bridge='disconnected'
             for name,adapter in self.registry.adapters.items():
                 try:
@@ -304,7 +304,7 @@ class Center:
             self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
     def render(self,targets,config,event):
-        active={d['id']:d for d in targets};pending={};animated=config['mode'] not in ('static','gradient')
+        active={d['id']:d for d in targets};pending={};last_sent={};animated=config['mode'] not in ('static','gradient')
         pool=ThreadPoolExecutor(max_workers=max(1,len(targets)),thread_name_prefix='lighting-output')
         def collect(key,future):
             try:future.result()
@@ -324,6 +324,7 @@ class Center:
                 # Render ALL outputs from the same timestamp before any I/O.
                 frames=[]
                 for key,target in list(active.items()):
+                    if not animated and key in last_sent and (not target.get('refresh_interval') or tick-last_sent[key]<target['refresh_interval']):continue
                     if key in pending:
                         with self.lock:self.sync_stats['dropped']+=1
                         continue # Bounded latest-frame policy; never queue stale frames.
@@ -332,9 +333,9 @@ class Center:
                     frames.append((key,target,pixels))
                 for key,target,pixels in frames:
                     if event.is_set():break
-                    pending[key]=pool.submit(self.registry.write_frame,target,pixels,config['mode'])
+                    pending[key]=pool.submit(self.write_output,target,pixels,config['mode']);last_sent[key]=tick
                 with self.lock:self.frames+=1;self.sync_stats['frames']+=1
-                if not animated:break
+                if not animated and not any(d.get('refresh_interval') for d in active.values()):break
                 event.wait(max(0,.05-(time.monotonic()-tick)))
             for key,future in list(pending.items()):collect(key,future)
         finally:
@@ -342,6 +343,27 @@ class Center:
             with self.lock:
                 self.running=False
                 self.message='Some outputs failed; inspect device details.' if self.errors else 'Shared-clock streaming paused; last colors kept.' if animated else 'Static colors sent.'
+    def write_output(self,target,pixels,mode):
+        self.registry.write_frame(target,pixels,mode)
+        if target.get('refresh_interval'):
+            with self.lock:self.leased_frames[target['id']]=list(pixels)
+    def pause(self):
+        with self.operation:
+            self.stop()
+            targets=[dict(d) for d in self.devices if d.get('refresh_interval') and d['controllable'] and d['id'] in self.leased_frames]
+            if not targets:return self.status()
+            self.stop_event=threading.Event();event=self.stop_event
+            def maintain():
+                while not event.wait(.5):
+                    for target in targets:
+                        if event.is_set():return
+                        try:self.write_output(target,self.leased_frames[target['id']],'static')
+                        except Exception as exc:
+                            with self.lock:self.errors=(self.errors+[target['name']+': '+str(exc)])[-12:]
+                            return
+            self.worker=threading.Thread(target=maintain,daemon=True);self.worker.start()
+            self.message='Effects paused; preview-based devices retain their last colors.'
+            return self.status()
     def set_layout(self,values):
         if not isinstance(values,dict) or len(values)>192:raise ValueError('Invalid layout')
         with self.operation:

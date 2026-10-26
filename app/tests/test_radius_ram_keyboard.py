@@ -134,3 +134,14 @@ class NativeIntegrationTests(unittest.TestCase):
         t=RadiusTransport();d=radius.Radius(t,'test');d.discover();a=[(1,2,3)]*38;d.write(a);t.bad_at=len(t.calls)+1
         with self.assertRaises(radius.RadiusError):d.write([(4,5,6)]*38)
         with self.assertRaises(radius.RadiusError):d.write(a)
+
+class RadiusLeaseTests(unittest.TestCase):
+ def test_unchanged_white_is_renewed_after_lease_window(self):
+  from unittest.mock import patch
+  t=RadiusTransport();r=radius.Radius(t,'test');r.discover()
+  with patch.object(radius.time,'monotonic',return_value=10):r.write([(255,255,255)]*38)
+  count=len(t.calls)
+  with patch.object(radius.time,'monotonic',return_value=10.1):r.write([(255,255,255)]*38)
+  self.assertEqual(len(t.calls),count)
+  with patch.object(radius.time,'monotonic',return_value=10.6):r.write([(255,255,255)]*38)
+  self.assertGreater(len(t.calls),count)

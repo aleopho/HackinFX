@@ -36,10 +36,12 @@ def boot_partition_guids(data):
 
 def booter_path_guids(value):
     if isinstance(value,bytes):value=value.decode('utf-8',errors='replace')
-    return {str(uuid.UUID(v)).lower() for v in re.findall(r'GPT,([0-9a-fA-F-]{36}),',value)}
+    ids={str(uuid.UUID(v)).lower() for v in re.findall(r'GPT,([0-9a-fA-F-]{36}),',value)}
+    ids.update('mbr:%08x:%d'%(int(sig,16),int(number)) for number,sig in re.findall(r'HD\((\d+),MBR,0x([0-9a-fA-F]+),',value))
+    return ids
 
 def choose_candidate(candidates,boot_guids):
-    preferred=[c for c in candidates if c['uuid'].lower() in boot_guids]
+    preferred=[c for c in candidates if any(v.lower() in boot_guids for v in c.get('boot_ids',[c['uuid']]))]
     if len(preferred)==1:return preferred[0]
     if not boot_guids and len(candidates)==1:return candidates[0]
     raise SetupError('Cannot uniquely identify the boot OpenCore EFI ('+str(len(candidates))+' candidates). No changes made. Enable Misc/Security/ExposeSensitiveData bit 0x01 to expose the OpenCore boot path, or use the documented manual setup.')
@@ -136,7 +138,7 @@ def automatically_install(kext,backup_root):
     disks=plist_command('/usr/sbin/diskutil','list','-plist');partitions=[]
     for disk in disks.get('AllDisksAndPartitions',[]):
         for part in disk.get('Partitions',[]):
-            if part.get('Content')=='EFI':partitions.append(part['DeviceIdentifier'])
+            if part.get('Content')=='EFI' or 'fat' in part.get('Content','').lower() or 'dos' in part.get('Content','').lower():partitions.append(part['DeviceIdentifier'])
     boot=set()
     # OpenCore's own booter path, NOT chosen/boot-device-path (the macOS volume).
     try:
@@ -152,7 +154,14 @@ def automatically_install(kext,backup_root):
                 subprocess.run(['/usr/sbin/diskutil','mount','readOnly',identifier],check=True,capture_output=True)
                 mounted.append(identifier);info=plist_command('/usr/sbin/diskutil','info','-plist',identifier);point=info.get('MountPoint')
             if point and (Path(point)/'EFI/OC/config.plist').is_file() and (Path(point)/'EFI/OC/OpenCore.efi').is_file():
-                candidates.append(dict(device=identifier,path=point,uuid=info.get('DiskUUID') or info.get('PartitionUUID') or ''))
+                partition_uuid=info.get('DiskUUID') or info.get('PartitionUUID') or ''
+                ids=[partition_uuid];match=re.fullmatch(r'(disk\d+)s(\d+)',identifier)
+                if match:
+                    try:
+                        with open('/dev/r'+match[1],'rb',buffering=0) as disk:sector=disk.read(512)
+                        if len(sector)==512 and sector[510:]==b'\x55\xaa':ids.append('mbr:%08x:%d'%(int.from_bytes(sector[440:444],'little'),int(match[2])))
+                    except OSError:pass
+                candidates.append(dict(device=identifier,path=point,uuid=partition_uuid,boot_ids=ids))
         try:candidate=choose_candidate(candidates,boot)
         except SetupError:candidate=select_interactively(candidates)
         # Remount only an EFI we mounted ourselves; do not disrupt a user-mounted volume.

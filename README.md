@@ -151,3 +151,10 @@ launch and remain available under Software Update. The installer uses OpenCore
 boot-path NVRAM and offers explicit EFI selection when automatic selection is
 ambiguous. Radius discovery/control is now user-confirmed on the development
 machine (2026-10-26), without a claim that all firmware/topologies are tested.
+
+### 2.1.1 regression repairs
+
+Lighting launch/selection, strict Canvas filtering, Radius static-color renewal,
+MBR/USB OpenCore boot discovery (including the development boot volume 1401),
+a parameter-editable Effect Studio and a rebuilt single WidgetKit view fed by
+Core state. See [2.1.1 behavior and physical validation limits](docs/RELEASE-2.1.1.md).

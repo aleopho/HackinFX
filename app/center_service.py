@@ -59,7 +59,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/v1/discover':result=core.refresh()
             elif self.path=='/v1/ram/probe':result=core.probe_ram()
             elif self.path=='/v1/scene/start':result=core.start(value)
-            elif self.path=='/v1/scene/stop':core.stop();result=core.status()
+            elif self.path=='/v1/scene/stop':result=core.pause()
             elif self.path=='/v1/layout':result=core.set_layout(value)
             elif self.path=='/v1/scenes/save':result=core.save_scene(value)
             elif self.path=='/v1/shutdown':
