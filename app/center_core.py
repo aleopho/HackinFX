@@ -16,6 +16,7 @@ import center_sdk
 import usb_devices
 import ram_control
 import nanoleaf_control
+import effects
 
 
 def atomic_json(path,value,mode=0o600):
@@ -43,7 +44,7 @@ def color(value):
 def scene_config(value):
     if not isinstance(value,dict):raise ValueError('Scene must be an object')
     mode=value.get('mode','static')
-    if mode not in ('static','gradient','spectrum','breathing','wave','aurora','comet','twinkle','color shift'):raise ValueError('Unknown scene')
+    if mode not in effects.MODES:raise ValueError('Unknown scene')
     synchronized=value.get('synchronized',True)
     if type(synchronized) is not bool:raise ValueError('Synchronized must be boolean')
     palette=value.get('palette',['c6ed91','42d6ce','9f8bff'])
@@ -56,45 +57,13 @@ def scene_config(value):
     policy=value.get('sync_policy','adaptive')
     if policy not in ('adaptive','lockstep'):raise ValueError('Invalid synchronization policy')
     fps=number(value.get('fps',30),1,120)
-    return dict(fps=fps,sync_policy=policy,mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
+    reverse=value.get('reverse',False)
+    if type(reverse)is not bool:raise ValueError('Reverse must be boolean')
+    return dict(scale=number(value.get('scale',1),.25,4),density=number(value.get('density',55),0,100),reverse=reverse,fps=fps,sync_policy=policy,mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
 
 
 def frame(scene,count,position,elapsed):
-    palette=[color(v) for v in scene['palette']];out=[]
-    speed=scene['speed']/100;brightness=scene['brightness']/100
-    for index in range(count):
-        locations=position.get('led_positions',[])
-        point=locations[index] if len(locations)==count else None
-        local=point['x'] if point else index/max(1,count-1)
-        local_y=point['y'] if point else local
-        x=position.get('x',0.5)+(local-0.5)*position.get('width',0.3)
-        y=position.get('y',0.5)+((local_y-.5)*position.get('width',.3) if point else 0)
-        coord=(local if scene['axis']=='x' else local_y) if scene.get('mapping','canvas')=='mirror' else x if scene['axis']=='x' else y
-        phase=(elapsed*speed*0.25+coord)%1
-        mode=scene['mode']
-        if mode=='spectrum':rgb=tuple(round(c*255) for c in colorsys.hsv_to_rgb((elapsed*speed*0.2)%1,0.8,1))
-        elif mode=='wave':
-            offset=phase*len(palette);a=int(offset)%len(palette);b=(a+1)%len(palette);f=offset-int(offset)
-            rgb=tuple(round(palette[a][i]*(1-f)+palette[b][i]*f) for i in range(3))
-        elif mode=='gradient':
-            offset=max(0,min(1,coord))*(len(palette)-1);a=int(offset);b=min(a+1,len(palette)-1);f=offset-a
-            rgb=tuple(round(palette[a][i]*(1-f)+palette[b][i]*f) for i in range(3))
-        elif mode=='aurora':
-            hue=(coord*.28+elapsed*speed*.06)%1
-            rgb=tuple(round(c*255) for c in colorsys.hsv_to_rgb(.38+hue*.36,.78,.6+.4*math.sin(coord*5+elapsed*speed)**2))
-        elif mode=='comet':
-            distance=((elapsed*speed*.25)%1-coord)%1
-            rgb=tuple(round(c*math.exp(-distance*12)) for c in palette[0])
-        elif mode=='twinkle':
-            sparkle=max(0,math.sin(index*12.9898+coord*78.233+elapsed*speed*3))**12
-            rgb=tuple(round(c*(.08+.92*sparkle)) for c in palette[index%len(palette)])
-        elif mode=='color shift':
-            offset=(elapsed*speed*.12)%len(palette);a=int(offset);b=(a+1)%len(palette);f=offset-a
-            rgb=tuple(round(palette[a][i]*(1-f)+palette[b][i]*f) for i in range(3))
-        else:rgb=palette[0]
-        level=brightness*(0.08+0.92*(0.5-0.5*math.cos(elapsed*speed*math.pi))) if mode=='breathing' else brightness
-        out.append(tuple(round(c*level) for c in rgb))
-    return out
+    return effects.frame(scene,count,position,elapsed)
 
 
 def project_usb(tree):

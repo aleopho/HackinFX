@@ -58,9 +58,12 @@ struct CenterDevice: Codable, Identifiable {
     }
     var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
 }
-struct CenterScene: Codable {
+struct CenterScene: Codable,Equatable {
     var synchronized = true
     var mapping = "mirror"
+    var scale = 1.0
+    var density = 55.0
+    var reverse = false
     var mode = "twinkle"
     var palette = ["a7f3d0"]
     var brightness = 100.0
@@ -268,7 +271,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.3.0"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.4.0"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -332,7 +335,7 @@ final class CenterModel: ObservableObject {
     }
 }
 
-private enum CenterTheme {
+enum CenterTheme {
     static let background=Color(red:0.035,green:0.047,blue:0.055)
     static let surface=Color(red:0.065,green:0.082,blue:0.09)
     static let elevated=Color(red:0.085,green:0.105,blue:0.11)
@@ -340,7 +343,7 @@ private enum CenterTheme {
     static let aqua=Color(red:0.31,green:0.82,blue:0.79)
     static let muted=Color(red:0.51,green:0.58,blue:0.59)
 }
-private struct CenterPanel<Content:View>:View {
+struct CenterPanel<Content:View>:View {
     let content:Content
     init(@ViewBuilder content:()->Content) { self.content=content() }
     var body:some View { content.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:20)).overlay(RoundedRectangle(cornerRadius:20).stroke(.white.opacity(0.06),lineWidth:1)) }
@@ -373,33 +376,17 @@ private struct CenterAction:View {
 private struct CenterScenePreview:View {
     let scene:CenterScene
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private func rgb(_ hex:String)->(Double,Double,Double) {
-        let v=UInt32(hex,radix:16) ?? 0xffffff
-        return (Double((v>>16)&255)/255,Double((v>>8)&255)/255,Double(v&255)/255)
-    }
     private func tint(_ index:Int,_ time:Double)->Color {
-        let t=Double(index)/39;let speed=scene.speed/100;var level=scene.brightness/100
-        if scene.mode=="aurora" { return Color(hue:0.38+((t*0.28+time*speed*0.06).truncatingRemainder(dividingBy:1))*0.36,saturation:0.78,brightness:level*(0.6+0.4*pow(sin(t*5+time*speed),2))) }
-        if scene.mode=="comet" { let d=((time*speed*0.25).truncatingRemainder(dividingBy:1)-t+1).truncatingRemainder(dividingBy:1);level *= exp(-d*12) }
-        if scene.mode=="twinkle" { level *= 0.08+0.92*pow(max(0,sin(Double(index)*12.9898+t*78.233+time*speed*3)),12) }
-        if scene.mode=="color shift" {
-            let offset=(time*speed*0.12).truncatingRemainder(dividingBy:Double(scene.palette.count));let a=Int(offset),b=(a+1)%scene.palette.count,f=offset-Double(a)
-            let x=rgb(scene.palette[a]),y=rgb(scene.palette[b]);return Color(red:(x.0*(1-f)+y.0*f)*level,green:(x.1*(1-f)+y.1*f)*level,blue:(x.2*(1-f)+y.2*f)*level)
-        }
-        if scene.mode=="spectrum" { return Color(hue:(time*speed*0.2).truncatingRemainder(dividingBy:1),saturation:0.8,brightness:level) }
-        if scene.mode=="breathing" { level *= 0.08+0.92*(0.5-0.5*cos(time*speed*Double.pi)) }
-        if ["gradient","wave"].contains(scene.mode) {
-            let phase=scene.mode=="wave" ? (t+time*speed*0.25).truncatingRemainder(dividingBy:1):t
-            let offset=phase*Double(max(1,scene.palette.count-1));let a=min(scene.palette.count-1,Int(offset));let b=min(scene.palette.count-1,a+1);let f=offset-Double(a)
-            let x=rgb(scene.palette[a]),y=rgb(scene.palette[b]);return Color(red:(x.0*(1-f)+y.0*f)*level,green:(x.1*(1-f)+y.1*f)*level,blue:(x.2*(1-f)+y.2*f)*level)
-        }
-        let c=rgb(scene.palette.first ?? "ffffff");return Color(red:c.0*level,green:c.1*level,blue:c.2*level)
+        let u=Double(index)/39
+        let rgb=EffectMath.sample(mode:scene.mode,palette:EffectLibrary.palette(scene.palette),index:index,u:u,v:u,coord:u,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse)
+        let level=scene.brightness/25500
+        return Color(red:max(0,min(1,rgb[0]*level)),green:max(0,min(1,rgb[1]*level)),blue:max(0,min(1,rgb[2]*level)))
     }
     var body:some View {
         TimelineView(.animation(minimumInterval:0.05,paused:reduceMotion || ["static","gradient"].contains(scene.mode))) { context in
             let time=reduceMotion ? 0:context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3600)
             VStack(alignment:.leading,spacing:20) {
-                HStack { Text(scene.mode.capitalized).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text("EFFECT VISUALIZATION").font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
+                HStack { Text(EffectLibrary.effect(scene.mode)?.name ?? scene.mode.capitalized).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text("EFFECT VISUALIZATION").font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
                 HStack(spacing:4) { ForEach(0..<40) { i in Capsule().fill(tint(i,time)).frame(height:34).shadow(color:tint(i,time).opacity(0.45),radius:8) } }
             }.padding(20).background(LinearGradient(colors:[CenterTheme.background,CenterTheme.elevated.opacity(0.35)],startPoint:.topLeading,endPoint:.bottomTrailing)).clipShape(RoundedRectangle(cornerRadius:14))
         }.accessibilityLabel("Effect visualization. Not live LED feedback.")
@@ -436,7 +423,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.3.0");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.4.0");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -464,12 +451,13 @@ struct CenterWorkspace:View {
     let page:String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var effectSelection
+    @State private var galleryPresented=false
     @State private var dragLocations:[String:CGPoint] = [:]
     var body:some View {
         VStack(alignment:.leading,spacing:24) {
             if page == "Overview" { overview }
             else if page == "Devices" { devices }
-            else if page == "Effects" || page == "Scenes" { sceneEditor }
+            else if page == "Effects" || page == "Scenes" { EffectGallery(center:center) }
             else if page == "Canvas" || page == "Layout" { layout }
             else { connections }
             if !center.error.isEmpty { CenterPanel { HStack { Label(center.error,systemImage:"exclamationmark.triangle").font(.system(size:12)).foregroundStyle(.orange).textSelection(.enabled);Spacer();Button { center.error="" } label: { Image(systemName:"xmark") }.help("Dismiss error") } } }
@@ -523,11 +511,18 @@ struct CenterWorkspace:View {
         CenterPanel {
                 VStack(alignment:.leading,spacing:20) {
                     CenterScenePreview(scene:center.scene)
-                    LazyVGrid(columns:[GridItem(.adaptive(minimum:108),spacing:8)],spacing:8) { ForEach([("static","Static","circle.fill"),("gradient","Gradient","slider.horizontal.3"),("spectrum","Spectrum","circle.lefthalf.filled"),("breathing","Breathing","waveform.path"),("wave","Wave","water.waves"),("aurora","Aurora","sparkles"),("comet","Comet","sparkle"),("twinkle","Twinkle","star"),("color shift","Color shift","circle.hexagongrid")],id:\.0) { key,label,symbol in Button { center.scene.mode=key } label: { VStack(spacing:11) { Image(systemName:symbol).font(.system(size:22,weight:.light));Text(label).font(.system(size:10,weight:.medium)) }.frame(maxWidth:.infinity).frame(height:83).foregroundStyle(center.scene.mode == key ? CenterTheme.accent : CenterTheme.muted).background(center.scene.mode == key ? CenterTheme.accent.opacity(0.09) : CenterTheme.background.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(center.scene.mode == key ? CenterTheme.accent.opacity(0.4) : .white.opacity(0.04),lineWidth:1)).overlay(alignment:.bottom) { if center.scene.mode == key { Capsule().fill(CenterTheme.accent).frame(width:28,height:2).matchedGeometryEffect(id:"effect-selection",in:effectSelection).padding(.bottom,8) } } }.buttonStyle(PressFeedbackStyle()) } }
-                    if !["spectrum","aurora"].contains(center.scene.mode) { HStack { ForEach(0..<( ["wave","gradient","color shift","twinkle"].contains(center.scene.mode) ? 3 : 1),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
+                    HStack(spacing:12) {
+                        Menu {
+                            ForEach(EffectLibrary.catalog.categories,id:\.self) { category in
+                                Menu(category) { ForEach(EffectLibrary.catalog.effects.filter {$0.category==category}) { effect in Button(effect.name) { center.scene.mode=effect.id } } }
+                            }
+                        } label: { Label(EffectLibrary.effect(center.scene.mode)?.name ?? center.scene.mode.capitalized,systemImage:EffectLibrary.effect(center.scene.mode)?.symbol ?? "sparkles") }
+                        Spacer();Button { galleryPresented=true } label: { Label("Browse 40 effects",systemImage:"square.grid.2x2") }
+                    }
+                    if EffectLibrary.effect(center.scene.mode)?.colors != false { HStack { ForEach(0..<min(4,center.scene.palette.count),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
                     HStack { Text("Brightness").frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                     if !["static","gradient"].contains(center.scene.mode) { HStack { Text("Speed").frame(width:75,alignment:.leading);Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-                    if ["wave","gradient"].contains(center.scene.mode) { Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented) }
+                    if !["static","spectrum","breathing","color shift","pulse","heartbeat"].contains(center.scene.mode) { Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented) }
                     HStack(spacing:10) {
                         Label(center.liveStatus,systemImage:"bolt.fill").font(.system(size:10)).foregroundStyle(center.error.isEmpty ? CenterTheme.aqua:.orange)
                         Spacer();Button("Pause animation",action:center.stop).disabled(!center.state.running || center.busy)
@@ -537,41 +532,9 @@ struct CenterWorkspace:View {
                     if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text("Onboard effects use their own clocks. Use Canvas with shared-clock streaming devices for synchronized effects.").font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
 
                 }
-            }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode)
-    }
-    private var sceneEditor:some View {
-        VStack(alignment:.leading,spacing:22) {
-            CenterHeading(eyebrow:"Your effect library",title:"Effect Studio",subtitle:"Build reusable looks. Lighting handles live controls; Canvas places your devices.")
-            CenterPanel { VStack(alignment:.leading,spacing:16) {
-                Text("Design an effect").font(.headline)
-                CenterScenePreview(scene:center.scene)
-                Picker("Animation",selection:$center.scene.mode) { ForEach(["static","gradient","spectrum","breathing","wave","aurora","comet","twinkle","color shift"],id:\.self) { Text($0.capitalized).tag($0) } }.pickerStyle(.menu)
-                Text("Palette stops").font(.system(size:11,weight:.semibold))
-                LazyVGrid(columns:[GridItem(.adaptive(minimum:140))]) { ForEach(Array(center.scene.palette.indices),id:\.self) { index in ColorPicker("Stop \(index+1)",selection:sceneColor(index),supportsOpacity:false) } }
-                HStack { Button("Add color stop") { if center.scene.palette.count<8 { center.scene.palette.append("42d6ce") } }.disabled(center.scene.palette.count>=8);Button("Remove last stop") { if center.scene.palette.count>1 { center.scene.palette.removeLast() } }.disabled(center.scene.palette.count<=1) }
-                HStack { Text("Speed");Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%") }
-                HStack { Text("Brightness");Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%") }
-                Picker("Mapping",selection:$center.scene.mapping) { Text("Mirror devices").tag("mirror");Text("Canvas space").tag("canvas") }.pickerStyle(.segmented)
-                Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented)
-                HStack { Button("Ocean") { center.scene.palette=["0066ff","42d6ce","b7fff3"];center.scene.mode="wave" };Button("Ember") { center.scene.palette=["ff2200","ff9900","ffcc66"];center.scene.mode="breathing" };Button("Aurora") { center.scene.palette=["24ff99","4277ff","b34fff"];center.scene.mode="aurora" } }
-                Divider()
-
-                TextField("Preset name",text:$center.sceneName).textFieldStyle(.roundedBorder)
-                HStack { Text(center.scene.mode.capitalized+" · \(Int(center.scene.brightness))% brightness").foregroundStyle(CenterTheme.muted);Spacer();Button("Save preset",action:center.saveScene).disabled(center.busy || !center.online) }.font(.system(size:12))
-                Text("Presets store effect, palette, speed, direction and shared-clock preference. Device selection stays local to your workspace.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
-            } }
-            if center.state.scenes.isEmpty { CenterPanel { Label("Create a look in Lighting, then save your first preset here.",systemImage:"sparkles").foregroundStyle(CenterTheme.muted) } }
-            LazyVGrid(columns:[GridItem(.adaptive(minimum:240),spacing:16)],spacing:16) {
-                ForEach(center.state.scenes) { saved in
-                    Button { center.scene=saved.config } label: {
-                        VStack(alignment:.leading,spacing:18) {
-                            HStack(spacing:4) { ForEach(Array(saved.config.palette.enumerated()),id:\.offset) { _,hex in RoundedRectangle(cornerRadius:5).fill(Color(nsColor:NSColor(srgbRed:Double((UInt32(hex,radix:16) ?? 0)>>16&255)/255,green:Double((UInt32(hex,radix:16) ?? 0)>>8&255)/255,blue:Double((UInt32(hex,radix:16) ?? 0)&255)/255,alpha:1))).frame(height:36) } }
-                            Text(saved.name).font(.headline);HStack { Text(saved.config.mode.capitalized);Spacer();Image(systemName:"play.fill") }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
-                        }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:16))
-                    }.buttonStyle(PressFeedbackStyle())
-                }
+            }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode).sheet(isPresented:$galleryPresented) {
+                VStack(spacing:0) { HStack { Text("HackinFX / Effects").font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted);Spacer();Button("Done") { galleryPresented=false } }.padding(20);Divider();ScrollView { EffectGallery(center:center).padding(28) } }.frame(minWidth:1000,idealWidth:1120,minHeight:760,idealHeight:860).background(CenterTheme.background).preferredColorScheme(.dark)
             }
-        }
     }
     private var layout:some View {
         VStack(alignment:.leading,spacing:22) {
@@ -603,7 +566,7 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.3.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.4.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
                 Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }

@@ -957,7 +957,7 @@ struct Root: View {
                 ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Feedback" { FeedbackWorkspace(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
                 if model.page == "Studio" { StudioFooter(model:model) }
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
-        }.frame(minWidth:1050,minHeight:760).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
+        }.frame(minWidth:980,minHeight:650).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
         .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration:0.2),value:model.launching)
         .overlay { if model.scanning && model.page == "Hardware" { StartupScanView() } }
         .sheet(isPresented:$model.showSetupWizard) { SetupWizard(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
@@ -987,8 +987,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         };image.isTemplate=false;image.accessibilityDescription="HackinFX RGB fan";return image
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(contentRect: NSRect(x:0,y:0,width:1180,height:860), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
-        window.contentMinSize = NSSize(width:1050,height:760)
+        let screen=NSScreen.main?.visibleFrame ?? NSRect(x:0,y:0,width:1440,height:1000)
+        let startWidth=min(1380,max(900,screen.width-48)),startHeight=min(940,max(650,screen.height-64))
+        window = NSWindow(contentRect: NSRect(x:0,y:0,width:startWidth,height:startHeight), styleMask:[.titled,.closable,.miniaturizable,.resizable], backing:.buffered, defer:false)
+        window.contentMinSize = NSSize(width:min(1080,startWidth),height:min(760,startHeight))
         window.title = "HackinFX"
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
@@ -1087,18 +1089,18 @@ struct HackinFXMain {
     static func main() throws {
 UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
 let app = NSApplication.shared
-if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes","--render-center-feedback"].contains(CommandLine.arguments[1]) {
+if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes","--render-center-feedback","--render-center-gallery"].contains(CommandLine.arguments[1]) {
     app.setActivationPolicy(.prohibited)
     app.appearance = NSAppearance(named: .darkAqua)
     let preview = Model(); preview.launching = false; preview.page = "Studio"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
-    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
+    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-gallery" ? "Effects" : CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
     let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text("SAMPLE DATA · DESIGN CHECK").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
     let view = NSHostingView(rootView:labeled)
     view.appearance = NSAppearance(named: .darkAqua)
-    view.frame = NSRect(x:0,y:0,width:1200,height:900)
+    view.frame = NSRect(x:0,y:0,width:1380,height:940)
     view.layoutSubtreeIfNeeded()
     if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
         view.cacheDisplay(in: view.bounds, to: bitmap)

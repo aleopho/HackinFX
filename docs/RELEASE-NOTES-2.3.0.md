@@ -29,3 +29,6 @@ stable controller identity and a private serial hash so a changed DHCP address
 can be re-resolved without a fixed-IP setup. The shared renderer includes the
 100ms Shapes interpolation window in its estimated presentation timing. This
 is latency compensation, not a claim of measured optical synchronization.
+
+User follow-up: Shapes pairing and visible lighting were confirmed after installing
+the integration build. This does not verify other Nanoleaf models.
