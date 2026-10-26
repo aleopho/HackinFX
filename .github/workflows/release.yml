@@ -3,30 +3,54 @@ on:
   push:
     branches: [main]
     paths: [app/release-version.txt, .github/workflows/release.yml]
+  workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: hackinfx-release
+  cancel-in-progress: false
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: python3 -m unittest discover -s app/tests
+      # Run fixture tests on macOS too, including Core process lifecycle.
+      - name: Read release version
+        run: |
+          version="$(cat app/release-version.txt | tr -d '\r\n')"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "HACKINFX_VERSION=$version" >> "$GITHUB_ENV"
+          test -f "docs/RELEASE-NOTES-$version.md"
+      - run: python3 -m unittest discover -s tests
+        working-directory: app
+      - run: node app/tests/verify-radius-port.mjs
       - run: node --test report-inbox/*.test.mjs
       - run: python3 -m unittest test_schema.py
         working-directory: report-inbox
       - run: swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests && /tmp/hackinfx-profile-tests
+      - run: swiftc app/ReleaseVersion.swift app/tests/ReleaseVersionTests.swift -o /tmp/hackinfx-version-tests && /tmp/hackinfx-version-tests
+      - run: python3 tools/prepare_openrgb_runtime.py
       - run: python3 app/build_community.py
       - run: python3 tools/check_app_bundle.py
+      - run: python3 tools/verify_openrgb_runtime.py
+      - run: app/HackinFX.app/Contents/Resources/HackinFXSMBus --self-test
+      - run: app/HackinFX.app/Contents/Resources/HackinFXHID --self-test
       - run: codesign --verify --deep --strict app/HackinFX.app
-      - run: python3 app/package_dmg.py && hdiutil verify HackinFX-aleopho-1.1.1.dmg
-      - run: python3 tools/verify_dmg.py HackinFX-aleopho-1.1.1.dmg
-      - name: Publish HackinFX 1.1.1
+      - run: python3 app/package_installer.py
+      - run: python3 tools/verify_installer.py "HackinFX-$HACKINFX_VERSION-Installer.pkg"
+      - run: python3 app/package_dmg.py
+      - run: hdiutil verify "HackinFX-aleopho-$HACKINFX_VERSION.dmg"
+      - run: python3 tools/verify_dmg.py "HackinFX-aleopho-$HACKINFX_VERSION.dmg"
+      - name: Publish regular release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git archive --format=zip --prefix=HackinFX-1.1.1/ -o HackinFX-1.1.1-source.zip HEAD
-          shasum -a 256 HackinFX-aleopho-1.1.1.dmg HackinFX-1.1.1-source.zip > SHA256SUMS.txt
-          gh release create v1.1.1 --target "$GITHUB_SHA" --title "HackinFX 1.1.1" --notes-file docs/RELEASE-NOTES-1.1.1.md --latest HackinFX-aleopho-1.1.1.dmg HackinFX-1.1.1-source.zip SHA256SUMS.txt
+          git archive --format=zip --prefix="HackinFX-$HACKINFX_VERSION/" -o "HackinFX-$HACKINFX_VERSION-source.zip" HEAD
+          shasum -a 256 "HackinFX-$HACKINFX_VERSION-Installer.pkg" "HackinFX-aleopho-$HACKINFX_VERSION.dmg" "HackinFX-$HACKINFX_VERSION-source.zip" > SHA256SUMS.txt
+          gh release create "v$HACKINFX_VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "HackinFX $HACKINFX_VERSION — Lighting Studio" --notes-file "docs/RELEASE-NOTES-$HACKINFX_VERSION.md" --latest "HackinFX-$HACKINFX_VERSION-Installer.pkg" "HackinFX-aleopho-$HACKINFX_VERSION.dmg" "HackinFX-$HACKINFX_VERSION-source.zip" SHA256SUMS.txt

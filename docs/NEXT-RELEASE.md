@@ -1,3 +1,5 @@
+> Historical planning notes. For current behavior and limits, see [the user guide](USER-GUIDE.md), [compatibility](COMPATIBILITY.md) and [2.1.1 release notes](RELEASE-NOTES-2.1.1.md). Items below are not a current support guarantee.
+
 # Next release: diagnostics, NVIDIA controllers and RAM research
 
 ## Implemented in this branch

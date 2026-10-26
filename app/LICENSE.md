@@ -9,7 +9,7 @@ PNY lighting effect packet construction follows the OpenRGB PNY Lovelace
 controller by yufan (2023) and OpenRGB contributors, GPL-2.0-or-later:
 https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController
 The Python adaptation and native macOS UI were developed on 2026-10-23.
-Source files and build script accompany the local preview application.
+Source files and build script accompany the release application.
 The upstream LICENSE copy in COPYING is preserved verbatim, including its
 historical OpenAuraSDK example notice. It does not name this app's author.
 

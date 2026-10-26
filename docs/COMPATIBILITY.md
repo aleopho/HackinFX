@@ -1,44 +1,62 @@
-# Compatibility and new hardware
+# Device compatibility
 
-## CPU platform and GPU support
+HackinFX 2.1.1 targets macOS 15+ x86-64 Hackintoshes with Intel or AMD CPUs.
+CPU manufacturer is not a gate; AMD-CPU operation still needs physical community
+validation. Apple Silicon is not targeted. Hardware RGB support is separate from
+CPU compatibility and display-driver support.
 
-HackinFX targets **Hackintosh systems**, with an x86-64 macOS binary. The code checks architecture, not CPU manufacturer: an AMD CPU is not rejected simply for being AMD. AMD-CPU systems are not yet physically validated by this project; a compatible driver/GPU environment is still required. Apple Silicon is outside this Hackintosh target.
+## Three distinct states
 
-CPU compatibility must not be confused with RGB GPU support. Passive inventory can identify display adapters from NVIDIA, AMD, Intel and other vendors. Known vendor IDs are labeled; model strings come from the exact local profile, limited lookup or macOS registry, with manual correction when incomplete. Actual RGB writes currently require the one included PNY profile and working NVRM transport.
-
-HackinFX does not run the full OpenRGB application or all its GPU controllers. Its PNY packet implementation is adapted from OpenRGB. That adaptation is separate from the generic passive scanner; no automatic vendor-wide controller discovery is implemented.
-
-## Included profile
-
-| Field | Value |
+| State | Meaning |
 | --- | --- |
-| Board | PNY XLR8 RTX 4080 VERTO |
-| GPU / board vendor | NVIDIA / PNY |
-| PCI | `10de:2704` |
-| PCI subsystem | `196e:13bc` |
-| Local module key | `pny-4080-196e-13bc` |
-| Native RM I2C port | 1 |
-| Controller address / register | `0x60` / `0x02` |
-| Zones | 0, 1, 2 |
-| Visually confirmed | Static, Gradient, Spectrum, Breathing, Wave |
-| Implemented but not separately visually confirmed | Off |
+| Detected / catalog match | Identity is known; no proof of macOS RGB access |
+| Ready / controllable | An included adapter can attempt permitted lighting commands |
+| User-confirmed | A user reports the visible test worked on their exact hardware |
 
-Development hardware observations reported Intel macOS 26.7.1 and NVRM bundle 2.5.2. The bundle number alone does not identify a NullMoth release. Driver implementation references are pinned separately to v2.5.3. No general claim is made for all PNY, RTX 4080, Lovelace, AMD or Intel hardware.
+No catalog entry or manual marketing name can install a protocol implementation,
+override native PCI guards or prove an optical result.
 
-## Three distinct meanings
+## OpenRGB and native adapters
 
-- **Detected:** PCI/registry/driver inventory produced identity information. This does not prove RGB capability.
-- **User confirmed:** transport completed and the user says the physical test worked. Shared confirmations automatically grow the informational catalog.
-- **Supported local RGB profile:** this release includes a controller/transport implementation guarded by an exact hardware match. This is what permits commands.
+HackinFX bundles the pinned OpenRGB 1.1 Intel macOS engine, compiled drivers,
+runtime dependencies and corresponding source archives. It also includes native
+NVIDIA and USB/HID paths, with ownership rules to avoid duplicate writers.
+OpenRGB support on another operating system does not guarantee a macOS transport.
+Device status exposes inventory-only, access-required and setup-required cases.
 
-A catalog entry does not transform an unknown controller into an implemented module. Community evidence informs the next release; it does not install a driver remotely. Registry labels and user-supplied model names never override PCI guards.
+Native NVIDIA paths cover **68 exact test profiles** across PNY Lovelace,
+ASUS Aura, EVGA Pascal, EVGA Turing and Zotac Turing. This is a list of implemented
+test candidates, not 68 independently verified cards. The identity catalog is
+broader and is not an executable support list. Exact-profile testing, successful
+transport and visual user confirmation are required before native profile reuse.
 
-## To help add a card
+## Development-system evidence
 
-1. Run passive inventory and send a reviewed report with exact manufacturer/model/revision and a description of the lighting behavior.
-2. Identify a documented controller, protocol, suitable macOS transport and license-compatible implementation reference.
-3. Add a narrowly scoped profile, not a broad vendor/device wildcard. Preserve unknown-device rejection and failure cleanup.
-4. Test packet construction and rejection paths offline, then perform an explicitly bounded physical test on that exact board.
-5. Record visible results per effect, port/address/register/zone evidence and environment. Update source, tests, documentation and bundled compatibility data for a reviewed release.
+| Hardware | Evidence / limitation |
+| --- | --- |
+| PNY XLR8 RTX 4080 VERTO (`10de:2704 / 196e:13bc`) | Static, Gradient, Spectrum, Breathing and Wave visually confirmed by aleopho |
+| ASUS ROG Spatha X | User-reported working; firmware/connection variants need their own checks |
+| ASUS ROG Strix Scope II 96 Wireless, USB path | Ready in the current desktop capture; whole-keyboard RGB path, no per-key claim |
+| GIGABYTE HID LampArray | User-reported working; other boards need their own validation |
+| Fractal Design Radius | User-reported working; preview renewal and physical timing need broader tests |
+| Corsair Titanium / SMBus development path | **RAM not working on the development system as of this release** |
+| NZXT Kraken X2/M2 and other OpenRGB devices | Included paths where available, not physically verified by this project |
 
-Reports help match subsystems and compare environments; they do not reveal an unknown I2C controller address, firmware protocol or physical zone geometry. Please do not run random bus sweeps or reuse a profile solely because a card looks similar.
+An active command/frame counter reports commands, not light emitted by LEDs.
+Group timing uses shared frames and command latency compensation; it cannot
+measure firmware buffering or promise exact optical synchronization.
+
+## Add or troubleshoot a device
+
+Use Diagnostics → Feedback & compatibility for a fresh read-only hardware scan,
+notes and reviewed private submission. Include connection mode, exact model,
+firmware if known, expected/actual behavior and a reproducible sequence. Report
+export works without an online inbox. Do not publish private raw reports.
+
+Implementation needs a documented protocol, macOS transport, exact identity,
+license-compatible reference, bounded lighting-only commands, failure cleanup
+and physical validation. OpenRGB references and vendor notices must remain.
+A confirmation grows evidence; it does not automatically deploy new drivers.
+
+Native profiles and scenes are stored in `~/Documents/HackinFX`.
+[Build/testing](DEVELOPMENT.md) · [RAM setup](RAM-SETUP.md) · [USB details](USB-LIGHTING.md).

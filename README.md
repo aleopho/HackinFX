@@ -1,89 +1,145 @@
-<p align="center"><img src="docs/images/hackinfx.svg" width="144" alt="HackinFX GPU line icon"></p>
+<p align="center"><img src="docs/images/hackinfx.svg" width="120" alt="HackinFX RGB fan icon"></p>
 <h1 align="center">HackinFX</h1>
-<p align="center">GPU lighting for Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
+<p align="center">Lighting Studio for macOS Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
+<p align="center"><a href="https://github.com/aleopho/HackinFX/releases/latest">Download</a> · <a href="docs/USER-GUIDE.md">Getting started</a> · <a href="docs/COMPATIBILITY.md">Device compatibility</a> · <a href="THIRD-PARTY-NOTICES.md">Licenses & credits</a></p>
 
-HackinFX is a native macOS menu-bar app for controlling a supported GPU's RGB lighting through a separately installed NullMoth NVRM driver. It combines a lighting studio, visible hardware detection, a guided visual test, local profiles and community compatibility reports.
+HackinFX brings GPUs, keyboards, mice, USB lighting controllers and supported
+coolers into one native **Lighting Studio**. Built for **macOS 15 or later** on
+**x86-64 Hackintoshes with Intel or AMD CPUs**, it combines the bundled
+**OpenRGB 1.1 macOS engine** with native NVIDIA and USB/HID adapters.
 
-**Release 1.1.1 · macOS 15 or later.** Includes a refined native interface, genuine WidgetKit widget and OpenRGB-based NVIDIA controller matching.
+**Current release: [2.1.1](https://github.com/aleopho/HackinFX/releases/tag/v2.1.1).**
+RAM RGB is under development and is **not yet working on the development system**.
+Apple Silicon is outside the current target.
 
-The OpenRGB catalog recognizes 752 exact GPU PCI tuples. Executable lighting-test paths currently cover **38 exact configurations across PNY Lovelace, EVGA Pascal and ASUS Aura**. These are test candidates; only cards with successful visual user confirmation are listed as user-tested. Other controller families remain identification-only. [Controller details](docs/RELEASE-1.1.md).
+![HackinFX 2.1.1 Lighting Studio with live connected devices](docs/images/lighting-studio-2.1.1.png)
 
-## Download and install
+Actual desktop screenshot supplied by aleopho on 26 October 2026. The effect
+visualization shows requested colors, not optical LED feedback.
 
-Download [HackinFX 1.1.1 DMG](https://github.com/aleopho/HackinFX/releases/download/v1.1.1/HackinFX-aleopho-1.1.1.dmg), open it and drag **HackinFX.app → Applications**. Quit older copies first, eject the image, then launch the installed app. Checksums and source are included in the release.
+## One workspace for your lighting
+
+- **Live lighting:** Static, Gradient, Spectrum, Breathing, Wave, Aurora, Comet,
+  Twinkle and Color shift, with palette, brightness and tempo controls. Changes
+  apply automatically; there is no Apply button.
+- **Shared effects:** mirrored group output uses a shared timeline and frame
+  barrier. Faster outputs are delayed using measured command durations; the
+  slowest device sets group throughput. Actual LED timing depends on hardware.
+- **Canvas:** arrange devices in a shared effect space or mirror a look across
+  the setup. Only outputs with a suitable streaming path join animated groups.
+- **Effect Studio:** edit palettes and effect parameters, preview and save looks.
+- **OpenRGB inside:** the pinned macOS engine and its compiled device drivers
+  start locally with HackinFX. No separate OpenRGB installation or account.
+- **Native paths:** confirmed NVIDIA profiles, HID LampArray, ASUS Spatha X,
+  ASUS keyboard whole-board color, Fractal Radius and scoped NZXT support.
+- **Daily use:** launch at login, white on app/login startup, persistent menu-bar
+  controls and software-update checks. Closing the window keeps lighting active.
+- **Diagnostics & feedback:** fresh hardware specifications, device status and
+  your description, reviewed before private submission; JSON export remains available.
+- **WidgetKit:** mode, palette, brightness, GPU model, ready-device count and
+  attention state. Desktop rendering and refresh behavior need wider validation.
+
+## Install
+
+Download the **[2.1.1 installer](https://github.com/aleopho/HackinFX/releases/download/v2.1.1/HackinFX-2.1.1-Installer.pkg)**,
+quit older copies and install into **Applications**. A DMG is also available.
+Launch the installed app, let discovery finish and inspect **Devices** for ready
+outputs or setup requirements. Ready devices are selected and set to white at
+100% once per app/Core session. Login startup applies white after sign-in, not
+before the macOS login screen.
 
 Requirements:
 
-- macOS 15 or later on an x86-64 Hackintosh (Intel or AMD CPU); GPU/driver configuration already working. CPU vendor is not a software gate; AMD-CPU systems have not yet been physically validated by this project.
-- A compatible, separately installed [NullMoth NVIDIA driver / NVRM service](https://github.com/nullmoth/nvidia-macos-driver).
-- A working `/usr/bin/python3` supplied with Apple's command line tools.
-- A matching RGB controller profile from the table below.
+- macOS 15+, x86-64. Intel and AMD CPU systems are in scope; AMD-CPU operation
+  has not been independently verified on physical hardware by this project.
+- A working `/usr/bin/python3` from Apple's command line tools.
+- Device access supported on macOS. An OpenRGB catalog match or working Windows
+  driver does not prove that macOS can control the device.
+- For native NVIDIA lighting: separately install the
+  [NullMoth NVRM driver](https://github.com/nullmoth/nvidia-macos-driver).
+  It is not required for every USB device and is not bundled.
 
-The app is locally ad-hoc signed. It is not Developer ID signed or notarized; downloaded copies may show a macOS security warning. HackinFX does not disable security settings or remove quarantine flags. Native installation and appearance on Sequoia/Tahoe still need broader community validation.
+The installer offers **Customize → OpenCore SMBus driver (RAM RGB)**. This is an
+optional development transport, not a guarantee of working RAM lighting. It
+backs up the EFI before adding the driver/config entry, recognizes GPT and
+FAT/MBR boot volumes, and requires reboot. **Do not install it just to use USB
+lighting.** Read [RAM setup and recovery](docs/RAM-SETUP.md) first.
 
-## Verified hardware
+App, helpers, widget and nested engine are **ad-hoc signed**, without Apple
+Developer ID or notarization. macOS may require approval for downloaded software.
 
-| Card | GPU vendor | Board vendor | PCI / subsystem | Confirmed functions |
-| --- | --- | --- | --- | --- |
-| PNY XLR8 RTX 4080 VERTO | NVIDIA | PNY | `10de:2704 / 196e:13bc` | Static, Gradient, Spectrum, Breathing, Wave |
+## Device coverage: detection is not control
 
-CPU vendor and GPU vendor are separate: an AMD CPU is not an AMD graphics card. The x86-64 build is not restricted to Intel CPUs; actual operation still depends on the macOS/NullMoth/GPU configuration. AMD-CPU compatibility has not been physically verified.
+| Device class | Included paths | Current evidence / limits |
+| --- | --- | --- |
+| NVIDIA GPUs | 68 exact native test profiles across PNY Lovelace, ASUS Aura, EVGA Pascal/Turing and Zotac Turing; OpenRGB paths where available | PNY XLR8 RTX 4080 VERTO visually confirmed; other native profiles need their own test and confirmation |
+| Keyboards | OpenRGB macOS drivers, native HID LampArray and ASUS Scope II 96 / supported OMNI paths | Scope II 96 USB appears ready on the development setup; native ASUS output is whole-keyboard RGB, not per-key |
+| Mice | OpenRGB macOS drivers and native ASUS Spatha X | Spatha X user-reported working; connection mode and firmware can differ |
+| Mainboards / controllers | OpenRGB macOS drivers and native HID LampArray | Development GIGABYTE LampArray user-reported working; no universal board claim |
+| USB cooling / lighting | OpenRGB macOS drivers, native Fractal Radius and NZXT Kraken X2/M2 paths | Radius user-reported working; sustained color and timing need broader firmware testing; NZXT not physically verified here |
+| DRAM | Scoped Corsair Titanium / SMBus development path and available OpenRGB paths | **Not yet working on the development system. No general RAM support claim.** |
 
-These lighting effects were visually confirmed by aleopho on the development card. Off is implemented but has not been separately visually confirmed. A successful driver return value does not prove that LEDs changed.
+The OpenRGB identity catalogs help name devices. They do not download drivers,
+turn every catalog entry into a controllable output or bypass exact native
+hardware guards. [Compatibility details and contribution process](docs/COMPATIBILITY.md).
 
-Other GPUs can be inventoried and reported, but lighting writes remain disabled until a compatible local controller/transport module is implemented and validated. See [compatibility and adding GPUs](docs/COMPATIBILITY.md).
+## Profiles, feedback and privacy
 
-## What the app does
+Confirmed native GPU profiles and saved scenes use **`~/Documents/HackinFX`**.
+Core logs and private state use `~/Library/Application Support/HackinFX/Core`.
+Native GPU Lab tests implemented controllers and saves a reusable profile only
+after successful calls and your visual confirmation. Manual identity corrections
+retain the original detected PCI identity.
 
-1. Shows a short launch animation, then visibly reads PCI identity and graphics-driver information.
-2. Loads a previously confirmed local profile when the hardware/driver/OS fingerprint matches. Older basic-only profiles require the complete test.
-3. Otherwise, for an implemented controller, automatically tests red, green, blue and every available effect. PNY offers Gradient, Spectrum, Breathing and Wave; EVGA Pascal/ASUS Aura offer Spectrum and Breathing. Watch the card and confirm complete, partial or no operation. The test can be stopped.
-4. Saves a reusable local profile only after completed transport calls and your visual confirmation. Missing or incorrect board/model names can be supplied by the user; detected PCI IDs are preserved.
-5. With sharing enabled, queues a minimal compatibility confirmation for the community database. Offline submissions remain local and retry automatically. Private troubleshooting notes require a separate **Review / Send** action.
-
-Closing the window keeps HackinFX in the menu bar. Open Lighting restores it; **Quit HackinFX** exits. Static/zone colors, brightness and effect speed are available in the lighting studio. Gradients use three controller zones; physical placement depends on the card.
-
-## Desktop widget
-
-The genuine WidgetKit widget shows GPU model, last successfully applied lighting mode, a matching color strip and brightness where supported. Add HackinFX from the desktop’s **Edit Widgets** gallery after installing and launching the app. WidgetKit controls refresh timing; the colors are a schematic of the last command, not live LED feedback. Normal desktop registration and update behavior still need community validation with the ad-hoc-signed distribution.
-
-## Screenshots
-
-![HackinFX 1.1.0 Lighting Studio on the development Hackintosh](docs/images/lighting-studio-1.1.0.png)
-
-HackinFX 1.1.0 Lighting Studio with the confirmed PNY XLR8 RTX 4080 VERTO profile. Genuine desktop capture supplied by aleopho before the 1.1.1 corrections; the visible 1.1.0 PREVIEW footer is removed in the current release; the GPU illustration inside the app is a schematic, not LED-state feedback. [Screenshot details](docs/SCREENSHOTS.md).
+Under **Advanced → Diagnostics**, describe the problem in **Feedback &
+compatibility**, then choose **Scan & submit feedback…**. A fresh read-only scan
+attaches allowlisted CPU, RAM, USB, PCI and storage specifications, alongside
+Core device/error details. Review the JSON before sending. Serials, raw device
+trees, volume labels and mount paths are excluded from this inventory; free text
+is sent as typed. The existing private HTTPS report inbox returns a receipt.
+SourceForge ticket submission is not integrated. Reports require investigation;
+they do not automatically create driver support in the next release.
+[Data flow and privacy](docs/PRIVACY.md).
 
 ## Documentation
 
-- [Installation, first launch and troubleshooting](docs/USER-GUIDE.md)
-- [How hardware access and effects work](docs/ARCHITECTURE.md)
-- [Compatibility and the process for adding a card](docs/COMPATIBILITY.md)
-- [Reports, privacy and the public catalog](docs/PRIVACY.md)
-- [Build, tests and release validation](docs/DEVELOPMENT.md)
-- [Report server deployment](report-inbox/README.md)
-- [Licenses, third-party code and acknowledgements](THIRD-PARTY-NOTICES.md)
-- [Release history](CHANGELOG.md)
+- [Installation and everyday use](docs/USER-GUIDE.md)
+- [Devices, tests and compatibility](docs/COMPATIBILITY.md)
+- [Core, engine and synchronization architecture](docs/ARCHITECTURE.md)
+- [RAM / OpenCore setup and recovery](docs/RAM-SETUP.md)
+- [USB lighting](docs/USB-LIGHTING.md) · [Radius and ASUS keyboard](docs/RADIUS-AND-KEYBOARD.md)
+- [Build and release checks](docs/DEVELOPMENT.md)
+- [Report service](report-inbox/README.md) · [Contributing](CONTRIBUTING.md)
+- [Release notes](docs/RELEASE-NOTES-2.1.1.md) · [Changelog](CHANGELOG.md)
+- [Licenses and acknowledgements](THIRD-PARTY-NOTICES.md)
 
-## Source layout
+## Build from source
 
-```text
-app/                 SwiftUI/AppKit app, Python transport, profiles, tests, assets
-report-inbox/        Cloudflare Worker, D1 schema, migrations and backend tests
-docs/                User, architecture, compatibility, privacy and developer docs
-licenses/            Preserved third-party notices
-LICENSE              Full GPL version 2 text; project permits version 2 or later
+```sh
+python3 tools/prepare_openrgb_runtime.py
+python3 app/build_community.py
+python3 app/package_installer.py
+python3 app/package_dmg.py
 ```
 
-Build locally with `python3 app/build_community.py`. Package with `python3 app/package_dmg.py`. Full commands and remaining validation limits are in the developer guide.
+Use Intel macOS with full Xcode for the real WidgetKit extension. Runtime
+preparation explicitly downloads hash-pinned upstream binaries and corresponding
+sources. Build/CI checks never probe real hardware. See [development](docs/DEVELOPMENT.md).
 
 ## Credits and license
 
-Created by **aleopho**. HackinFX application/source: **GPL-2.0-or-later**, see [LICENSE](LICENSE) and [licensing notes](app/LICENSE.md).
+Created by **aleopho**. HackinFX application source is **GPL-2.0-or-later**;
+components retain their own terms. [LICENSE](LICENSE) · [Full third-party inventory](THIRD-PARTY-NOTICES.md).
 
-- **OpenRGB / yufan, Adam Honse, Jan Rettig and contributors:** PNY Lovelace, EVGA Pascal and ASUS Aura controller adaptations, GPL-2.0-or-later.
-- **NullMoth Systems:** separately installed NVRM bridge; the reviewed v2.5.3 NVRM source declares PolyForm Noncommercial 1.0.0. Its driver is not bundled or relicensed by HackinFX.
-- **NVIDIA:** public RM SDK ABI definitions, with MIT notices preserved in [licenses/NVIDIA-MIT.txt](licenses/NVIDIA-MIT.txt).
+- **OpenRGB / Adam Honse and contributors**, including yufan, Jan Rettig,
+  TheRogueZeta, David Henry, Martin Hartl and the authors preserved upstream:
+  bundled macOS engine, identity data and adapted controller protocols.
+- **NullMoth Systems:** separately installed NVIDIA NVRM bridge, under its own
+  terms; not bundled or relicensed by HackinFX.
+- **NVIDIA:** public RM ABI definitions; MIT notices preserved.
+- **Fractal Radius plugin contributors, Daniel Valfridsson / rigstats, macUSPCIO,
+  Qt and bundled runtime dependencies:** original source and notices preserved
+  as documented in the third-party inventory and release bundles.
 
-[Full attribution and source references](THIRD-PARTY-NOTICES.md). Independent community project; no endorsement by Apple, NVIDIA, PNY, NullMoth or OpenRGB. Provided without warranty.
-
-Confirmed profiles are saved in the current user’s `~/Documents/HackinFX/` directory, one JSON file per hardware fingerprint. Existing matching profiles are migrated automatically.
+Independent community project, without affiliation or endorsement by device
+manufacturers, Apple, NullMoth, OpenRGB or SignalRGB. Provided without warranty.

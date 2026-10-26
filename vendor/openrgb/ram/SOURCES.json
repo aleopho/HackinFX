@@ -1,0 +1,46 @@
+{
+  "repository": "CalcProgrammer1/OpenRGB",
+  "commit": "817834cfab034c97927451e31c4a2deb60a44725",
+  "files": [
+    {
+      "path": "Controllers/CorsairDRAMController/CorsairDRAMController.cpp",
+      "sha256": "2b044f39ddba59dd44db2c521988b1a9232299d519c3f2209ebaa66b036839b3"
+    },
+    {
+      "path": "Controllers/CorsairDRAMController/CorsairDRAMController.h",
+      "sha256": "0abc714dd892d2b65b2258d1c18a82019af78e3e9f7470089ddd1b2a8bf4573f"
+    },
+    {
+      "path": "Controllers/CorsairDRAMController/CorsairDRAMControllerDetect.cpp",
+      "sha256": "61c8163b3fcb31efcf7129222a9143b6a23c303244359cc91049183e91edaade"
+    },
+    {
+      "path": "Controllers/CorsairDRAMController/CorsairDRAMDevices.cpp",
+      "sha256": "4ad337ba7a79e79556f08b3c25a625bed2f555129085262f57e66d5802e87179"
+    },
+    {
+      "path": "Controllers/CorsairDRAMController/CorsairDRAMDevices.h",
+      "sha256": "a14f89c142badb5fb2f9d4911c6c24810b6082a8dc309a8713a79909c32d3e50"
+    },
+    {
+      "path": "Controllers/CorsairDRAMController/RGBController_CorsairDRAM.cpp",
+      "sha256": "9011d3da700ea91785e7358b80473fe27cf999c4d8f0f2c21c0af5bc699d9474"
+    },
+    {
+      "path": "Controllers/CorsairDRAMController/RGBController_CorsairDRAM.h",
+      "sha256": "72657f41b4abc389c522c91a0e28824c7c9007c530c0b40f9bd9ffc20a830958"
+    },
+    {
+      "path": "dependencies/macUSPCIO/macUSPCIOAccess.h",
+      "sha256": "b5a1f5a6ba2db492c3b09d61e3703292e01f951687652a4410b618b76b88497a"
+    },
+    {
+      "path": "i2c_smbus/MacOS/i2c_smbus_i801.cpp",
+      "sha256": "fae0d02eb7dcc0ad3b0d3d1244749d1997b3f391be8d5022f77366e94e8520b3"
+    },
+    {
+      "path": "i2c_smbus/MacOS/i2c_smbus_i801.h",
+      "sha256": "3bc1d4a483fd97c5ab37e8eb567947dea3d2ca77f5286c6473ae966f32a74adf"
+    }
+  ]
+}

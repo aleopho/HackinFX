@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.1 — 2026-10-26
+
+- Expand HackinFX into a multi-device Lighting Studio with bundled OpenRGB 1.1, native NVIDIA and USB/HID paths.
+- Live controls, nine effects, Canvas placement and editable Effect Studio palettes/parameters.
+- Shared-frame mirrored group output with a frame barrier and measured command-duration compensation; USB rate limits no longer silently skip group frames.
+- Host-rendered whole-keyboard ASUS colors, Radius preview renewal and corrected startup selection/white.
+- Lighting-first navigation, menu-bar lifecycle, launch at login and startup/manual software-update checks.
+- Feedback with fresh allowlisted system specifications, user notes, review, explicit private submission and export.
+- Rebuilt Core-fed WidgetKit view; actual desktop registration/refresh needs wider validation.
+- Optional backed-up OpenCore transport installation recognizes GPT and FAT/MBR boot volumes. **RAM remains non-working on the development system.**
+- Avoid unnecessary reverse DNS during local Core startup.
+- Refresh repository documentation, current fan branding, real desktop screenshot, licenses and regular-release packaging.
+
+[Release details and known limits](docs/RELEASE-NOTES-2.1.1.md).
+
+
 ## 1.1.1
 
 - Preserve nested WidgetKit signing through native DMG creation; verify mounted and copied app signatures.

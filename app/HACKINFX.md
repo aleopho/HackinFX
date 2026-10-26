@@ -1,25 +1,43 @@
-# HackinFX 1.1.0 — by aleopho
+# HackinFX 2.0.3 — by aleopho
 
 Requires macOS 15 or later. Native GPU-lighting app for x86-64 Hackintosh systems (Intel or AMD CPU; AMD-CPU operation is not yet physically validated). Locally ad-hoc codesigned, not Developer ID
 signed or notarized. Local codesign does not guarantee warning-free launch of a
 downloaded app. No security settings or quarantine flags are modified.
 
-## Installation and launch
+## Control Center and installation
 
-Open the DMG and drag HackinFX.app onto Applications. Eject the image and open the
-installed copy. Quit older copies first. A short, subtle intro precedes the passive
-hardware check. Reduced Motion disables the intro's scale animation.
+Install the PKG into Applications, then launch HackinFX. Under Customize, the
+optional OpenCore SMBus driver component detects the boot EFI, backs up the
+complete EFI and adds/enables macUSPCIO in the existing config. Ambiguous EFI
+layouts stop without writes. Reboot after installing the driver. No SIP changes
+or immediate kext loading. See Source/docs/RAM-SETUP.md for recovery and limits.
 
-The check reads display adapter identity, GPU vendor, board vendor, driver binding,
-OS and graphics-driver versions. NVIDIA is the GPU vendor; PNY is the board vendor
-on the development card. The displayed identity comes from the detected adapter.
-A matching previously confirmed local profile skips the light test and opens Studio.
-No lighting packets are sent by startup inventory or by remote catalog downloads.
+The full official OpenRGB 1.1 macOS CLI driver set is bundled and managed by the
+app. No separate OpenRGB install is required. Native drivers reserve matching
+controllers to avoid concurrent writes. Devices need a real working controller;
+identity catalog entries alone cannot enable control.
+
+Ready scene-capable devices start white at 100% once per app/Core session.
+Unconfirmed native GPUs and inventory-only devices are not written. Live edits
+replace the Apply step. Static, Gradient, Spectrum, Breathing, Wave, Aurora,
+Comet, Twinkle and Color shift are available according to device capabilities.
+Autostart runs after macOS sign-in and may require Login Items approval.
+
+Settings offers Launch at login and Check for Updates. Advanced tools contain
+the native GPU lab, diagnostics and credits. Profiles/scenes are saved in
+~/Documents/HackinFX. Closing the window keeps the menu-bar app running.
+
+## Native GPU startup check
+
+A visible hardware check reads GPU vendor/model, board vendor, driver binding
+and the configuration fingerprint. A matching confirmed profile skips its
+visual lighting test. Unknown identities remain inventory-only until an actual
+controller/transport exists. Board/model names can be corrected manually.
 
 ## Setup
 
 Without a matching local confirmation, a known controller automatically starts a visible guided test after inventory. The test runs red, green and blue, followed by each effect implemented for the detected controller. It ends with the final effect running.
-Use Apply to select another effect. Each lighting operation stops on driver failure.
+Changing an effect or color applies it automatically. Each lighting operation stops on driver failure.
 
 “All tests worked” requires completed transport calls plus the user's visual
 confirmation. It saves a local profile and a compatibility entry for the detected

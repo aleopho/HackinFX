@@ -1,53 +1,89 @@
-# What HackinFX does
+# Lighting Studio architecture
 
-## Components
+## Components and ownership
 
-`CommunityRGB.swift` provides the SwiftUI studio, hardware/setup/report views and AppKit window/menu-bar lifecycle. `SetupSupport.swift` owns Codable profiles, compatibility records and atomic on-disk confirmation queues. Python processes perform passive inventory and the narrowly scoped native driver operations. No embedded OpenRGB executable is required.
+`CommunityRGB.swift` owns the native app lifecycle, GPU Lab, reports and menu bar.
+`ControlCenter.swift` provides the lighting workspace and authenticated local
+client. `center_service.py` hosts the loopback API; `center_core.py` owns adapter
+discovery, target validation, scene storage, rendering and output workers.
 
 ```mermaid
 flowchart TD
-    UI[SwiftUI / AppKit] --> SC[scanner.py: passive PCI and driver inventory]
-    SC --> G{Exact supported profile and NVRM binding?}
-    G -->|No| R[Read-only report workflow]
-    G -->|Yes| P{Matching fully confirmed local profile?}
-    P -->|Yes| S[Lighting Studio]
-    P -->|No| T[Seven-stage visual test]
-    T --> C{User confirms every effect?}
-    C -->|No| R
-    C -->|Yes| L[Save local profile and compatibility record]
-    L --> S
-    L --> Q[Optional durable community queue]
-    Q --> W[HTTPS Worker / D1]
+    UI[SwiftUI / AppKit Lighting Studio] --> CORE[Authenticated local Core]
+    CORE --> R[Shared timeline / group renderer]
+    R --> SDK[OpenRGB SDK adapter]
+    SDK --> ENGINE[Bundled OpenRGB 1.1 macOS engine]
+    R --> USB[Native USB / HID adapters]
+    R --> GPU[Confirmed native NVIDIA adapter]
+    R --> RAM[Scoped RAM development adapter]
+    UI --> SCAN[Read-only inventory / report preview]
+    SCAN --> SEND[Explicit private HTTPS submission]
+    UI --> SNAP[Atomic Core widget snapshot]
+    SNAP --> W[WidgetKit]
 ```
 
-## Passive hardware detection
+The managed engine binds a random loopback SDK port, uses private configuration
+and is stopped with the Core. The Python SDK client negotiates its supported
+protocol and validates bounded controller data. Native ownership excludes
+conflicting OpenRGB paths so two backends do not write the same device.
+OpenRGB's compiled macOS driver set is included; a Linux/Windows catalog match
+is not evidence of an accessible macOS transport.
 
-At each program start, after the intro, `scanner.py` runs two read-only system queries: `ioreg -a -r -c IOPCIDevice` and `kextstat`, each with a timeout. It filters display-class PCI devices, records allowlisted IDs/model labels, detects an NVRM child binding and extracts selected graphics-driver identifiers/versions. Raw registry trees, device serial numbers, hostnames and kernel addresses are not exported by this scanner.
+## Shared effects
 
-GPU vendor and board vendor are distinct: NVIDIA is the GPU vendor on the development card; PNY is its board vendor. An exact bundled subsystem profile supplies the documented board name. Registry model labels can be generic or spoofed and do not prove an LED controller is present. The UI allows a user-supplied manufacturer/model; database records distinguish that correction from original detection.
+A persistent monotonic epoch drives host effects. Default mapping mirrors the
+effect per device; optional Canvas mapping incorporates placement. All frames in
+an animated synchronized group use the same timestamp. A group barrier waits for
+all commands before advancing. An exponential moving average of command duration
+helps schedule faster outputs toward common completion. USB minimum intervals
+wait instead of silently discarding a frame. Throughput follows the slowest
+output, with a maximum target of 20 Hz. Independent output mode retains bounded
+latest-frame behavior; it does not promise group alignment.
 
-A SHA-256 configuration fingerprint covers module version, architecture, OS version, selected PCI/binding information and driver versions. Incomplete inventory cannot produce a reusable fingerprint. Unsupported or ambiguous configurations cannot enable lighting. Multiple display adapters can be inventoried, but lighting requires exactly one NVRM-bound matching device.
+Command completion is not optical measurement. Firmware buffering, wireless
+latency and per-LED transmission can still differ. Hardware-only animations use
+their own clocks and are excluded from strict animated groups. Static and
+Gradient can be sent to suitable non-streaming outputs.
 
-## Native driver transport
+## Native paths
 
-`probe.py` uses Python ctypes to call the installed IOKit NVRM service. It opens control/device user clients, uses external-method selector 1 for permitted RM escapes, allocates a root/device/subdevice/I2C object chain, checks ABI sizes/alignment and validates every return/response size/RM status. Root objects and service connections are cleaned up on errors as well as successful completion. No selector-0 initialization is performed.
+- NVIDIA: exact PCI/subsystem profiles, NVRM binding and a valid user-confirmed
+  profile guard each command. The PNY three-zone path can stream host frames;
+  additional controller families retain their own limits. No arbitrary address
+  sweeps, firmware writes or flash-save operations are exposed.
+- USB/HID: bounded lighting packets for implemented LampArray, ASUS, Radius and
+  NZXT paths. ASUS keyboards receive whole-keyboard host-rendered Static packets.
+  Radius renews its acknowledged preview lease, including unchanged colors and
+  paused animation, without adding cooling/PWM or flash commands.
+- RAM: narrowly scoped Corsair/SMBus development path requiring macUSPCIO. Driver
+  presence in a package is not proof of a loaded transport or working LEDs.
 
-`rgb.py` validates the exact PCI subsystem through `profiles.py`, then reads bounded port/DCB metadata before writes. The GUI currently uses the verified RM port 1 and writes only the known PNY LED controller address/register. It sends no address sweeps, firmware updates, voltage/fan changes or general-purpose user-supplied register writes.
+The installer handles optional OpenCore transport setup separately from the app:
+actual boot identification, GPT or MBR/FAT candidates, full EFI backup,
+constrained Kernel/Add edit and rollback. It never makes RAM a universal supported
+class. Reboot and loaded-driver verification remain necessary.
 
-The verified profile uses 7-bit address `0x60` (indexed ABI address `0xc0`), register `0x02`, 100 kHz and seven-byte PNY lighting packets. Static/gradient operation writes at most one packet for each of three zone indices. Breathing, Spectrum and Wave use controller-side effects instead of a host animation loop. Calls stop at the first failure. The low-level research CLI retains explicit candidate port selection; it never switches ports automatically. The GUI is fixed to the validated port.
+## Identity, profiles and reports
 
-## Test and profile state
+Read-only inventory projects allowlisted PCI/driver and system-profiler fields.
+The native GPU fingerprint includes architecture, OS, PCI/binding and driver
+versions. Critical query failures prevent profile reuse; an optional broader
+system-inventory failure is recorded without invalidating otherwise valid GPU
+identity. Manual model corrections preserve original identity and source labels.
 
-For a supported controller without a matching full confirmation, the visible test runs red, green, blue, Gradient, Spectrum, Breathing and Wave. The last observation delay completes before asking the user. Test commands use fixed colors, brightness and speed so previous Studio selections do not alter the sequence. A transport success is recorded as a successful command, not as visual proof. Stop/failure prevents confirmation. There is no optical sensor or LED-state readback.
+Profiles/scenes live in `~/Documents/HackinFX`; Core state/logs are in Application
+Support. Community confirmations use a durable minimal queue. Troubleshooting
+reports require exact preview and explicit Send, with a server receipt. Public
+compatibility is informational, cannot load code and cannot bypass local guards.
+[Privacy and server flow](PRIVACY.md).
 
-Full user confirmation plus completed transport and a valid fingerprint saves a local profile. Basic-only legacy profiles do not bypass the full test. Failed retests suppress reuse of old confirmation. Saved profiles are scoped to the exact configuration fingerprint, not all cards with a similar marketing name. Wave remains active after the sequence; the previous controller effect cannot be restored because it is not read back.
+## Widget and lifecycle
 
-## Reports and shared compatibility
+Core state writes an atomic, bounded WidgetKit snapshot containing mode, palette,
+brightness, GPU, ready count and status. Semantic-change writes and throttled
+reload requests avoid poll churn. The widget validates data and supplies a
+fallback. System scheduling controls actual refresh, not a real-time promise.
 
-The app's private troubleshooting payload and minimal community confirmation have different HTTPS endpoints and database tables. See [privacy and report flow](PRIVACY.md). Atomic queue writes happen before old superseded queue entries are removed. A confirmation file is removed only after a matching server receipt. Failed upload stays local and retries while the app runs or on a later launch/scan.
-
-Public catalog records are informational data. They cannot install code, select an unimplemented controller or override the local PCI/transport guards. A user-reported success is useful evidence for future releases; it is not an independently audited certification.
-
-## Window and process lifecycle
-
-Closing the main window hides the Dock presence and leaves the menu-bar app running. Reopening restores the window; Quit terminates the app. Native subprocesses have watchdog termination, and scanner system queries have their own timeouts. Native effects continue on the controller after the app exits; automatic reset at quit is not implemented.
+Closing the window leaves the menu-bar app running. Quit stops Core workers and
+the managed engine; last hardware colors/onboard modes may persist. Host effects
+need the running app. CI uses fixtures and self-tests, never real lighting probes.

@@ -1,42 +1,62 @@
-# Building and validation
+# Build, tests and release validation
 
-## Native app
+## Build
 
-Use macOS with Xcode command line tools and Python 3. No third-party Python packages are required.
+Use macOS with Python 3 and full Xcode for the real WidgetKit extension. The
+application and packaged helpers target **x86_64 macOS 15+**. Command-line-tools-
+only builds omit the compiled widget and are not the complete release bundle.
 
 ```sh
+python3 tools/prepare_openrgb_runtime.py
 python3 app/build_community.py
+python3 tools/check_app_bundle.py
+python3 tools/verify_openrgb_runtime.py
+python3 app/package_installer.py
+python3 tools/verify_installer.py HackinFX-2.1.1-Installer.pkg
 python3 app/package_dmg.py
+python3 tools/verify_dmg.py HackinFX-aleopho-2.1.1.dmg
 ```
 
-The compiler targets `x86_64-apple-macos13.0` and links AppKit/SwiftUI. The build copies runtime sources/assets/licenses into `app/HackinFX.app`, embeds the corresponding source and applies a local ad-hoc codesign. Packaging creates a compressed drag-and-drop DMG in the repository root. It does not notarize the app or mount a temporary disk image while building.
+Runtime preparation is a separate network-enabled step. It verifies pinned
+OpenRGB binary/source hashes and stages the dependency closure, corresponding
+source archives and notices. Build output embeds app source and notices and
+ad-hoc signs nested code. No Developer ID or notarization is performed.
 
-Runtime dependencies are the installed NVRM service and `/usr/bin/python3`. Building does not access GPU hardware. Tests use fake transports and fixture inventories. Do not add real hardware operations to CI.
-
-## Offline tests
+## Tests
 
 ```sh
-(cd app && python3 -m unittest discover -s tests -v)
-swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests
-/tmp/hackinfx-profile-tests
+PYTHONPATH=app python3 -m unittest discover -s app/tests -v
+node app/tests/verify-radius-port.mjs
 (cd report-inbox && node --test *.test.mjs)
 (cd report-inbox && python3 -m unittest test_schema.py)
+swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests
+/tmp/hackinfx-profile-tests
+swiftc app/ReleaseVersion.swift app/tests/ReleaseVersionTests.swift -o /tmp/hackinfx-version-tests
+/tmp/hackinfx-version-tests
 ```
 
-Validated for 1.0.0: 38 Python transport/scanner tests, 18 Swift profile/queue assertions, 11 backend tests and one SQLite schema/upsert test. They cover ABI/layout, metadata-only operation, packet construction, bounded writes, guard rejection, first-failure behavior/cleanup, scanner redaction, driver fingerprint changes, exact profile matching, legacy-profile rejection, queue persistence/supersession, payload validation, receipts/deduplication and private/public separation.
+2.1.1 has **150 Python regression tests**, plus native profile/version, backend,
+protocol, catalog, bundle/signature and packaging checks. The runtime helpers
+provide offline `--self-test` modes. Tests use fixtures/simulated transports;
+never add real bus scans or lighting writes to CI.
 
-Live synthetic tests against the deployed Worker/D1 verified report receipts/retries, confirmation upsert, public aggregation and rejection of unauthenticated private report reads. A native Foundation URLSession client using the app's Codable models uploaded, retried and decoded the live catalog. Manual identity metadata was checked in D1. Synthetic records were then removed. No real private hardware report was published for these tests.
+The tested application-source commit is
+`7d5dbfe576d74371bb553c2d2cb32407a4e7eab0`:
+[successful complete build](https://github.com/aleopho/HackinFX/actions/runs/40248507390).
+The release tag additionally includes refreshed documentation, the user-supplied
+screenshot and release automation. Tagged source is the release reference.
 
-## Validation limits
+## Release process
 
-Automated checks do not establish visible LED operation. The development card's effects were visually confirmed by aleopho separately. New native first-run/dialog behavior and real DMG installation still need a normal desktop run; the development sandbox prevented native AppKit rendering. Sequoia/Tahoe appearance and sleep/wake/restart behavior are not claimed as fully validated. Release notes retain these limits.
+The release workflow runs on Intel macOS, prepares the pinned engine, executes
+checks, builds the real widget and validates PKG/DMG signatures and payloads.
+It publishes a regular GitHub release with PKG, DMG, tagged source ZIP and
+SHA-256 checksums. GPL source and bundled dependency notices remain available.
+Do not commit generated packages, personal reports, Application Support state,
+credentials or dependency caches to the source tree.
 
-The `--render-preview` and `--render-setup-preview` native app options render UI with sample hardware data when run in a normal graphical session. Such output must be captioned as a sample-data UI preview, not a live hardware screenshot.
-
-## Release checks
-
-- Run the tests and build. Check `codesign --verify --deep --strict app/HackinFX.app` and `hdiutil verify HackinFX-aleopho-1.0.0.dmg`.
-- Check version, embedded source, license notices and endpoint configuration.
-- Test the native first-run/saved-profile/failure/offline flows on real supported hardware.
-- Make SHA-256 checksums for distributable assets. Attach DMG/source/checksums to the release, with corresponding source available at the tag.
-- Publish only selected source/docs/assets, never Application Support reports, device trees, credentials, local auth folders or node_modules.
+Actual LED behavior, RAM driver load after reboot, optical group timing and
+WidgetKit desktop registration require physical testing. RAM is currently not
+working on the development machine. Automated success must never be represented
+as universal device support. Sample-data UI renders must be captioned; the 2.1.1
+README screenshot is a genuine user-provided desktop capture.

@@ -1,9 +1,14 @@
-# Native app screenshots
+# Screenshots
 
-![HackinFX Lighting Studio](images/lighting-studio-1.1.0.png)
+![HackinFX 2.1.1 Lighting Studio](images/lighting-studio-2.1.1.png)
 
-Actual HackinFX 1.1.0 desktop screenshot supplied by aleopho on 2026-10-23, showing the Lighting Studio and confirmed PNY XLR8 RTX 4080 VERTO profile. Published with the user's instruction to add it to the project. The illustration inside the app is a schematic, not live LED feedback. The capture is preserved as supplied.
+Genuine desktop screenshot supplied by aleopho on **26 October 2026 at 01:28**,
+showing HackinFX 2.1.1, the live Lighting workspace, nine effect choices and
+connected devices. Preserved as supplied. Its effect visualization represents
+requested colors; it is not an optical reading of hardware LEDs.
 
-The README's small GPU line graphic is the app logo. Additional useful captures include the Hardware/profile summary and the final visual-confirmation dialog. Hide unrelated windows, personal paths/notes and account information. Use PNG and keep text readable. If future captures use sample data, explicitly label them.
-
-The current screenshot was supplied at 08:25 on 2026-10-23. Its visible PREVIEW footer is a 1.1.0 UI-label defect corrected in 1.1.1. The supplied image is preserved without retouching.
+The README uses the current 2D RGB fan mark. Older 1.0/1.1 captures are retained
+as historical images, not as the current application appearance. Generated
+sample-data renders must be clearly labeled and never presented as hardware
+validation. Hide personal paths, notes and unrelated account information when
+contributing further screenshots.
