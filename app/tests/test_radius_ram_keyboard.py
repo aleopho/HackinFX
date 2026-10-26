@@ -145,3 +145,34 @@ class RadiusLeaseTests(unittest.TestCase):
   self.assertEqual(len(t.calls),count)
   with patch.object(radius.time,'monotonic',return_value=10.6):r.write([(255,255,255)]*38)
   self.assertGreater(len(t.calls),count)
+
+class ScopeTopologyTests(unittest.TestCase):
+ def topology(self,major=2):
+  raw=bytearray(65);raw[:3]=bytes([0,0x12,0x12]);raw[4:6]=bytes([major,3 if major==2 else 17]);return keyboard.scope_topology(0x1aae,bytes(raw))
+ def test_iso_ansi_counts_key_ids_and_spatial_map(self):
+  for major,count in ((1,101),(2,102)):
+   t=self.topology(major);self.assertEqual(len(t['keys']),count);self.assertEqual(len(t['positions']),count);self.assertEqual(len(set(k['id'] for k in t['keys'])),count)
+   self.assertTrue(all(0<=p['x']<=1 and 0<=p['y']<=1 for p in t['positions']))
+ def test_exact_usb_guard_and_unknown_layout_fall_back(self):
+  self.assertIsNone(keyboard.scope_topology(0x1ace,bytes(65)));self.assertIsNone(self.topology(7))
+ def test_per_key_packet_chunking_and_padding(self):
+  t=self.topology();colors=[(i%256,2,3) for i in range(102)];packets=keyboard.per_key_packets(t,colors)
+  self.assertEqual(len(packets),7);self.assertEqual([p[3] for p in packets],[15]*6+[12])
+  decoded=[]
+  for p in packets:
+   self.assertEqual(len(p),65);self.assertEqual(p[:3],bytes([0,0xc0,0x81]));self.assertEqual(p[4],0)
+   for j in range(p[3]):decoded.append(tuple(p[5+4*j:9+4*j]))
+   self.assertFalse(any(p[5+4*p[3]:]))
+  self.assertEqual(decoded,[(k['id'],*c) for k,c in zip(t['keys'],colors)])
+  with self.assertRaises(ValueError):keyboard.per_key_packets(t,colors[:-1])
+
+class RAMFailureDiagnosticsTests(unittest.TestCase):
+ def test_bus_failure_is_visible_in_inventory_without_reprobing(self):
+  class Failed(RAMTransport):
+   def call(self,request):
+    if request['command']=='probe':raise ValueError('RGB address 0x18 returned host error')
+    if request['command']=='diagnostics':return dict(status=8,control=72,mode='read-only-host-registers')
+    return super().call(request)
+  adapter=RAMAdapter(Failed(loaded=True),lambda:[dict(manufacturer='Corsair',part_number='CMP32',size='16 GB')])
+  with self.assertRaises(ValueError):adapter.probe()
+  rows=adapter.discover();self.assertEqual(rows[0]['status'],'probe-failed');self.assertIn('0x18',rows[0]['detail']);self.assertEqual(rows[0]['hardware_state']['status'],8);self.assertFalse(rows[0]['controllable'])

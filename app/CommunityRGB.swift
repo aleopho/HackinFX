@@ -168,10 +168,15 @@ final class Model: ObservableObject {
             self.gpuLivePending=false;self.apply()
         };gpuLiveWork=work;DispatchQueue.main.asyncAfter(deadline:.now()+0.18,execute:work)
     }
-    func apply(off: Bool = false, testHex: String? = nil, testEffect: String? = nil) {
+    func apply(off: Bool = false, testHex: String? = nil, testEffect: String? = nil, coreSuspended:Bool = false) {
         guard !busy && !scanning && !submitting && (!setupTesting || testEffect != nil) else { return }
         guard canControlLighting || (testEffect != nil && configurationStatus == "supported") else { page = "Hardware"; message = configurationReason; return }
         guard off || availableEffects.contains(testEffect ?? effect.backend) else { message = "This effect is unavailable on the detected controller."; return }
+        if !coreSuspended && center.online {
+            center.suspendForGPULab { ready in
+                if ready { self.apply(off:off,testHex:testHex,testEffect:testEffect,coreSuspended:true) } else { self.message="Could not pause shared lighting for GPU Lab. Wait for the current operation.";self.setupTesting=false }
+            };return
+        }
         busy = true; lastSuccess = nil
         let selected = testEffect ?? (off ? "off" : effect.backend)
         pendingCommand = testEffect != nil ? testPlan[min(testStep,testPlan.count-1)].0 : (off ? "Off" : effect.rawValue)
@@ -400,7 +405,7 @@ final class Model: ObservableObject {
         collectedSetup.merge(["outcome": setupState, "successful_test_steps": testStep, "transport_test_completed": testTransportOK, "visual_confirmation": setupState == "confirmed", "confirmation_source": confirmationSource] as [String: Any]) { _,new in new }
         report["setup"] = collectedSetup
         var setup = report["setup"] as? [String:Any] ?? [:]
-        setup["control_center"] = ["online":center.online,"bridge":center.state.bridge,"running":center.state.running,"frames_sent":center.state.frames,"errors":center.state.errors.map { $0.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~") },"detected_count":center.state.devices.count,"devices":center.state.devices.prefix(32).map { ["name":$0.name,"vendor":$0.vendor,"category":$0.category,"backend":$0.backend,"status":$0.status,"detail":$0.detail.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~"),"led_count":$0.led_count,"direct":$0.direct,"usb_id":$0.usb_id ?? "","driver":$0.driver ?? "","catalog_matches":$0.catalog_matches ?? []] as [String:Any] }] as [String:Any]
+        setup["control_center"] = ["performance":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(center.state.sync))) ?? [:],"online":center.online,"bridge":center.state.bridge,"running":center.state.running,"frames_sent":center.state.frames,"errors":center.state.errors.map { $0.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~") },"detected_count":center.state.devices.count,"devices":center.state.devices.prefix(32).map { ["name":$0.name,"vendor":$0.vendor,"category":$0.category,"backend":$0.backend,"status":$0.status,"detail":$0.detail.replacingOccurrences(of:FileManager.default.homeDirectoryForCurrentUser.path,with:"~"),"led_count":$0.led_count,"direct":$0.direct,"usb_id":$0.usb_id ?? "","driver":$0.driver ?? "","color_scope":$0.color_scope ?? "adapter-defined","physical_led_count":$0.physical_led_count ?? 0,"topology_source":$0.topology_source ?? "","hardware_state":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode($0.hardware_state))) ?? [:],"catalog_matches":$0.catalog_matches ?? []] as [String:Any] }] as [String:Any]
         report["setup"] = setup
         report["lighting_evidence"] = lightingEvidence
         if setupState == "confirmed" { report["led_availability"] = "User-confirmed basic RGB (\(confirmationSource))" }
@@ -847,7 +852,7 @@ struct Credits: View {
                     Link("NullMoth / project and license", destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
                     Divider()
                     Text("OpenRGB").font(.headline)
-                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. GPL version 2 compatible; per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work. Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. GPL version 2 compatible; per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work; wired Scope II 96 per-key packets and layouts are adapted from Mola19 and OpenRGB contributors (GPL-2.0-or-later). Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
                     Link("OpenRGB / PNY controller", destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
                     Divider()
                     Text("NVIDIA").font(.headline)
@@ -916,6 +921,30 @@ struct StartupScanView: View {
         }.frame(maxWidth:.infinity,maxHeight:.infinity).background(ink.opacity(0.985))
     }
 }
+
+struct FeedbackWorkspace:View {
+    @ObservedObject var model:Model
+    var body:some View {
+        VStack(alignment:.leading,spacing:22) {
+            VStack(alignment:.leading,spacing:9) { Text("COMMUNITY / FEEDBACK").font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2).foregroundColor(accent);Text("Help improve your setup").font(.system(size:30,weight:.semibold,design:.rounded));Text("Tell us what fails. HackinFX attaches a fresh hardware scan and device diagnostics for your review.").foregroundColor(muted) }
+            Card {
+                VStack(alignment:.leading,spacing:14) {
+                    HStack { Label("Compatibility report",systemImage:"bubble.left.and.text.bubble.right").font(.headline);Spacer();Tag(title:"REVIEW BEFORE SENDING") }
+                    TextField("Affected device / exact model (optional)",text:$model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() }
+                    Text("What did you expect, and what happened?").font(.system(size:12,weight:.medium))
+                    TextEditor(text:$model.observedBehavior).onChange(of:model.observedBehavior) { model.feedbackChanged() }.font(.system(size:13)).frame(minHeight:160).padding(8).background(.white.opacity(0.025)).clipShape(RoundedRectangle(cornerRadius:10))
+                    Text("Include connection mode, the effect, and steps to reproduce. Notes are sent as typed.").font(.system(size:10)).foregroundColor(muted)
+                    HStack { Button(model.scanning ? "Collecting hardware…" : "Scan & review report…",action:model.prepareFeedback).buttonStyle(.borderedProminent).disabled(model.working || model.observedBehavior.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty);Button("Export diagnostics…",action:model.exportDiagnostics).disabled(model.scanJSON.isEmpty || model.working);Spacer();if model.scanning { ProgressView().controlSize(.small) } }
+                    if !model.submissionMessage.isEmpty { Text(model.submissionMessage).font(.system(size:11)).textSelection(.enabled) }
+                }
+            }
+            Card {
+                VStack(alignment:.leading,spacing:11) { Label("Included with your report",systemImage:"doc.text.magnifyingglass").font(.headline);Text("CPU, memory, USB, PCI and storage specifications; detected lighting devices, output performance and errors. Missing query results are marked explicitly.").foregroundColor(muted);Text("Automatic inventory excludes serial numbers, raw trees, volume labels and mount paths. Nothing uploads before you review the JSON and choose Send.").font(.system(size:11)).foregroundColor(muted);Text(model.scanSummary).font(.system(size:10,design:.monospaced)).foregroundColor(muted) }
+            }
+        }.buttonStyle(PressFeedbackStyle())
+    }
+}
+
 struct Root: View {
     @ObservedObject var model: Model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -925,7 +954,7 @@ struct Root: View {
             Rectangle().fill(.white.opacity(0.06)).frame(width:1)
             VStack(spacing:0) {
                 HStack(spacing:8) { Text("HACKINFX").foregroundColor(muted);Text("/").foregroundColor(muted.opacity(0.4));Text(model.page.uppercased());Spacer();Text("x86-64 / LOCAL WORKSPACE").foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
-                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
+                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Feedback" { FeedbackWorkspace(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
                 if model.page == "Studio" { StudioFooter(model:model) }
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
         }.frame(minWidth:1050,minHeight:760).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)

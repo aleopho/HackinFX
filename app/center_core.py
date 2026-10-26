@@ -52,17 +52,23 @@ def scene_config(value):
     if mapping not in ('mirror','canvas'):raise ValueError('Invalid effect mapping')
     axis=value.get('axis','x')
     if axis not in ('x','y'):raise ValueError('Invalid scene axis')
-    return dict(mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
+    policy=value.get('sync_policy','adaptive')
+    if policy not in ('adaptive','lockstep'):raise ValueError('Invalid synchronization policy')
+    fps=number(value.get('fps',30),1,120)
+    return dict(fps=fps,sync_policy=policy,mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
 
 
 def frame(scene,count,position,elapsed):
     palette=[color(v) for v in scene['palette']];out=[]
     speed=scene['speed']/100;brightness=scene['brightness']/100
     for index in range(count):
-        local=index/max(1,count-1)
+        locations=position.get('led_positions',[])
+        point=locations[index] if len(locations)==count else None
+        local=point['x'] if point else index/max(1,count-1)
+        local_y=point['y'] if point else local
         x=position.get('x',0.5)+(local-0.5)*position.get('width',0.3)
-        y=position.get('y',0.5)
-        coord=local if scene.get('mapping','canvas')=='mirror' else x if scene['axis']=='x' else y
+        y=position.get('y',0.5)+((local_y-.5)*position.get('width',.3) if point else 0)
+        coord=(local if scene['axis']=='x' else local_y) if scene.get('mapping','canvas')=='mirror' else x if scene['axis']=='x' else y
         phase=(elapsed*speed*0.25+coord)%1
         mode=scene['mode']
         if mode=='spectrum':rgb=tuple(round(c*255) for c in colorsys.hsv_to_rgb((elapsed*speed*0.2)%1,0.8,1))
@@ -110,9 +116,10 @@ def project_usb(tree):
 
 
 class NativeGPU:
-    def __init__(self,profiles_dir):self.profiles_dir=Path(profiles_dir);self.identities={}
+    def __init__(self,profiles_dir):self.profiles_dir=Path(profiles_dir);self.identities={};self.streams={}
     def discover(self):
         import scanner,profiles
+        self.close()
         report=scanner.collect();rows=[];self.identities={}
         fp=report.get('configuration_fingerprint')
         for index,adapter in enumerate(report.get('adapters',[])):
@@ -136,6 +143,11 @@ class NativeGPU:
         saved=json.loads((self.profiles_dir/('profile-'+fp+'.json')).read_text())
         if saved.get('fingerprint')!=fp or saved.get('userConfirmed') is not True or not set(profile.effects).issubset(set(saved.get('verifiedEffects',[]))):raise ValueError('Native GPU confirmation changed; rescan and confirm again')
         if mode not in device['static_modes']:raise ValueError('Native GPU does not support this shared scene')
+        if device.get('host_stream'):
+            from gpu_stream import Client
+            if device['id'] not in self.streams:self.streams[device['id']]=Client(self.profiles_dir,fp,profile.key)
+            self.streams[device['id']].write(colors)
+            return
         path=self.profiles_dir/'CoreReports'/('rgb-'+uuid.uuid4().hex+'.json');path.parent.mkdir(parents=True,exist_ok=True)
         hexes=[''.join('%02x'%v for v in c) for c in colors]
         args=['/usr/bin/python3','-B',str(Path(__file__).with_name('rgb.py')),'--apply','--port',str(profile.port),'--expected-profile',profile.key,'--led','all','--effect',mode,'--color',hexes[0],'--brightness','255','--output',str(path)]
@@ -146,6 +158,10 @@ class NativeGPU:
             for old in failed[:-12]:old.unlink(missing_ok=True)
             raise RuntimeError('Native GPU command failed; inspect its local CoreReports diagnostic')
         path.unlink(missing_ok=True) # Successful streamed frames must not grow a report archive.
+
+    def close(self):
+        for stream in self.streams.values():stream.close()
+        self.streams={}
 
 
 class OpenRGBAdapter:
@@ -167,7 +183,9 @@ class NativeGPUAdapter:
     def discover(self):return self.driver.discover()
     def activate(self,device):pass  # A native static request is a single bounded transaction group.
     def write_frame(self,device,colors,mode):self.driver.apply(device,colors,'gradient' if device.get('host_stream') else mode)
-    def close(self):pass
+    def release(self):
+        if hasattr(self.driver,'close'):self.driver.close()
+    def close(self):self.release()
 
 
 class AdapterRegistry:
@@ -194,7 +212,7 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -204,8 +222,11 @@ class Center:
             for row in saved.get('scenes',[])[:64]:
                 if isinstance(row,dict) and isinstance(row.get('name'),str):self.scenes.append(dict(name=row['name'][:60],config=scene_config(row['config'])))
         except (OSError,ValueError,KeyError,TypeError):pass
+    def performance(self):
+        now=time.monotonic()
+        return {key:dict(frames=v['frames'],fps=round(v['fps'],1),command_ms=round(v['latency']*1000,2),age_ms=round(max(0,now-v['last'])*1000),missed=v['missed']) for key,v in self.output_stats.items()}
     def status(self):
-        with self.lock:return dict(schema=1,devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats))
+        with self.lock:return dict(schema=1,devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
     def refresh(self,inventory=True):
         with self.operation:
             self.stop();self.leased_frames={};rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
@@ -252,6 +273,8 @@ class Center:
             if worker and worker is not threading.current_thread():worker.join(timeout=35)
             if worker and worker.is_alive():raise RuntimeError('A controller is still responding; retry after it stops')
             with self.lock:self.running=False;self.worker=None
+            native=self.registry.adapters.get('native')
+            if native and hasattr(native,'release'):native.release()
     def probe_ram(self):
         with self.operation:
             self.stop()
@@ -259,7 +282,9 @@ class Center:
             if adapter is None:raise ValueError('Native RAM adapter is unavailable')
             if self.engine:
                 self.sdk.close();self.engine.claim_native_ram()
-            adapter.probe()
+            try:adapter.probe()
+            except Exception:
+                self.refresh();raise
             return self.refresh()
     def initialize(self,inventory=True):
         # Exactly once per Core session; later discovery never resets a user's colors.
@@ -302,7 +327,7 @@ class Center:
                             except Exception:pass
                     self.message='Could not activate all targets. Some devices may already be in Direct mode.'
                     raise
-            with self.lock:self.scene=config;self.running=True;self.frames=0;self.errors=activation_errors;self.message='Scene active; commands sent, not live LED readback'
+            with self.lock:self.scene=config;self.running=True;self.frames=0;self.output_stats={};self.errors=activation_errors;self.message='Scene active; commands sent, not live LED readback'
             self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
     def render(self,targets,config,event):
@@ -316,11 +341,14 @@ class Center:
                     self.errors=(self.errors+[targets_by_id[key]['name']+': '+str(exc)])[-12:]
                     for device in self.devices:
                         if device['id']==key:device.update(status='command-failed',controllable=False,detail=str(exc))
+            if not animated and targets_by_id[key]['backend']=='native':
+                adapter=self.registry.adapters.get('native')
+                if adapter and hasattr(adapter,'release'):adapter.release()
             if config['mode'] in targets_by_id[key].get('onboard_modes',[]):active.pop(key,None)
         targets_by_id={d['id']:d for d in targets}
         try:
             while active and not event.is_set():
-                tick=time.monotonic();grouped=animated and config['synchronized']
+                tick=time.monotonic();grouped=animated and config['synchronized'] and config['sync_policy']=='lockstep'
                 latency=max([self.output_latencies.get(key,.05) for key in active]+[.05]) if grouped else 0
                 presentation=tick+latency;elapsed=presentation-self.clock_started
                 for key,future in list(pending.items()):
@@ -330,10 +358,13 @@ class Center:
                 for key,target in list(active.items()):
                     if not animated and key in last_sent and (not target.get('refresh_interval') or tick-last_sent[key]<target['refresh_interval']):continue
                     if key in pending:
-                        with self.lock:self.sync_stats['dropped']+=1
+                        with self.lock:
+                            self.sync_stats['dropped']+=1
+                            if key in self.output_stats:self.output_stats[key]['missed']+=1
                         continue # Bounded latest-frame policy; never queue stale frames.
                     mode='static' if config['mode'] in target.get('onboard_modes',[]) else config['mode']
-                    pixels=frame(dict(config,mode=mode),target['led_count'],self.layout[key],elapsed)
+                    sample_time=(tick+min(.25,self.output_latencies.get(key,0))-self.clock_started) if animated and config['synchronized'] and not grouped else elapsed
+                    pixels=frame(dict(config,mode=mode),target['led_count'],dict(self.layout[key],led_positions=target.get('led_positions',[])),sample_time)
                     frames.append((key,target,pixels))
                 for key,target,pixels in frames:
                     if event.is_set():break
@@ -342,10 +373,12 @@ class Center:
                     for key,future in list(pending.items()):collect(key,future);del pending[key]
                 with self.lock:self.frames+=1;self.sync_stats['frames']+=1
                 if not animated and not any(d.get('refresh_interval') for d in active.values()):break
-                event.wait(max(0,.05-(time.monotonic()-tick)))
+                event.wait(max(0,1/config['fps']-(time.monotonic()-tick)))
             for key,future in list(pending.items()):collect(key,future)
         finally:
             pool.shutdown(wait=True)
+            native=self.registry.adapters.get('native')
+            if native and hasattr(native,'release'):native.release()
             with self.lock:
                 self.running=False
                 self.message='Some outputs failed; inspect device details.' if self.errors else 'Shared-clock streaming paused; last colors kept.' if animated else 'Static colors sent.'
@@ -358,8 +391,14 @@ class Center:
         started=time.monotonic()
         self.registry.write_frame(target,pixels,mode)
         measured=time.monotonic()-started
-        previous=self.output_latencies.get(target['id'],measured)
-        self.output_latencies[target['id']]=.5*previous+.5*measured
+        key=target['id'];now=time.monotonic()
+        with self.lock:
+            previous=self.output_latencies.get(key,measured)
+            self.output_latencies[key]=.2*measured+.8*previous
+            old=self.output_stats.get(key)
+            interval=now-old['last'] if old else 0
+            observed=1/interval if interval>0 else 0
+            self.output_stats[key]=dict(frames=(old['frames']+1 if old else 1),fps=(.2*observed+.8*old['fps'] if old and old['fps'] else observed),latency=self.output_latencies[key],last=now,missed=old['missed'] if old else 0)
         if target.get('refresh_interval'):
             with self.lock:self.leased_frames[target['id']]=list(pixels)
     def pause(self):

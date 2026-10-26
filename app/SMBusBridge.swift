@@ -37,6 +37,10 @@ final class CorsairBus {
         let config=try scalar(2,[0x40]);guard config&1 != 0,config&2==0 else { try reject("SMBus host disabled or SMI-owned; host settings are left unchanged") }
         let bar=try scalar(3,[0x20]);guard bar&1==1,bar&0xfffe>=0x100,bar&0xfffe != 0xfffe else { try reject("Invalid SMBus I/O BAR") };base=UInt16(bar&0xfffe)
     }
+    func diagnostics()throws->[String:Any] {
+        try open()
+        return ["host":"8086:7f23","status":Int(try readPort(0)),"control":Int(try readPort(2)),"address_register":Int(try readPort(4)),"session_failed":failed,"mode":"read-only-host-registers"]
+    }
     func readPort(_ offset:UInt16)throws->UInt8 { UInt8(try scalar(0,[UInt64(base+offset)])&255) }
     func writePort(_ offset:UInt16,_ value:UInt8)throws { _=try scalar(1,[UInt64(base+offset),UInt64(value)]) }
     func transaction(_ address:UInt8,_ register:UInt8,_ value:UInt8?=nil)throws->UInt8 {
@@ -51,15 +55,18 @@ final class CorsairBus {
             let status=try readPort(0)
             if status&1==0 && status&0x1e != 0 {
                 try writePort(0,status&0x1e)
-                if status&0x1c != 0 { if status&0x18 != 0 { failed=true };try reject("SMBus target NACK / bus error") }
+                if status&0x1c != 0 { if status&0x18 != 0 { failed=true };try reject(String(format:"SMBus RGB address 0x%02x register 0x%02x returned status 0x%02x (NACK/bus error); no reset",address,register,status)) }
                 return try readPort(5)
             };usleep(1000)
         }
-        failed=true;try reject("SMBus transaction timed out; no automatic retry or host reset")
+        failed=true;let status=try readPort(0);let control=try readPort(2);try reject(String(format:"SMBus timeout at RGB address 0x%02x register 0x%02x (status 0x%02x, control 0x%02x); no retry/reset",address,register,status,control))
     }
     func identify(_ address:UInt8)throws->[String:Any]? {
         guard [UInt8](0x18...0x1f).contains(address) || [UInt8](0x58...0x5f).contains(address) else { try reject("Address outside documented Corsair lighting ranges") }
-        guard let a=try? transaction(address,0x43),[0x1a,0x1b,0x1c].contains(a),let b=try? transaction(address,0x44),[1,3,4].contains(b) else { return nil }
+        let a:UInt8;let b:UInt8
+        do { a=try transaction(address,0x43);guard [0x1a,0x1b,0x1c].contains(a) else { return nil };b=try transaction(address,0x44) }
+        catch { if failed { throw error };return nil }
+        guard [1,3,4].contains(b) else { return nil }
         _=try transaction(address,0x61,0);_=try transaction(address,0x21,0)
         var bytes=[UInt8]();for _ in 0..<32 { bytes.append(try transaction(address,0x40)) }
         guard crc8(bytes)==(try transaction(address,0x42)) else { try reject("Corsair device-info CRC mismatch") }
@@ -70,7 +77,7 @@ final class CorsairBus {
     }
     func probe()throws->[[String:Any]] {
         try open();verified=[];var rows=[[String:Any]]()
-        for address in Array(UInt8(0x18)...UInt8(0x1f))+Array(UInt8(0x58)...UInt8(0x5f)) { if let row=try identify(address) { rows.append(row) };if failed { try reject("SMBus probe stopped after timeout") } }
+        for address in Array(UInt8(0x18)...UInt8(0x1f))+Array(UInt8(0x58)...UInt8(0x5f)) { if let row=try identify(address) { rows.append(row) };if failed { try reject("SMBus RGB identity probe stopped after a host/bus error; no lighting commands sent") } }
         return rows
     }
     func color(_ address:UInt8,_ rgb:[Int])throws {
@@ -105,6 +112,7 @@ while let line=readLine() {
         guard line.utf8.count<=4096,let request=try JSONSerialization.jsonObject(with:Data(line.utf8)) as? [String:Any] else { try reject("Invalid RAM request") }
         let command=request["command"] as? String ?? "";var result:[String:Any]
         if command=="status" { let service=driverService();let loaded=service != 0;if loaded { IOObjectRelease(service) };result=["controllers":controllers(),"driver_loaded":loaded,"transport":"Intel i801 / macUSPCIO","mode":"preflight-only"] }
+        else if command=="diagnostics" { result=try bus.diagnostics() }
         else {
             guard locked else { try reject("Another HackinFX RAM session owns the bus") }
             if command=="probe" { result=["devices":try bus.probe()] }

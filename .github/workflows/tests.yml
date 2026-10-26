@@ -16,6 +16,8 @@ jobs:
       - run: python3 -m unittest discover -s tests -v
         working-directory: app
       - run: node app/tests/verify-radius-port.mjs
+      - run: python3 tools/import_asus_scope_layouts.py
+      - run: git diff --exit-code -- app/asus_scope_layouts.json
       - run: python3 tools/import_openrgb_usb_catalog.py
       - run: git diff --exit-code -- app/openrgb_usb_catalog.json
       - run: node --test *.test.mjs
@@ -50,14 +52,14 @@ jobs:
       - run: codesign --verify --deep --strict app/HackinFX.app
       - run: python3 tools/check_app_bundle.py
       - run: python3 app/package_installer.py
-      - run: python3 tools/verify_installer.py HackinFX-2.1.1-Installer.pkg
+      - run: python3 tools/verify_installer.py HackinFX-2.2.0-Installer.pkg
       - run: python3 app/package_dmg.py
-      - run: hdiutil verify HackinFX-aleopho-2.1.1.dmg
-      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.1.1.dmg
+      - run: hdiutil verify HackinFX-aleopho-2.2.0.dmg
+      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.2.0.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.1.1-with-WidgetKit
+          name: HackinFX-2.2.0-with-WidgetKit
           path: |
-            HackinFX-aleopho-2.1.1.dmg
-            HackinFX-2.1.1-Installer.pkg
+            HackinFX-aleopho-2.2.0.dmg
+            HackinFX-2.2.0-Installer.pkg
           retention-days: 14

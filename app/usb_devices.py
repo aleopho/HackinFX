@@ -88,6 +88,8 @@ class HIDTransport:
         return data
     def send(self,handle,packet,feature=False):
         return self.call(dict(command='feature_set' if feature else 'output',handle=handle,report_id=packet[0],data=base64.b64encode(packet).decode()))
+    def send_batch(self,handle,packets):
+        return self.call(dict(command='output_batch',handle=handle,report_id=0,packets=[base64.b64encode(p).decode() for p in packets]))
     def exchange(self,handle,packet):
         reply=self.call(dict(command='exchange',handle=handle,report_id=packet[0],data=base64.b64encode(packet).decode()))
         return base64.b64decode(reply['data'],validate=True)
@@ -138,6 +140,8 @@ class NativeUSBAdapter:
             if keyboard:
                 kind='asus-keyboard';count=1;category='keyboard';direct=False
                 if keyboard['error']:status='setup-required';detail=keyboard['error']
+                elif record.get('keyboard_topology'):
+                    count=len(record['keyboard_topology']['keys']);direct=True;detail='Per-key RGB from exact OpenRGB Scope II 96 layout and device layout reply. Confirm physical key mapping.'
                 else:detail='Host-streamed whole-keyboard RGB. Shared timing uses volatile Static color packets; per-key mapping is not implemented.'
             elif vid==0x36bc and pid==0x1003 and page==0xff00 and record['usage']==1 and record.get('interface')==0:
                 kind='radius';category='cooler';record['radius']=radius_protocol.Radius(self.transport,handle)
@@ -177,7 +181,11 @@ class NativeUSBAdapter:
             if kind=='radius':row['zones']=[dict(name='Pump' if z['id']==1 else 'Fan RGB %02X'%z['id'],led_count=z['count']) for z in record.get('radius_zones',[])]
             if kind=='asus-keyboard':
                 row.update(direct=True,static_modes=['static','gradient'],onboard_modes=[])
-                row['zones']=[dict(name='Whole keyboard (onboard effects)',led_count=1)]
+                row['zones']=[dict(name='Keyboard · per-key RGB' if record.get('keyboard_topology') else 'Whole keyboard · one color zone',led_count=count)]
+                row['color_scope']='per-led' if record.get('keyboard_topology') else 'whole-device'
+                row['physical_led_count']=count if record.get('keyboard_topology') else None
+                if record.get('keyboard_topology'):
+                    row['led_positions']=record['keyboard_topology']['positions'];row['topology_source']=record['keyboard_topology']['source'];row['layout']=record['keyboard_topology']['layout']
             rows.append(row);claimed.add(record['physical_id']);self.records[key]=dict(record,kind=kind,reports=reports,count=count)
         usb={r['physical_id']:r for r in snapshot.get('usb',[])}
         for physical,records in groups.items():
@@ -209,6 +217,12 @@ class NativeUSBAdapter:
         if record['kind']=='radius':
             record['radius'].write(colors);return
         if record['kind']=='asus-keyboard':
+            if record.get('keyboard_topology'):
+                packets=asus_keyboard.per_key_packets(record['keyboard_topology'],colors)
+                if hasattr(self.transport,'send_batch'):self.transport.send_batch(record['handle'],packets)
+                else:
+                    for packet in packets:self.transport.send(record['handle'],packet)
+                return
             brightness=100
             self.transport.send(record['handle'],asus_keyboard.effect_packet('static',colors[0],brightness,record.get('keyboard_report_id',2),record.get('keyboard_length',64)));return
         if record['kind']=='asus-spatha':
