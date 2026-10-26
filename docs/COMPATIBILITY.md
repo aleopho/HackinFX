@@ -39,7 +39,7 @@ transport and visual user confirmation are required before native profile reuse.
 | ASUS ROG Strix Scope II 96 Wireless, USB path | Ready in the current desktop capture; whole-keyboard RGB path, no per-key claim |
 | GIGABYTE HID LampArray | User-reported working; other boards need their own validation |
 | Fractal Design Radius | User-reported working; preview renewal and physical timing need broader tests |
-| Corsair Titanium / SMBus development path | **RAM not working on the development system as of this release** |
+| Corsair Titanium / SMBus development path | Four Titanium PID 0801 / protocol 4 DIMMs on Intel 8086:7f23 + macUSPCIO visibly confirmed: Static mint, separate LED regions and paced Twinkle (16.65 FPS per DIMM in the short test). Other hosts/kits unverified |
 | NZXT Kraken X2/M2 and other OpenRGB devices | Included paths where available, not physically verified by this project |
 
 An active command/frame counter reports commands, not light emitted by LEDs.

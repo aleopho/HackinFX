@@ -17,7 +17,7 @@ app. No separate OpenRGB install is required. Native drivers reserve matching
 controllers to avoid concurrent writes. Devices need a real working controller;
 identity catalog entries alone cannot enable control.
 
-Ready scene-capable devices start white at 100% once per app/Core session.
+Ready non-RAM devices start mint Twinkle at 65% speed once per app/Core session. RAM requires explicit probe and selection.
 Unconfirmed native GPUs and inventory-only devices are not written. Live edits
 replace the Apply step. Static, Gradient, Spectrum, Breathing, Wave, Aurora,
 Comet, Twinkle and Color shift are available according to device capabilities.

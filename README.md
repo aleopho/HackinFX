@@ -8,8 +8,10 @@ coolers into one native **Lighting Studio**. Built for **macOS 15 or later** on
 **x86-64 Hackintoshes with Intel or AMD CPUs**, it combines the bundled
 **OpenRGB 1.1 macOS engine** with native NVIDIA and USB/HID adapters.
 
-**Current release: [2.1.1](https://github.com/aleopho/HackinFX/releases/tag/v2.1.1).**
-RAM RGB is under development and is **not yet working on the development system**.
+**Current release: [2.2.1](https://github.com/aleopho/HackinFX/releases/tag/v2.2.1).**
+Corsair Dominator Titanium DDR5 RGB is now physically confirmed on the scoped
+Intel 8086:7f23 / macUSPCIO path: four DIMMs, twelve LEDs each, paced mint Twinkle.
+This is not generic RAM or chipset support.
 Apple Silicon is outside the current target.
 
 ![HackinFX 2.1.1 Lighting Studio with live connected devices](docs/images/lighting-studio-2.1.1.png)
@@ -22,9 +24,10 @@ visualization shows requested colors, not optical LED feedback.
 - **Live lighting:** Static, Gradient, Spectrum, Breathing, Wave, Aurora, Comet,
   Twinkle and Color shift, with palette, brightness and tempo controls. Changes
   apply automatically; there is no Apply button.
-- **Shared effects:** mirrored group output uses a shared timeline and frame
-  barrier. Faster outputs are delayed using measured command durations; the
-  slowest device sets group throughput. Actual LED timing depends on hardware.
+- **Shared effects:** adaptive output follows a common timeline with bounded
+  pending frames and measured per-device latency. Slower outputs do not stall
+  faster devices. Optional lockstep uses a frame barrier. Visible timing still
+  depends on hardware; exact physical synchronization is not guaranteed.
 - **Canvas:** arrange devices in a shared effect space or mirror a look across
   the setup. Only outputs with a suitable streaming path join animated groups.
 - **Effect Studio:** edit palettes and effect parameters, preview and save looks.
@@ -32,7 +35,8 @@ visualization shows requested colors, not optical LED feedback.
   start locally with HackinFX. No separate OpenRGB installation or account.
 - **Native paths:** confirmed NVIDIA profiles, HID LampArray, ASUS Spatha X,
   ASUS keyboard whole-board color, Fractal Radius and scoped NZXT support.
-- **Daily use:** launch at login, white on app/login startup, persistent menu-bar
+- **Daily use:** launch at login, mint Twinkle at 65% speed on app/login startup
+  for ready non-RAM devices, persistent menu-bar
   controls and software-update checks. Closing the window keeps lighting active.
 - **Diagnostics & feedback:** fresh hardware specifications, device status and
   your description, reviewed before private submission; JSON export remains available.
@@ -41,12 +45,14 @@ visualization shows requested colors, not optical LED feedback.
 
 ## Install
 
-Download the **[2.1.1 installer](https://github.com/aleopho/HackinFX/releases/download/v2.1.1/HackinFX-2.1.1-Installer.pkg)**,
+Download the **[2.2.1 installer](https://github.com/aleopho/HackinFX/releases/download/v2.2.1/HackinFX-2.2.1-Installer.pkg)**,
 quit older copies and install into **Applications**. A DMG is also available.
 Launch the installed app, let discovery finish and inspect **Devices** for ready
-outputs or setup requirements. Ready devices are selected and set to white at
-100% once per app/Core session. Login startup applies white after sign-in, not
-before the macOS login screen.
+outputs or setup requirements. Ready non-RAM devices start mint Twinkle at
+65% speed once per app/Core session, after macOS sign-in. RAM requires explicit
+**Devices → Memory details → Probe RAM RGB**, then selection in Lighting.
+For the confirmed setup, start RAM at 40% brightness. Status polling preserves
+manual RAM selection. No RAM colors are automatically applied at startup.
 
 Requirements:
 
@@ -77,11 +83,13 @@ Developer ID or notarization. macOS may require approval for downloaded software
 | Mice | OpenRGB macOS drivers and native ASUS Spatha X | Spatha X user-reported working; connection mode and firmware can differ |
 | Mainboards / controllers | OpenRGB macOS drivers and native HID LampArray | Development GIGABYTE LampArray user-reported working; no universal board claim |
 | USB cooling / lighting | OpenRGB macOS drivers, native Fractal Radius and NZXT Kraken X2/M2 paths | Radius user-reported working; sustained color and timing need broader firmware testing; NZXT not physically verified here |
-| DRAM | Scoped Corsair Titanium / SMBus development path and available OpenRGB paths | **Not yet working on the development system. No general RAM support claim.** |
+| DRAM | Corsair Dominator Titanium PID 0801 / protocol 4, Intel 8086:7f23 + macUSPCIO | Four DIMMs, 12 LEDs each, separate RGB regions and mint Twinkle physically confirmed; 16.65 completed FPS per DIMM in an eight-second test. Other kits/chipsets remain unverified. |
 
 The OpenRGB identity catalogs help name devices. They do not download drivers,
 turn every catalog entry into a controllable output or bypass exact native
-hardware guards. [Compatibility details and contribution process](docs/COMPATIBILITY.md).
+hardware guards. Automatic generic OpenRGB SMBus detectors are disabled pending
+transport review; bundled USB/HID drivers and scoped native GPU/RAM paths remain
+available. [Compatibility details and contribution process](docs/COMPATIBILITY.md).
 
 ## Profiles, feedback and privacy
 
@@ -91,7 +99,7 @@ Native GPU Lab tests implemented controllers and saves a reusable profile only
 after successful calls and your visual confirmation. Manual identity corrections
 retain the original detected PCI identity.
 
-Under **Advanced → Diagnostics**, describe the problem in **Feedback &
+Under **Feedback** in the sidebar, describe the problem in **Feedback &
 compatibility**, then choose **Scan & submit feedback…**. A fresh read-only scan
 attaches allowlisted CPU, RAM, USB, PCI and storage specifications, alongside
 Core device/error details. Review the JSON before sending. Serials, raw device
