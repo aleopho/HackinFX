@@ -40,13 +40,14 @@ jobs:
       - name: Render native Control Center design check
         continue-on-error: true
         run: |
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-2.0-design.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.0-scenes.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-2.0-devices.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-2.2.0-design.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.2.0-scenes.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-2.2.0-devices.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-2.2.0-feedback.png
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.0-design-check-sample-data
-          path: HackinFX-2.0-*.png
+          name: HackinFX-2.2.0-design-check-sample-data
+          path: HackinFX-2.2.0-*.png
           if-no-files-found: ignore
           retention-days: 14
       - run: codesign --verify --deep --strict app/HackinFX.app

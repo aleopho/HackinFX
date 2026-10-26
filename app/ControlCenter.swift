@@ -610,7 +610,7 @@ private struct CenterDeviceInspector:View {
     let device:CenterDevice
     @Environment(\.dismiss) var dismiss
     var body:some View {
-        VStack(alignment:.leading,spacing:19) {
+        ScrollView { VStack(alignment:.leading,spacing:19) {
             HStack { Image(systemName:device.symbol).font(.system(size:30,weight:.light)).foregroundStyle(CenterTheme.accent);Spacer();CenterBadge(text:device.backend,good:device.controllable) }
             Text(device.name).font(.system(size:23,weight:.semibold,design:.rounded))
             Text(device.vendor+" · "+device.categoryLabel).foregroundStyle(CenterTheme.muted)
@@ -632,7 +632,7 @@ private struct CenterDeviceInspector:View {
             if let modes=device.modes,!modes.isEmpty { Text("Hardware modes: "+modes.prefix(12).map { $0.name }.joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
             Text("Connection readiness is not a physical lighting confirmation.").font(.caption).foregroundStyle(CenterTheme.muted)
             HStack { Spacer();Button("Close") { dismiss() }.keyboardShortcut(.cancelAction) }
-        }.padding(28).frame(width:510).background(CenterTheme.background).foregroundStyle(.white).preferredColorScheme(.dark)
+        }.padding(28) }.frame(width:566,height:650).background(CenterTheme.background).foregroundStyle(.white).preferredColorScheme(.dark)
     }
 }
 

@@ -1014,6 +1014,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
         let effectItem = menu.addItem(withTitle:"GPU effects", action:nil, keyEquivalent:""); effectItem.submenu = effects
         menu.addItem(NSMenuItem.separator())
+        add(menu,"Feedback…",#selector(feedback))
         scanItem = add(menu,"Scan hardware…",#selector(scan))
         exportItem = add(menu,"Export diagnostics…",#selector(exportScan))
         add(menu,"Open reports folder",#selector(reports))
@@ -1070,6 +1071,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     @objc func applyCurrent() { model.apply() }
     @objc func turnOff() { model.apply(off:true) }
     @objc func selectEffect(_ sender: NSMenuItem) { guard !model.working && model.canControlLighting else { return }; model.effect = Lighting.allCases[sender.tag]; model.apply() }
+    @objc func feedback() { model.page="Feedback";show() }
     @objc func scan() { model.page = "Hardware"; show(); model.scanHardware() }
     @objc func exportScan() { model.exportDiagnostics() }
     @objc func reports() {
@@ -1085,13 +1087,13 @@ struct HackinFXMain {
     static func main() throws {
 UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
 let app = NSApplication.shared
-if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes"].contains(CommandLine.arguments[1]) {
+if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes","--render-center-feedback"].contains(CommandLine.arguments[1]) {
     app.setActivationPolicy(.prohibited)
     app.appearance = NSAppearance(named: .darkAqua)
     let preview = Model(); preview.launching = false; preview.page = "Studio"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
-    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
+    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
     let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text("SAMPLE DATA · DESIGN CHECK").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
     let view = NSHostingView(rootView:labeled)
