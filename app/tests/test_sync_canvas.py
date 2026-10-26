@@ -69,34 +69,36 @@ class LeasePauseTests(unittest.TestCase):
  def test_pause_keeps_static_preview_lease_alive(self):
   class Adapter:
    name='fixture'
-   def __init__(self):self.calls=[]
+   def __init__(self):self.calls=[];self.written=threading.Event()
    def discover(self):return [dict(device(),id='r',refresh_interval=.02)]
    def activate(self,d):pass
    def close(self):pass
-   def write_frame(self,d,pixels,mode):self.calls.append(pixels)
+   def write_frame(self,d,pixels,mode):self.calls.append(pixels);self.written.set()
   with tempfile.TemporaryDirectory() as folder:
    a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
-   c.start(dict(devices=['r'],config=dict(mode='static',palette=['ffffff'])));time.sleep(.07);c.pause();count=len(a.calls);time.sleep(.6)
+   c.start(dict(devices=['r'],config=dict(mode='static',palette=['ffffff'])));self.assertTrue(a.written.wait(3));c.pause();count=len(a.calls);a.written.clear();self.assertTrue(a.written.wait(3))
    self.assertGreater(len(a.calls),count);self.assertFalse(c.running);c.close()
 
 class GroupBarrierTests(unittest.TestCase):
  def test_group_never_advances_before_slowest_output_finishes(self):
   class Adapter:
    name='fixture'
-   def __init__(self):self.calls=[];self.started=threading.Event();self.release=threading.Event()
+   def __init__(self):self.calls=[];self.started=threading.Event();self.release=threading.Event();self.first_group=threading.Event();self.next_group=threading.Event()
    def discover(self):return [dict(device(i),id=str(i)) for i in range(2)]
    def activate(self,d):pass
    def close(self):pass
    def write_frame(self,d,pixels,mode):
     self.calls.append((d['id'],pixels))
-    if d['id']=='0' and not self.started.is_set():self.started.set();self.release.wait(2)
+    if len(self.calls)==2:self.first_group.set()
+    if len(self.calls)>=4:self.next_group.set()
+    if d['id']=='0' and not self.started.is_set():self.started.set();self.release.wait(5)
   with tempfile.TemporaryDirectory() as folder:
    a=Adapter();c=core.Center(Path(folder)/'s.json',folder,sdk=FakeSDK(),native=FakeNative(),adapters=[a]);c.refresh(False)
    try:
     c.start(dict(devices=['0','1'],config=dict(mode='wave')))
-    self.assertTrue(a.started.wait(1));time.sleep(.1)
+    self.assertTrue(a.started.wait(3));self.assertTrue(a.first_group.wait(3));time.sleep(.05)
     self.assertEqual(len(a.calls),2);self.assertEqual(a.calls[0][1],a.calls[1][1])
-    a.release.set();time.sleep(.12);c.stop()
+    a.release.set();self.assertTrue(a.next_group.wait(5));c.stop()
     self.assertGreaterEqual(len(a.calls),4);self.assertEqual(c.sync_stats['dropped'],0)
    finally:a.release.set();c.close()
  def test_default_mirror_ignores_device_position(self):

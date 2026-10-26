@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Run fixture tests on macOS too, including Core process lifecycle.
       - name: Read release version
         run: |
           version="$(cat app/release-version.txt | tr -d '\r\n')"
