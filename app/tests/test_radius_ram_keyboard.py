@@ -77,7 +77,7 @@ class KeyboardTests(unittest.TestCase):
         row=dict(handle='test',product_id=0x1ace,descriptor=base64.b64encode(bytes.fromhex('85027508953f9102')).decode())
         with self.assertRaises(ValueError):keyboard.discover(Fake(),row)
 class RAMTransport:
-    def __init__(self,loaded=False,host='7f23'):self.calls=[];self.loaded=loaded;self.host=host;self.rows=[dict(address=0x18,name='Corsair Dominator Titanium RGB DDR5',led_count=12,protocol=4,product_id='0800')]
+    def __init__(self,loaded=False,host='7f23'):self.calls=[];self.loaded=loaded;self.host=host;self.rows=[dict(address=0x18,name='Corsair Dominator Titanium RGB DDR5',led_count=12,protocol=4,product_id='0801')]
     def call(self,request):
         self.calls.append(request)
         if request['command']=='status':return dict(driver_loaded=self.loaded,controllers=[dict(vendor_id='8086',device_id=self.host)])
@@ -97,9 +97,30 @@ class RAMTests(unittest.TestCase):
         for t,part in [(RAMTransport(True,'1234'),'CMP32GX5M2B6000Z30'),(RAMTransport(True),'UNKNOWN')]:
             with self.assertRaises(ValueError):self.make(t,part).probe()
             self.assertFalse(any(c['command']=='probe' for c in t.calls))
-    def test_helper_identity_must_match_before_static(self):
-        t=RAMTransport(True);a=self.make(t);row=a.probe()[0];self.assertFalse(row['direct']);self.assertEqual(row['static_modes'],['static']);a.activate(row);a.write_frame(row,[(1,2,3)],'static');self.assertEqual(t.calls[-1],dict(command='static',address=0x18,color=[1,2,3]))
-        with self.assertRaises(ValueError):a.write_frame(row,[(1,2,3)],'wave')
+    def test_verified_titanium_exposes_12_distinct_colors(self):
+        t=RAMTransport(True);a=self.make(t);row=a.probe()[0]
+        self.assertTrue(row['direct']);self.assertEqual(row['led_count'],12);self.assertEqual(len(row['led_positions']),12)
+        a.activate(row);colors=[(i,2*i,3*i) for i in range(12)];a.write_frame(row,colors,'twinkle')
+        self.assertEqual(t.calls[-1],dict(command='frame',address=0x18,colors=[list(c) for c in colors]))
+    def test_ram_rejects_wrong_led_counts_channels_and_ranges_before_transport(self):
+        t=RAMTransport(True);a=self.make(t);row=a.probe()[0];before=len(t.calls)
+        for colors in [[(1,2,3)],[(1,2,3)]*13,[(1,2)]*12,[(256,0,0)]*12,[(True,0,0)]*12]:
+            with self.assertRaises(ValueError):a.write_frame(row,colors,'twinkle')
+        self.assertEqual(len(t.calls),before)
+    def test_unconfirmed_protocol_and_pid_cannot_become_ready(self):
+        for changes in [dict(protocol=3),dict(product_id='0800')]:
+            t=RAMTransport(True);t.rows[0].update(changes)
+            with self.assertRaises(ValueError):self.make(t).probe()
+    def test_bus_error_disables_all_ram_targets_without_retry(self):
+        class Failing(RAMTransport):
+            def call(self,request):
+                if request['command']=='frame':self.calls.append(request);raise RuntimeError('bus error')
+                return super().call(request)
+        t=Failing(True);a=self.make(t);row=a.probe()[0]
+        with self.assertRaises(RuntimeError):a.write_frame(row,[(1,2,3)]*12,'twinkle')
+        self.assertFalse(a.allowed);self.assertFalse(row['controllable']);before=len(t.calls)
+        with self.assertRaises(KeyError):a.write_frame(row,[(1,2,3)]*12,'twinkle')
+        self.assertEqual(len(t.calls),before)
     def test_unexpected_controller_or_duplicate_rejected(self):
         for rows in [[dict(address=0x50,product_id='0800',led_count=12)],[dict(address=0x18,product_id='ffff',led_count=12)]]:
             t=RAMTransport(True);t.rows=rows

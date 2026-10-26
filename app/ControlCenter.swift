@@ -203,7 +203,7 @@ final class CenterModel: ObservableObject {
     }
     private func accept(_ result:Result<CenterState,Error>,clearError:Bool=true) {
         switch result {
-        case .success(let state):self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable && $0.category != "dram" }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
+        case .success(let state):self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
         case .failure(let error):self.error=error.localizedDescription
         }
     }
@@ -275,7 +275,7 @@ final class CenterModel: ObservableObject {
     }
     func probeRAM() {
         guard online && !busy else { return };busy=true;error=""
-        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);self.flushLive() }
+        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);if case .success=result { self.livePending=true };self.flushLive() }
     }
     func saveScene() {
         guard online && !busy else { return };busy=true
@@ -595,7 +595,7 @@ struct CenterWorkspace:View {
                 Toggle("Launch at login",isOn:Binding(get:{center.loginEnabled},set:{center.setLaunchAtLogin($0)})).toggleStyle(.switch)
                 Text(center.loginMessage).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                 Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
-                Label("Startup & live control",systemImage:"sun.max").font(.headline);Text("On launch, ready devices receive Static white at 100% brightness. Unverified devices and RAM awaiting setup stay untouched. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+                Label("Startup & live control",systemImage:"sun.max").font(.headline);Text("On launch, ready devices receive mint Twinkle at 65% speed. RAM stays untouched until you explicitly probe and select its DIMMs. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
             DisclosureGroup("Device connections & advanced details") {
             CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("Bundled OpenRGB 1.1",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("LOCAL ENGINE").font(.system(size:20,weight:.medium,design:.monospaced));Text("OpenRGB starts and stops with HackinFX. Its macOS device drivers are included; no separate OpenRGB installation is required. Direct-mode devices join live scenes. Native adapters own their matching hardware to avoid duplicate writes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Rediscover devices",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
             CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other supported USB families use the bundled OpenRGB engine. DRAM access depends on the chipset, module and required macUSPCIO driver.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
