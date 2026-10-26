@@ -9,13 +9,13 @@ from openrgb_runtime import ManagedEngine,NATIVE_DETECTORS
 from test_center import FakeSDK,FakeNative,device
 
 class StartupTests(unittest.TestCase):
-    def test_white_once_and_rediscovery_does_not_reset_colors(self):
+    def test_mint_twinkle_65_once_and_rediscovery_does_not_reset_colors(self):
         with tempfile.TemporaryDirectory() as folder:
             sdk=FakeSDK([device()]);c=core.Center(Path(folder)/'scenes.json',folder,sdk=sdk,native=FakeNative())
-            c.initialize(inventory=False);c.worker.join(2)
-            self.assertEqual(sdk.calls[-1][2],[(255,255,255)]*3)
-            count=len(sdk.calls);c.initialize(inventory=False);self.assertEqual(len(sdk.calls),count)
-            c.refresh(inventory=False);self.assertEqual(len(sdk.calls),count);c.close()
+            c.initialize(inventory=False);worker=c.worker
+            self.assertEqual(c.scene["mode"],"twinkle");self.assertEqual(c.scene["speed"],65);self.assertEqual(c.scene["palette"],["a7f3d0"])
+            c.initialize(inventory=False);self.assertIs(c.worker,worker)
+            c.refresh(inventory=False);count=len(sdk.calls);self.assertFalse(c.running);self.assertEqual(len(sdk.calls),count);c.close()
     def test_one_activation_failure_does_not_block_other_devices(self):
         class Partial(FakeSDK):
             def activate(self,index):
@@ -57,8 +57,15 @@ class RuntimeTests(unittest.TestCase):
                 engine.ensure_started();args=launch.call_args.args[0]
                 self.assertIn('--noautoconnect',args);self.assertEqual(args[args.index('--server-host')+1],'127.0.0.1')
                 cfg=json.loads((Path(folder)/'OpenRGB.json').read_text())['Detectors']['detectors']
-                self.assertEqual(set(cfg),set(NATIVE_DETECTORS));self.assertTrue(all(v is False for v in cfg.values()))
+                self.assertTrue(set(NATIVE_DETECTORS).issubset(cfg));self.assertIn("Corsair DRAM",cfg);self.assertTrue(all(v is False for v in cfg.values()))
                 engine.ensure_started();self.assertEqual(launch.call_count,1)
                 engine.claim_native_ram();engine.ensure_started()
                 cfg=json.loads((Path(folder)/'OpenRGB.json').read_text())['Detectors']['detectors'];self.assertFalse(cfg['Corsair DRAM']);engine.close()
 if __name__=='__main__':unittest.main()
+
+class RAMStartupExclusionTests(unittest.TestCase):
+ def test_even_ready_ram_is_never_activated_on_launch(self):
+  with tempfile.TemporaryDirectory() as folder:
+   ram=device();ram.update(category='dram',controllable=True,direct=True)
+   sdk=FakeSDK([ram]);c=core.Center(Path(folder)/'s.json',folder,sdk=sdk,native=FakeNative())
+   c.initialize(False);self.assertEqual(sdk.calls,[]);self.assertFalse(c.running);c.close()

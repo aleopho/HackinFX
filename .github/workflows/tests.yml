@@ -31,6 +31,8 @@ jobs:
       - run: swiftc app/SetupSupport.swift app/tests/SetupSupportTests.swift -o /tmp/hackinfx-profile-tests
       - run: /tmp/hackinfx-profile-tests
       - run: python3 tools/prepare_openrgb_runtime.py
+      - run: python3 tools/import_openrgb_smbus_safety.py
+      - run: git diff --exit-code -- app/openrgb_smbus_detectors.json vendor/openrgb-runtime/smbus-detector-provenance.json
       - run: python3 app/build_community.py
       - run: python3 tools/verify_openrgb_runtime.py
       - run: swiftc app/ReleaseVersion.swift app/tests/ReleaseVersionTests.swift -o /tmp/hackinfx-version-tests
@@ -40,27 +42,27 @@ jobs:
       - name: Render native Control Center design check
         continue-on-error: true
         run: |
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-2.2.0-design.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.2.0-scenes.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-2.2.0-devices.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-2.2.0-feedback.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-2.2.1-design.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.2.1-scenes.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-2.2.1-devices.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-2.2.1-feedback.png
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.2.0-design-check-sample-data
-          path: HackinFX-2.2.0-*.png
+          name: HackinFX-2.2.1-design-check-sample-data
+          path: HackinFX-2.2.1-*.png
           if-no-files-found: ignore
           retention-days: 14
       - run: codesign --verify --deep --strict app/HackinFX.app
       - run: python3 tools/check_app_bundle.py
       - run: python3 app/package_installer.py
-      - run: python3 tools/verify_installer.py HackinFX-2.2.0-Installer.pkg
+      - run: python3 tools/verify_installer.py HackinFX-2.2.1-Installer.pkg
       - run: python3 app/package_dmg.py
-      - run: hdiutil verify HackinFX-aleopho-2.2.0.dmg
-      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.2.0.dmg
+      - run: hdiutil verify HackinFX-aleopho-2.2.1.dmg
+      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.2.1.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.2.0-with-WidgetKit
+          name: HackinFX-2.2.1-with-WidgetKit
           path: |
-            HackinFX-aleopho-2.2.0.dmg
-            HackinFX-2.2.0-Installer.pkg
+            HackinFX-aleopho-2.2.1.dmg
+            HackinFX-2.2.1-Installer.pkg
           retention-days: 14

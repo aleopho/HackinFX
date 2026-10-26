@@ -47,6 +47,7 @@ def discover(transport,record):
     record['keyboard_report_id']=report_id;record['keyboard_length']=length
     reply=transport.exchange(record['handle'],query(0x12,report_id,length))
     if len(reply)!=length or reply[:3]!=bytes([report_id,0x12,0x12]) or not any(reply[3:8]):raise ValueError('OMNI keyboard did not return a layout; wake it or connect USB for diagnosis')
+    record['keyboard_layout_reply']=reply[:8].hex()
     record['keyboard_topology']=scope_topology(record['product_id'],reply)
     paired=None
     if not receiver:return dict(product_id=record['product_id'],name='ASUS ROG Strix Scope II 96 Wireless · USB')

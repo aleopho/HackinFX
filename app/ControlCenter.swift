@@ -60,10 +60,10 @@ struct CenterDevice: Codable, Identifiable {
 struct CenterScene: Codable {
     var synchronized = true
     var mapping = "mirror"
-    var mode = "static"
-    var palette = ["ffffff","42d6ce","9f8bff"]
+    var mode = "twinkle"
+    var palette = ["a7f3d0"]
     var brightness = 100.0
-    var speed = 35.0
+    var speed = 65.0
     var axis = "x"
     var fps = 30.0
     var sync_policy = "adaptive"
@@ -110,7 +110,7 @@ final class CenterModel: ObservableObject {
             if enabled && SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
             if !enabled && SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }
             switch SMAppService.mainApp.status {
-            case .enabled:loginMessage="Enabled · starts after macOS sign-in and sets ready devices to white."
+            case .enabled:loginMessage="Enabled · starts after macOS sign-in and starts mint Twinkle on ready lighting devices. RAM is excluded."
             case .requiresApproval:loginMessage="Allow HackinFX in System Settings → General → Login Items."
             default:loginMessage=enabled ? "Login launch is unavailable. Check Login Items in System Settings.":"Launch at login is off."
             }
@@ -172,7 +172,7 @@ final class CenterModel: ObservableObject {
             busy=true
             request("/v1/initialize") { result in
                 self.suppressLive=true;self.accept(result)
-                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable }.map { $0.id });self.liveStatus="Startup white · live control ready" }
+                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
                 self.suppressLive=false;self.busy=false;self.livePending=false;self.publishWidget()
             };return
         }
@@ -203,7 +203,7 @@ final class CenterModel: ObservableObject {
     }
     private func accept(_ result:Result<CenterState,Error>,clearError:Bool=true) {
         switch result {
-        case .success(let state):self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
+        case .success(let state):self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable && $0.category != "dram" }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
         case .failure(let error):self.error=error.localizedDescription
         }
     }
@@ -213,7 +213,7 @@ final class CenterModel: ObservableObject {
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
+        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
     func scheduleLive() {
@@ -264,7 +264,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.0"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.1"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -419,7 +419,7 @@ struct CenterNavigation:View {
                 Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.2.0");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text("2.2.1");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -586,7 +586,7 @@ struct CenterWorkspace:View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.2.1").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
                 Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }

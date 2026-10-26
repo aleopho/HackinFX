@@ -17,14 +17,16 @@ class ManagedEngine:
         self.directory=Path(directory)
         self.executable=Path(executable) if executable else Path(__file__).parent/'Engine/OpenRGB.app/Contents/MacOS/OpenRGB'
         self.timeout=timeout;self.process=None;self.port=None;self.log=None
-        self.lock=threading.RLock();self.reserve_ram=False
+        self.lock=threading.RLock();self.reserve_ram=True
     def ensure_started(self):
         with self.lock:
             if self.process is not None and self.process.poll() is None:return self.port
             self.close()
             if not self.executable.is_file():raise RuntimeError('Bundled OpenRGB is missing. Reinstall the complete HackinFX package.')
             self.directory.mkdir(parents=True,exist_ok=True);os.chmod(self.directory,0o700)
-            detectors={name:False for name in NATIVE_DETECTORS}
+            safety=json.loads(Path(__file__).with_name('openrgb_smbus_detectors.json').read_text())
+            if safety.get('schema')!=1 or safety.get('unresolved') or not isinstance(safety.get('disabled'),list) or not 1<=len(safety['disabled'])<=2000 or any(not isinstance(n,str) or not 1<=len(n)<=160 for n in safety['disabled']):raise RuntimeError('SMBus detector safety catalog is missing or invalid')
+            detectors={name:False for name in set(NATIVE_DETECTORS)|set(safety['disabled'])}
             if self.reserve_ram:detectors['Corsair DRAM']=False
             config={'Detectors':{'detectors':detectors}}
             # Only our private configuration is used; no external profiles/plugins.

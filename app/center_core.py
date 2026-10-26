@@ -212,7 +212,7 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config(dict(palette=["ffffff"],brightness=100));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['a7f3d0'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -291,10 +291,15 @@ class Center:
         with self.operation:
             if self.initialized:return self.status()
             self.refresh(inventory=inventory);self.initialized=True
-            ids=[d['id'] for d in self.devices if d['controllable'] and (d['direct'] or 'static' in d['static_modes'])]
-            if not ids:return self.status()
-            discovery_errors=list(self.errors)
-            self.start(dict(config=dict(mode='static',palette=['ffffff'],brightness=100),devices=ids),isolate_failures=True,initial_errors=discovery_errors)
+            # RAM is never automatically activated or colored at launch.
+            direct=[d['id'] for d in self.devices if d['controllable'] and d['direct'] and d['category']!='dram']
+            fallback=[d['id'] for d in self.devices if d['controllable'] and not d['direct'] and 'static' in d['static_modes'] and d['category']!='dram']
+            errors=list(self.errors)
+            if fallback:
+                self.start(dict(config=dict(mode='static',palette=['a7f3d0'],brightness=100),devices=fallback),isolate_failures=True,initial_errors=errors)
+                if self.worker:self.worker.join(timeout=30)
+                errors=list(self.errors)
+            if direct:self.start(dict(config=dict(mode='twinkle',palette=['a7f3d0'],brightness=100,speed=65,fps=30,sync_policy='adaptive'),devices=direct),isolate_failures=True,initial_errors=errors)
             return self.status()
     def start(self,value,isolate_failures=False,initial_errors=None):
         with self.operation:

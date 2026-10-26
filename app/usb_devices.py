@@ -182,6 +182,7 @@ class NativeUSBAdapter:
             if kind=='asus-keyboard':
                 row.update(direct=True,static_modes=['static','gradient'],onboard_modes=[])
                 row['zones']=[dict(name='Keyboard · per-key RGB' if record.get('keyboard_topology') else 'Whole keyboard · one color zone',led_count=count)]
+                row['hardware_state']={'keyboard_layout_reply':record.get('keyboard_layout_reply',''),'per_key_layout':'mapped' if record.get('keyboard_topology') else 'unrecognized; whole-device fallback'}
                 row['color_scope']='per-led' if record.get('keyboard_topology') else 'whole-device'
                 row['physical_led_count']=count if record.get('keyboard_topology') else None
                 if record.get('keyboard_topology'):
