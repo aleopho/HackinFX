@@ -1,6 +1,6 @@
 # Device compatibility
 
-HackinFX 2.1.1 targets macOS 15+ x86-64 Hackintoshes with Intel or AMD CPUs.
+HackinFX 2.4.0 targets macOS 15+ x86-64 Hackintoshes with Intel or AMD CPUs.
 CPU manufacturer is not a gate; AMD-CPU operation still needs physical community
 validation. Apple Silicon is not targeted. Hardware RGB support is separate from
 CPU compatibility and display-driver support.
@@ -36,10 +36,11 @@ transport and visual user confirmation are required before native profile reuse.
 | --- | --- |
 | PNY XLR8 RTX 4080 VERTO (`10de:2704 / 196e:13bc`) | Static, Gradient, Spectrum, Breathing and Wave visually confirmed by aleopho |
 | ASUS ROG Spatha X | User-reported working; firmware/connection variants need their own checks |
-| ASUS ROG Strix Scope II 96 Wireless, USB path | Ready in the current desktop capture; whole-keyboard RGB path, no per-key claim |
+| ASUS ROG Strix Scope II 96 Wireless, USB path | Actual ISO-203 USB reply maps 102 OpenRGB LED addresses; whole-device fallback for unknown layouts. Physical key mapping needs broader validation |
 | GIGABYTE HID LampArray | User-reported working; other boards need their own validation |
 | Fractal Design Radius | User-reported working; preview renewal and physical timing need broader tests |
 | Corsair Titanium / SMBus development path | Four Titanium PID 0801 / protocol 4 DIMMs on Intel 8086:7f23 + macUSPCIO visibly confirmed: Static mint, separate LED regions and paced Twinkle (16.65 FPS per DIMM in the short test). Other hosts/kits unverified |
+| Nanoleaf Shapes Triangles | NL42 discovery, pairing and visible lighting user-confirmed; other Nanoleaf families not enabled |
 | NZXT Kraken X2/M2 and other OpenRGB devices | Included paths where available, not physically verified by this project |
 
 An active command/frame counter reports commands, not light emitted by LEDs.
@@ -48,7 +49,7 @@ measure firmware buffering or promise exact optical synchronization.
 
 ## Add or troubleshoot a device
 
-Use Diagnostics → Feedback & compatibility for a fresh read-only hardware scan,
+Use Feedback in the main sidebar for a fresh read-only hardware scan,
 notes and reviewed private submission. Include connection mode, exact model,
 firmware if known, expected/actual behavior and a reproducible sequence. Report
 export works without an online inbox. Do not publish private raw reports.

@@ -33,3 +33,12 @@ Sources, existing OpenRGB/NullMoth/macUSPCIO/Radius credits and licenses remain 
 
 Android remote control is the next planned phase, not included or exposed here.
 The app's control API remains authenticated and bound to localhost only.
+
+Validation: 191 Python tests, 2,160 native-preview/renderer comparisons, native
+helper self-tests, actual WidgetKit build, nested signatures and PKG/DMG checks
+passed. The developer confirmed the installed update runs well before publication.
+
+Downloads include PKG, drag-and-drop DMG, source ZIP and SHA-256 checksums.
+OpenRGB, NullMoth, macUSPCIO and other third-party license notices remain bundled;
+NullMoth is a separately installed driver. macOS 15+ x86-64; Intel and AMD CPU
+Hackintosh systems in scope, with hardware-specific adapter limits as documented.
