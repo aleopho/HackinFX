@@ -5,6 +5,8 @@ import WidgetKit
 import Darwin
 
 struct WidgetSnapshot:Decodable {
+    var language:String?=nil
+    var readyLabel:String?=nil
     let schema:Int
     let gpuName:String
     let lastCommand:String
@@ -44,7 +46,7 @@ struct WidgetView:View {
     }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
-            HStack { Image(systemName:"fanblades").foregroundStyle(accent);Text("HackinFX").font(.system(size:12,weight:.semibold));Spacer();if let count=entry.snapshot.readyDevices { Text("\(count) READY").font(.system(size:8,design:.monospaced)).foregroundStyle(accent) } }
+            HStack { Image(systemName:"fanblades").foregroundStyle(accent);Text("HackinFX").font(.system(size:12,weight:.semibold));Spacer();if let count=entry.snapshot.readyDevices { Text(verbatim:"\(count) \(entry.snapshot.readyLabel ?? "READY")").font(.system(size:8,design:.monospaced)).foregroundStyle(accent) } }
             Text(entry.snapshot.lastCommand.capitalized).font(.system(size:family == .systemSmall ? 26:32,weight:.semibold,design:.rounded)).lineLimit(1).minimumScaleFactor(0.6)
             GeometryReader { geometry in
                 ZStack(alignment:.leading) {

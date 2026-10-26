@@ -1,0 +1,28 @@
+{
+  "source": "en",
+  "languages": [
+    "en",
+    "de",
+    "fr",
+    "es",
+    "it",
+    "pt-BR",
+    "pt-PT",
+    "nl",
+    "pl",
+    "cs",
+    "sv",
+    "tr",
+    "uk",
+    "ru",
+    "ar",
+    "hi",
+    "id",
+    "vi",
+    "ja",
+    "ko",
+    "zh-Hans",
+    "zh-Hant"
+  ],
+  "translation_method": "Build-time machine translation with protected placeholders/brands and local overrides; linguistic community review pending. No translation service is contacted by the app."
+}

@@ -35,6 +35,8 @@ jobs:
       - run: python3 tools/prepare_openrgb_runtime.py
       - run: python3 tools/import_openrgb_smbus_safety.py
       - run: git diff --exit-code -- app/openrgb_smbus_detectors.json vendor/openrgb-runtime/smbus-detector-provenance.json
+      - run: swiftc -swift-version 5 -target x86_64-apple-macos15.0 app/Localization.swift app/tests/LocalizationTests.swift -o /tmp/hackinfx-localization-tests
+      - run: /tmp/hackinfx-localization-tests app/Localization
       - run: python3 tools/verify_effect_previews.py
       - run: python3 app/build_community.py
       - run: python3 tools/verify_openrgb_runtime.py
@@ -45,28 +47,31 @@ jobs:
       - name: Render native Control Center design check
         continue-on-error: true
         run: |
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-2.4.0-design.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.4.0-scenes.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-2.4.0-devices.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-2.4.0-feedback.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-2.4.0-gallery.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-2.5.0-design.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.5.0-scenes.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-2.5.0-devices.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-2.5.0-feedback.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-2.5.0-gallery.png
+          HACKINFX_RENDER_LANGUAGE=de app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-2.5.0-gallery-de.png
+          HACKINFX_RENDER_LANGUAGE=ar app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-2.5.0-canvas-ar.png
+          HACKINFX_RENDER_LANGUAGE=ja app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-2.5.0-gallery-ja.png
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.4.0-design-check-sample-data
-          path: HackinFX-2.4.0-*.png
+          name: HackinFX-2.5.0-design-check-sample-data
+          path: HackinFX-2.5.0-*.png
           if-no-files-found: ignore
           retention-days: 14
       - run: codesign --verify --deep --strict app/HackinFX.app
       - run: python3 tools/check_app_bundle.py
       - run: python3 app/package_installer.py
-      - run: python3 tools/verify_installer.py HackinFX-2.4.0-Installer.pkg
+      - run: python3 tools/verify_installer.py HackinFX-2.5.0-Installer.pkg
       - run: python3 app/package_dmg.py
-      - run: hdiutil verify HackinFX-aleopho-2.4.0.dmg
-      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.4.0.dmg
+      - run: hdiutil verify HackinFX-aleopho-2.5.0.dmg
+      - run: python3 tools/verify_dmg.py HackinFX-aleopho-2.5.0.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-2.4.0-with-WidgetKit
+          name: HackinFX-2.5.0-with-WidgetKit
           path: |
-            HackinFX-aleopho-2.4.0.dmg
-            HackinFX-2.4.0-Installer.pkg
+            HackinFX-aleopho-2.5.0.dmg
+            HackinFX-2.5.0-Installer.pkg
           retention-days: 14

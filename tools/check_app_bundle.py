@@ -50,3 +50,10 @@ assert (app/'Resources/effects.py').is_file()
 assert (app/'Resources/Source/EffectLibrary.swift').is_file()
 assert (app/'Resources/Source/EffectGallery.swift').is_file()
 print('Shared 40-effect catalog, 80 looks, native gallery and hardware renderer are bundled')
+
+locales=json.loads((app/"Resources/Localization/manifest.json").read_text())["languages"]
+assert set(host_info["CFBundleLocalizations"])==set(locales)
+for locale in locales:
+    assert (app/("Resources/Localization/"+locale+".json")).is_file()
+assert (app/"Resources/Source/Localization.swift").is_file()
+print("Offline localization resources and declared bundle languages verified")

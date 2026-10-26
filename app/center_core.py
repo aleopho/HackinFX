@@ -92,6 +92,7 @@ class NativeGPU:
         self.close()
         report=scanner.collect();rows=[];self.identities={}
         fp=report.get('configuration_fingerprint')
+        primary=next((i for i,a in enumerate(report.get('adapters',[])) if a.get('nvrm_bound') is True),0)
         for index,adapter in enumerate(report.get('adapters',[])):
             executable=next((p for p in profiles.PROFILES if p.key==adapter.get('verified_profile')),None)
             saved={}
@@ -101,7 +102,7 @@ class NativeGPU:
             confirmed=bool(adapter.get('nvrm_bound') is True and report.get('lighting_configuration',{}).get('status')=='supported' and executable and saved.get('schema')==1 and saved.get('fingerprint')==fp and saved.get('successfulSteps')==3 and saved.get('userConfirmed') is True and set(executable.effects).issubset(set(saved.get('verifiedEffects',[]))))
             identity='native:'+hashlib.sha256(repr(adapter['pci']).encode()).hexdigest()[:24]
             key=identity+':'+str(index)
-            row=dict(id=key,fingerprint=identity,name=saved.get('gpuName') or adapter.get('profile_name') or adapter.get('catalog_name') or adapter.get('gpu_name') or 'Display adapter',vendor=saved.get('boardVendor') or adapter.get('board_vendor') or adapter.get('vendor_name') or '',category='gpu',backend='native',led_count=executable.zones if executable else 0,zones=[],direct=False,status='ready' if confirmed else 'setup-required',detail='Confirmed native controller. Static scenes; Gradient on three-zone PNY profiles.' if confirmed else 'Complete the native GPU visual test before control-center writes.',static_modes=['static']+(['gradient'] if executable and executable.zones==3 else []),controllable=confirmed,owns_gpu=adapter.get('nvrm_bound',False))
+            row=dict(id=key,fingerprint=identity,name=saved.get('gpuName') or adapter.get('profile_name') or adapter.get('catalog_name') or adapter.get('gpu_name') or 'Display adapter',vendor=saved.get('boardVendor') or adapter.get('board_vendor') or adapter.get('vendor_name') or '',category='gpu',backend='native',setup_fingerprint=fp,setup_candidate=bool(index==primary and executable and adapter.get('nvrm_bound') is True and report.get('lighting_configuration',{}).get('status')=='supported'),led_count=executable.zones if executable else 0,zones=[],direct=False,status='ready' if confirmed else 'setup-required',detail='Confirmed native controller. Static scenes; Gradient on three-zone PNY profiles.' if confirmed else 'Complete the native GPU visual test before control-center writes.',static_modes=['static']+(['gradient'] if executable and executable.zones==3 else []),controllable=confirmed,owns_gpu=adapter.get('nvrm_bound',False))
             if confirmed and executable.controller=='PNYLovelaceGPUController' and executable.zones==3:
                 row.update(direct=True,host_stream=True,detail='Confirmed PNY RGB zones follow the shared host timeline. Actual rate depends on NVRM transaction latency.')
             rows.append(row)
@@ -196,7 +197,7 @@ class Center:
         now=time.monotonic()
         return {key:dict(frames=v['frames'],fps=round(v['fps'],1),command_ms=round(v['latency']*1000,2),age_ms=round(max(0,now-v['last'])*1000),missed=v['missed'],interval_ms=round(v.get('interval',0)*1000,2),jitter_ms=round(v.get('jitter',0)*1000,2),max_interval_ms=round(v.get('max_interval',0)*1000,2)) for key,v in self.output_stats.items()}
     def status(self):
-        with self.lock:return dict(schema=1,nanoleaf_candidates=list(self.nanoleaf_candidates),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
+        with self.lock:return dict(schema=1,nanoleaf_candidates=list(self.nanoleaf_candidates),scene_elapsed=max(0,time.monotonic()-self.clock_started),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
     def refresh(self,inventory=True):
         with self.operation:
             self.stop();self.leased_frames={};rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
