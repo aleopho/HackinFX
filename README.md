@@ -164,7 +164,7 @@ sources. Build/CI checks never probe real hardware. See [development](docs/DEVEL
 
 ## Credits and license
 
-Created by **aleopho**. HackinFX application source is **GPL-2.0-or-later**;
+Created by **aleopho**. The combined HackinFX application is **GPL-3.0-or-later**;
 components retain their own terms. [LICENSE](LICENSE) · [Full third-party inventory](THIRD-PARTY-NOTICES.md).
 
 - **OpenRGB / Adam Honse and contributors**, including yufan, Jan Rettig,
@@ -173,6 +173,7 @@ components retain their own terms. [LICENSE](LICENSE) · [Full third-party inven
 - **NullMoth Systems:** separately installed NVIDIA NVRM bridge, under its own
   terms; not bundled or relicensed by HackinFX.
 - **NVIDIA:** public RM ABI definitions; MIT notices preserved.
+- **OpenLinkHub / Nikola Jurkovic:** MAKR 75 protocol, key-layout and dial-event references; GPL-3.0-or-later sources and notices retained.
 - **Fractal Radius plugin contributors, Daniel Valfridsson / rigstats, macUSPCIO,
   Qt and bundled runtime dependencies:** original source and notices preserved
   as documented in the third-party inventory and release bundles.
