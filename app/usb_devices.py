@@ -104,6 +104,31 @@ class HIDTransport:
             except subprocess.TimeoutExpired:self.process.kill();self.process.wait()
             self.process=None
 
+class IsolatedHIDTransport(HIDTransport):
+    """One bounded RPC stream per lighting collection, never a shared device queue.
+
+    IOKit registry handles identify the same retained collection in each helper.
+    Helpers enumerate read-only and only open the explicitly addressed collection.
+    """
+    def __init__(self,executable=None,timeout=4,channel_factory=None):
+        super().__init__(executable,timeout);self.channels={};self.channels_lock=threading.RLock()
+        self.channel_factory=channel_factory or (lambda:HIDTransport(self.executable,self.timeout))
+    def call(self,value,timeout=None):
+        handle=value.get('handle')
+        if handle is None:return super().call(value,timeout)
+        if not isinstance(handle,str) or not handle or len(handle)>80:raise HIDError('Invalid lighting collection')
+        with self.channels_lock:
+            if handle not in self.channels:
+                if len(self.channels)>=64:raise HIDError('Too many native lighting channels')
+                self.channels[handle]=self.channel_factory()
+            channel=self.channels[handle]
+        return channel.call(value,timeout)
+    def close(self):
+        with self.channels_lock:channels=list(self.channels.values());self.channels.clear()
+        for channel in channels:channel.close()
+        super().close()
+
+
 class Catalog:
     def __init__(self,path=None):
         self.entries=json.loads((Path(path) if path else Path(__file__).with_name('openrgb_usb_catalog.json')).read_text())['entries']
@@ -126,7 +151,7 @@ def kraken_packets(colors):
 class NativeUSBAdapter:
     name='native-usb'
     def __init__(self,transport=None,catalog=None):
-        self.transport=transport or HIDTransport();self.catalog=catalog or Catalog();self.records={};self.active=set();self.next_frame={};self.inventory_count=0
+        self.transport=transport or IsolatedHIDTransport();self.catalog=catalog or Catalog();self.records={};self.active=set();self.next_frame={};self.inventory_count=0
     def discover(self):
         self.release();self.transport.close();snapshot=self.transport.inventory();self.records={};rows=[];claimed=set();groups=collections.defaultdict(list)
         for record in snapshot['devices']:groups[record['physical_id']].append(record)
@@ -165,7 +190,7 @@ class NativeUSBAdapter:
                     reports=lamp_descriptor(base64.b64decode(record['descriptor'],validate=True));attributes=self.transport.get(handle,reports[2]);count=struct.unpack_from('<H',attributes,1)[0];array_kind=struct.unpack_from('<I',attributes,15)[0]
                     if not 1<=count<=512:raise HIDError('LampArray count outside supported range')
                     category={1:'keyboard',2:'mouse',3:'gamepad',7:'controller'}.get(array_kind,'controller')
-                    interval=max(.05,struct.unpack_from('<I',attributes,19)[0]/1000000)
+                    interval=max(1/60,struct.unpack_from('<I',attributes,19)[0]/1000000)
                     if interval>5:raise HIDError('LampArray update interval outside supported range')
                     record['interval']=interval
                 except Exception as exc:

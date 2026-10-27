@@ -69,7 +69,7 @@ def scene_config(value):
     if axis not in ('x','y'):raise ValueError('Invalid scene axis')
     policy=value.get('sync_policy','adaptive')
     if policy not in ('adaptive','lockstep'):raise ValueError('Invalid synchronization policy')
-    fps=number(value.get('fps',30),1,120)
+    fps=number(value.get('fps',60),1,120)
     reverse=value.get('reverse',False)
     if type(reverse)is not bool:raise ValueError('Reverse must be boolean')
     result=dict(scale=number(value.get('scale',1),.25,4),density=number(value.get('density',55),0,100),reverse=reverse,fps=fps,sync_policy=policy,mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
@@ -205,7 +205,7 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter(),nanoleaf_control.NanoleafAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.calibration={};self.saved_calibration={};self.output_locks={};self.device_brightness={};self.saved_brightness={};self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.scene_revision=0;self.selected_devices=[];self.active_devices=set();self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.closing=False;self.calibration={};self.saved_calibration={};self.output_locks={};self.device_brightness={};self.saved_brightness={};self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.scene_revision=0;self.selected_devices=[];self.active_devices=set();self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
@@ -369,10 +369,11 @@ class Center:
                 self.start(dict(config=dict(mode='static',palette=['9bed4b'],brightness=100),devices=fallback),isolate_failures=True,initial_errors=errors)
                 if self.worker:self.worker.join(timeout=30)
                 errors=list(self.errors)
-            if direct:self.start(dict(config=dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65,fps=30,sync_policy='adaptive'),devices=direct),isolate_failures=True,initial_errors=errors)
+            if direct:self.start(dict(config=dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65,fps=60,sync_policy='adaptive'),devices=direct),isolate_failures=True,initial_errors=errors)
             return self.status()
     def start(self,value,isolate_failures=False,initial_errors=None):
         with self.operation:
+            if self.closing:raise RuntimeError('Core is shutting down')
             config=scene_config(value.get('config',{}));ids=value.get('devices',[])
             if not isinstance(ids,list) or not 1<=len(ids)<=64 or len(set(ids))!=len(ids):raise ValueError('Select one to 64 different devices')
             with self.lock:
@@ -403,6 +404,7 @@ class Center:
                             except Exception:pass
                     self.message='Could not activate all targets. Some devices may already be in Direct mode.'
                     raise
+            if self.closing:raise RuntimeError('Core is shutting down')
             with self.lock:self.scene_revision+=1;self.selected_devices=[d['id'] for d in ready];self.active_devices=set();self.scene=config;self.running=True;self.frames=0;self.output_stats={};self.errors=activation_errors;self.message='Scene active; commands sent, not live LED readback'
             self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
@@ -555,4 +557,9 @@ class Center:
             if len(scenes)>64:raise ValueError('Maximum 64 saved scenes')
             atomic_json(self.store,dict(schema=1,scenes=scenes,layout=self.saved_layout,device_brightness=self.saved_brightness,calibration=self.saved_calibration));self.scenes=scenes
         return self.status()
-    def close(self):self.stop();self.registry.close()
+    def begin_shutdown(self):
+        self.closing=True
+        self.stop_event.set()
+        for adapter in self.registry.adapters.values():
+            if hasattr(adapter,'begin_shutdown'):adapter.begin_shutdown()
+    def close(self):self.begin_shutdown();self.stop();self.registry.close()

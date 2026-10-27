@@ -55,34 +55,34 @@ jobs:
       - name: Render native Control Center design check
         continue-on-error: true
         run: |
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-3.0.0-design.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-3.0.0-scenes.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-3.0.0-devices.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-3.0.0-feedback.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-3.0.0-gallery.png
-          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-studio HackinFX-3.0.0-studio.png
-          HACKINFX_RENDER_LANGUAGE=de app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-3.0.0-gallery-de.png
-          HACKINFX_RENDER_LANGUAGE=ar app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-3.0.0-canvas-ar.png
-          HACKINFX_RENDER_LANGUAGE=ja app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-3.0.0-gallery-ja.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-preview HackinFX-3.0.1-design.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-3.0.1-scenes.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-devices HackinFX-3.0.1-devices.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-feedback HackinFX-3.0.1-feedback.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-3.0.1-gallery.png
+          app/HackinFX.app/Contents/MacOS/HackinFX --render-center-studio HackinFX-3.0.1-studio.png
+          HACKINFX_RENDER_LANGUAGE=de app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-3.0.1-gallery-de.png
+          HACKINFX_RENDER_LANGUAGE=ar app/HackinFX.app/Contents/MacOS/HackinFX --render-center-scenes HackinFX-3.0.1-canvas-ar.png
+          HACKINFX_RENDER_LANGUAGE=ja app/HackinFX.app/Contents/MacOS/HackinFX --render-center-gallery HackinFX-3.0.1-gallery-ja.png
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-3.0.0-design-check-sample-data
-          path: HackinFX-3.0.0-*.png
+          name: HackinFX-3.0.1-design-check-sample-data
+          path: HackinFX-3.0.1-*.png
           if-no-files-found: ignore
           retention-days: 14
       - run: codesign --verify --deep --strict app/HackinFX.app
       - run: python3 tools/check_app_bundle.py
       - run: python3 app/package_installer.py
-      - run: python3 tools/verify_installer.py HackinFX-3.0.0-Installer.pkg
+      - run: python3 tools/verify_installer.py HackinFX-3.0.1-Installer.pkg
       - run: python3 app/package_dmg.py
-      - run: hdiutil verify HackinFX-aleopho-3.0.0.dmg
-      - run: python3 tools/verify_dmg.py HackinFX-aleopho-3.0.0.dmg
+      - run: hdiutil verify HackinFX-aleopho-3.0.1.dmg
+      - run: python3 tools/verify_dmg.py HackinFX-aleopho-3.0.1.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-3.0.0-with-WidgetKit
+          name: HackinFX-3.0.1-with-WidgetKit
           path: |
-            HackinFX-aleopho-3.0.0.dmg
-            HackinFX-3.0.0-Installer.pkg
+            HackinFX-aleopho-3.0.1.dmg
+            HackinFX-3.0.1-Installer.pkg
           retention-days: 14
 
   android-build:
@@ -103,11 +103,13 @@ jobs:
       - run: gradle -p android testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
       - run: |
           mkdir -p android-artifact
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk android-artifact/HackinFX-Remote-1.2.0-unsigned.apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/HackinFX-Remote-1.2.0-debug.apk
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk android-artifact/HackinFX-Remote-2.0.0-unsigned.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/HackinFX-Remote-2.0.0-debug.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" android-artifact/apksigner.jar
       - uses: actions/upload-artifact@v4
         with:
-          name: HackinFX-Remote-1.2.0-Android
-          path: android-artifact/*
+          name: HackinFX-Remote-2.0.0-Android
+          path: |
+            android-artifact/*
+            android/app/build/outputs/design/*.png
           retention-days: 14

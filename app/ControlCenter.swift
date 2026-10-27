@@ -73,7 +73,7 @@ struct CenterScene: Codable,Equatable {
     var brightness = 100.0
     var speed = 65.0
     var axis = "x"
-    var fps = 30.0
+    var fps = 60.0
     var sync_policy = "adaptive"
 }
 private struct PublicRelease:Decodable { let tag_name:String;let html_url:String;let draft:Bool;let prerelease:Bool }
@@ -412,6 +412,24 @@ final class CenterModel: ObservableObject {
             let work=DispatchWorkItem { self.lastWidgetReload=Date();WidgetCenter.shared.reloadTimelines(ofKind:"HackinFXStatus") }
             widgetReload=work;DispatchQueue.main.asyncAfter(deadline:.now()+max(0,5-Date().timeIntervalSince(lastWidgetReload)),execute:work)
         } catch { /* Widget failure must not block hardware control. */ }
+    }
+    func prepareToQuit(_ completion:@escaping()->Void) {
+        guard !shuttingDown else { completion();return }
+        shuttingDown=true;liveWork?.cancel();levelWork?.cancel();placementWork?.cancel();livePending=false;mutationQueue.removeAll();timer?.invalidate();timer=nil
+        guard let task=process,task.isRunning else { completion();return }
+        if let info=discovery {
+            var request=URLRequest(url:URL(string:"http://127.0.0.1:\(info.port)/v1/shutdown")!)
+            request.httpMethod="POST";request.timeoutInterval=3;request.httpBody=Data("{}".utf8)
+            request.setValue("Bearer "+info.credential,forHTTPHeaderField:"Authorization");request.setValue("application/json",forHTTPHeaderField:"Content-Type")
+            session.dataTask(with:request) { _,_,_ in }.resume()
+        } else { task.terminate() }
+        let started=ProcessInfo.processInfo.systemUptime
+        func waitForCore() {
+            if !task.isRunning { self.process=nil;try? self.logHandle?.close();self.logHandle=nil;completion();return }
+            if ProcessInfo.processInfo.systemUptime-started>8 { task.terminate();completion();return }
+            DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:waitForCore)
+        }
+        waitForCore()
     }
     func shutdown() {
         shuttingDown=true;liveWork?.cancel();livePending=false;timer?.invalidate();timer=nil

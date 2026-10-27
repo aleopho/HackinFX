@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Corsair DDR5 RGB setup with saved, identity-bound startup authorization.
 Unprofiled discovery stays passive; saved profiles permit fresh RGB identity checks."""
-import hashlib,json,subprocess,os,tempfile
+import hashlib,json,subprocess,os,tempfile,threading
 from pathlib import Path
 from usb_devices import HIDTransport
 from ram_probe import modules
@@ -9,7 +9,7 @@ from ram_probe import modules
 class RAMAdapter:
     name='native-ram'
     def __init__(self,transport=None,module_reader=None,profile_path=None,auto_known=None):
-        self.profile_path=Path(profile_path) if profile_path else (Path.home()/'Documents/HackinFX/ram-rgb-profile.json' if transport is None else None);self.profile_checked=False;self.inventory_id='';self.auto_known=(transport is None) if auto_known is None else bool(auto_known)
+        self.stopping=threading.Event();self.profile_path=Path(profile_path) if profile_path else (Path.home()/'Documents/HackinFX/ram-rgb-profile.json' if transport is None else None);self.profile_checked=False;self.inventory_id='';self.auto_known=(transport is None) if auto_known is None else bool(auto_known)
         self.transport=transport or HIDTransport(Path(__file__).with_name('HackinFXSMBus'),timeout=20);self.reader=module_reader or self.read_modules;self.rows=[];self.allowed={};self.status={};self.dimms=[];self.probe_error="";self.host_diagnostics={}
     @staticmethod
     def read_modules():
@@ -60,6 +60,11 @@ class RAMAdapter:
                 self.probe(_from_discover=True,_expected=saved.get('devices'))
                 return self.rows
             except FileNotFoundError:
+                if self.revocation_path.exists():
+                    try:
+                        if self.revocation_path.stat().st_size>2048:raise ValueError('Invalid RAM revocation record')
+                        self.probe_error=str(json.loads(self.revocation_path.read_text()).get('reason','Previous RAM validation failed'))[:300]
+                    except (OSError,ValueError,TypeError):self.probe_error='Previous RAM validation failed'
                 if self.auto_known and self.known_startup_family() and not self.revocation_path.exists():
                     try:
                         self.probe(_from_discover=True,_startup=True);return self.rows
@@ -110,9 +115,13 @@ class RAMAdapter:
         if len(colors)!=12 or any(len(c)!=3 or any(type(v)is not int or not 0<=v<=255 for v in c) for c in colors):raise ValueError('RAM frame requires exactly 12 RGB colors in range 0–255')
         address=self.allowed[device['id']]
         try:self.transport.call(dict(command='frame',address=address,colors=[list(c) for c in colors]))
-        except Exception:
+        except Exception as exc:
+            # A helper pipe closed during an explicitly requested shutdown is not a bus fault.
+            interrupted=isinstance(exc,(BrokenPipeError,EOFError)) or str(exc)=='Native HID helper stopped'
+            if self.stopping.is_set() and interrupted:raise
             failed_rows=list(self.rows)
             self.forget_profile("RAM lighting transport failed; manual probe required")
             for row in failed_rows:row.update(controllable=False,direct=False,status='transport-error',detail='RAM streaming stopped after a bus error. Restart Core and explicitly probe again; no automatic retry or bus reset.')
             raise
-    def close(self):self.allowed={};self.rows=[];self.transport.close()
+    def begin_shutdown(self):self.stopping.set()
+    def close(self):self.begin_shutdown();self.allowed={};self.rows=[];self.transport.close()

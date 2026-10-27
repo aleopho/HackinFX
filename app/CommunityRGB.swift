@@ -736,18 +736,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     var sceneStopItem:NSMenuItem!
     var sceneBlackoutItem:NSMenuItem!
     static func menuFanImage() -> NSImage {
-        let image=NSImage(size:NSSize(width:20,height:20),flipped:false) { _ in
-            let center=NSPoint(x:10,y:10)
-            for index in 0..<48 {
-                NSColor(calibratedHue:CGFloat(index)/48,saturation:0.63,brightness:0.86,alpha:0.95).setStroke()
-                let arc=NSBezierPath();arc.lineWidth=1.1;arc.appendArc(withCenter:center,radius:7.6,startAngle:CGFloat(index)*7.5,endAngle:CGFloat(index+1)*7.5);arc.stroke()
-            }
-            NSColor.labelColor.withAlphaComponent(0.9).setStroke()
-            for index in 0..<7 {
-                let blade=NSBezierPath();blade.move(to:NSPoint(x:11.1,y:8.7));blade.curve(to:NSPoint(x:15.3,y:6.8),controlPoint1:NSPoint(x:12.3,y:6.2),controlPoint2:NSPoint(x:13.9,y:5.4));blade.curve(to:NSPoint(x:15.3,y:10.5),controlPoint1:NSPoint(x:16.3,y:7.8),controlPoint2:NSPoint(x:16.6,y:9.5));blade.curve(to:NSPoint(x:11.5,y:10.9),controlPoint1:NSPoint(x:14.2,y:11.6),controlPoint2:NSPoint(x:12.5,y:10.5));blade.close();var transform=AffineTransform();transform.translate(x:10,y:10);transform.rotate(byDegrees:CGFloat(index)*360/7);transform.translate(x:-10,y:-10);blade.transform(using:transform);blade.lineWidth=0.65;blade.stroke()
-            }
-            let hub=NSBezierPath(ovalIn:NSRect(x:8.4,y:8.4,width:3.2,height:3.2));hub.lineWidth=0.7;hub.stroke();return true
-        };image.isTemplate=false;image.accessibilityDescription="HackinFX RGB fan";return image
+        let image=NSImage(size:NSSize(width:22,height:22),flipped:false) { _ in
+            guard let context=NSGraphicsContext.current?.cgContext else{return false}
+            drawHackinFXMark(context,center:CGPoint(x:11,y:11),radius:10,weight:1.4,color:CGColor(gray:0,alpha:1),background:nil)
+            return true
+        };image.isTemplate=true;image.accessibilityDescription="HackinFX orbital mark";return image
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         let screen=NSScreen.main?.visibleFrame ?? NSRect(x:0,y:0,width:1440,height:1000)
@@ -810,6 +803,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         exportItem.isEnabled = !model.scanJSON.isEmpty && !model.scanning
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
+    private var finishingQuit=false
+    func applicationShouldTerminate(_ sender:NSApplication)->NSApplication.TerminateReply {
+        if finishingQuit { return .terminateLater };finishingQuit=true;MAKRMedia.shared.enabled=false
+        DispatchQueue.main.async { self.model.center.prepareToQuit { sender.reply(toApplicationShouldTerminate:true) } }
+        return .terminateLater
+    }
     func applicationWillTerminate(_ notification: Notification) { MAKRMedia.shared.enabled=false;model.center.shutdown() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
