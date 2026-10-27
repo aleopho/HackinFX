@@ -1,3 +1,4 @@
+import CoreImage
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 import SwiftUI
@@ -24,6 +25,8 @@ struct CenterDevice: Codable, Identifiable {
     let controllable: Bool
     let status: String
     let detail: String
+    var setup_fingerprint:String?=nil
+    var setup_candidate:Bool?=nil
     var startup_excluded:Bool? = nil
     var hardware_state:[String:JSONScalar]? = nil
     var led_positions:[CenterLEDPosition]? = nil
@@ -81,7 +84,13 @@ struct CoreSync:Codable { let clock:String;let dropped:Int;let frames:Int;var ou
 struct NanoleafCandidate:Codable,Identifiable { let id:String;let address:String;let name:String;let model:String }
 struct CenterState: Codable {
     var nanoleaf_candidates:[NanoleafCandidate]? = nil
+    var scene_elapsed:Double?=nil
     var sync:CoreSync? = nil
+    var device_brightness:[String:Double]?=nil
+    var scene_revision:Int?=nil
+    var selected_devices:[String]?=nil
+    var active_devices:[String]?=nil
+    var host_media_devices:[String]?=nil
     let schema:Int
     let devices:[CenterDevice]
     let layout:[String:CenterPosition]
@@ -96,7 +105,22 @@ struct CenterState: Codable {
 }
 private struct CoreDiscovery: Codable { let schema:Int;let port:Int;let credential:String;let pid:Int }
 
+struct RemotePhone:Decodable,Identifiable { let id:String;let name:String }
+struct RemoteSettings:Decodable {
+    let enabled:Bool;let port:Int;let addresses:[String];let fingerprint:String;let pairCode:String?;let pairSeconds:Int;let clients:[RemotePhone]
+    static let empty=RemoteSettings(enabled:false,port:49735,addresses:[],fingerprint:"",pairCode:nil,pairSeconds:0,clients:[])
+}
 final class CenterModel: ObservableObject {
+    @Published var remoteSettings=RemoteSettings.empty
+    @Published var remoteBusy=false
+    @Published var remoteMessage=""
+    @Published var remoteHost=""
+    private var lastRemotePoll=Date.distantPast
+    private var observedSceneRevision:Int?
+    var gpuSetupRequested:((CenterDevice)->Void)?
+    private(set) var sceneClockReceived=ProcessInfo.processInfo.systemUptime
+    private(set) var pausedSceneTime=0.0
+    func canvasTime()->Double { state.running ? (state.scene_elapsed ?? 0)+max(0,ProcessInfo.processInfo.systemUptime-sceneClockReceived):pausedSceneTime }
     @Published var nanoleafAddress=""
     @Published var state = CenterState.empty
     @Published var selected = Set<String>() { didSet { if selected != oldValue { scheduleLive() } } }
@@ -117,7 +141,7 @@ final class CenterModel: ObservableObject {
             if enabled && SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
             if !enabled && SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }
             switch SMAppService.mainApp.status {
-            case .enabled:loginMessage="Enabled · starts after macOS sign-in and starts mint Twinkle on ready lighting devices. RAM is excluded."
+            case .enabled:loginMessage="Enabled · starts after macOS sign-in with green Twinkle on all ready devices, including previously probed RAM."
             case .requiresApproval:loginMessage="Allow HackinFX in System Settings → General → Login Items."
             default:loginMessage=enabled ? "Login launch is unavailable. Check Login Items in System Settings.":"Launch at login is off."
             }
@@ -179,7 +203,7 @@ final class CenterModel: ObservableObject {
             busy=true
             request("/v1/initialize") { result in
                 self.suppressLive=true;self.accept(result)
-                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
+                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.startup_excluded != true }.map { $0.id });self.liveStatus="Green Twinkle · 65% speed · all ready devices" }
                 self.suppressLive=false;self.busy=false;self.livePending=false;self.publishWidget()
             };return
         }
@@ -208,19 +232,33 @@ final class CenterModel: ObservableObject {
         }
         if method == "POST" { mutationQueue.append(launch);nextMutation() } else { launch() }
     }
+    @Published private var levelDrafts:[String:Double]=[:]
+    private var levelWork:DispatchWorkItem?
+    func deviceLevel(_ id:String)->Double { levelDrafts[id] ?? state.device_brightness?[id] ?? 100 }
+    func setDeviceLevel(_ id:String,_ value:Double) {
+        levelDrafts[id]=value;levelWork?.cancel()
+        let work=DispatchWorkItem { [weak self] in
+            guard let self=self else{return};let values=self.levelDrafts
+            self.request("/v1/devices/brightness",body:["levels":values]) { result in
+                self.accept(result)
+                if case .success = result { for (key,level) in values where self.levelDrafts[key]==level { self.levelDrafts.removeValue(forKey:key) } }
+            }
+        };levelWork=work;DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:work)
+    }
     private func accept(_ result:Result<CenterState,Error>,clearError:Bool=true) {
         switch result {
-        case .success(let state):self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
-        case .failure(let error):self.error=error.localizedDescription
+        case .success(let state):let last=self.canvasTime();self.sceneClockReceived=ProcessInfo.processInfo.systemUptime;self.pausedSceneTime=state.running ? (state.scene_elapsed ?? last):last;self.state=state;MAKRMedia.shared.enabled=state.devices.contains { $0.driver=="corsair-makr75" && (state.host_media_devices ?? []).contains($0.id) && $0.controllable };if let revision=state.scene_revision,revision != self.observedSceneRevision,!self.livePending && !self.liveRequest { let old=self.suppressLive;self.suppressLive=true;self.scene=state.scene;if let ids=state.selected_devices { self.selected=Set(ids) };self.suppressLive=old;self.observedSceneRevision=revision };self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
+        case .failure(let error):MAKRMedia.shared.enabled=false;self.error=error.localizedDescription
         }
     }
     func poll() {
         guard online && !busy && !liveRequest && !mutating && !polling else { return };polling=true
+        if Date().timeIntervalSince(lastRemotePoll)>5 { lastRemotePoll=Date();loadRemote() }
         request("/v1/status",method:"GET") { result in self.polling=false;if !self.mutating && !self.liveRequest { self.accept(result,clearError:false) };self.flushLive() }
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
+        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.startup_excluded != true }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
     func scheduleLive() {
@@ -244,7 +282,7 @@ final class CenterModel: ObservableObject {
         }
     }
     func apply() { scheduleLive() } // Used by menu actions; the editor has no Apply step.
-    func suspendForGPULab(_ completion:@escaping(Bool)->Void) {
+    func suspendForGPUSetup(_ completion:@escaping(Bool)->Void) {
         guard online else { completion(true);return };guard !busy else { completion(false);return }
         liveWork?.cancel();livePending=false;busy=true
         request("/v1/scene/stop") { result in self.busy=false;self.accept(result);if case .success=result { completion(true) } else { completion(false) } }
@@ -271,7 +309,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.4.0"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.7.0"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -295,7 +333,7 @@ final class CenterModel: ObservableObject {
     }
     func probeRAM() {
         guard online && !busy else { return };busy=true;error=""
-        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);if case .success=result { self.livePending=true };self.flushLive() }
+        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);if case .success=result { self.selected.formUnion(self.controllable.filter { $0.category == "dram" }.map { $0.id });self.livePending=true };self.flushLive() }
     }
     func saveScene() {
         guard online && !busy else { return };busy=true
@@ -310,14 +348,36 @@ final class CenterModel: ObservableObject {
     private var widgetKey=""
     private var lastWidgetReload=Date.distantPast
     private var widgetReload:DispatchWorkItem?
+    func loadRemote(_ action:String?=nil,body:[String:Any]=[:]) {
+        guard let info=discovery,!remoteBusy else { return }
+        remoteBusy=true
+        let path=action.map { "/v1/remote/"+$0 } ?? "/v1/remote/status"
+        var request=URLRequest(url:URL(string:"http://127.0.0.1:\(info.port)\(path)")!);request.timeoutInterval=40;request.setValue("Bearer "+info.credential,forHTTPHeaderField:"Authorization")
+        if action != nil { request.httpMethod="POST";request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.httpBody=try? JSONSerialization.data(withJSONObject:body) }
+        session.dataTask(with:request) { data,response,error in
+            let value=data.flatMap { try? JSONDecoder().decode(RemoteSettings.self,from:$0) }
+            let failure=data.flatMap { try? JSONSerialization.jsonObject(with:$0) as? [String:Any] }?["error"] as? String
+            DispatchQueue.main.async {
+                self.remoteBusy=false
+                if (response as? HTTPURLResponse)?.statusCode==200,let value=value { self.remoteSettings=value;self.remoteMessage="";if !value.addresses.contains(self.remoteHost) { self.remoteHost=value.addresses.first ?? "" } }
+                else { self.remoteMessage=failure ?? error?.localizedDescription ?? "Remote status is unavailable" }
+            }
+        }.resume()
+    }
+    var remotePairingText:String {
+        guard let code=remoteSettings.pairCode,!remoteHost.isEmpty else { return "" }
+        let value:[String:Any]=["schema":1,"host":remoteHost,"port":remoteSettings.port,"fingerprint":remoteSettings.fingerprint,"code":code]
+        return (try? JSONSerialization.data(withJSONObject:value,options:[.sortedKeys])).map { String(decoding:$0,as:UTF8.self) } ?? ""
+    }
     func publishWidget() {
         guard online && !state.devices.isEmpty else { return }
         let gpu=state.devices.first { $0.category=="gpu" && $0.controllable } ?? state.devices.first { $0.category=="gpu" }
         let title=gpu?.name ?? "Lighting workspace"
         let status=state.errors.isEmpty ? "Lighting commands":"Needs attention"
-        let key="\(state.scene.mode)|\(state.scene.palette)|\(state.scene.brightness)|\(controllable.count)|\(title)|\(status)"
+        let activeCount=state.active_devices?.count ?? 0
+        let key="\(AppLocalization.shared.identifier)|\(state.scene.mode)|\(state.scene.palette)|\(state.scene.brightness)|\(activeCount)|\(state.running)|\(title)|\(status)"
         guard key != widgetKey else { return }
-        let value=WidgetStatusSnapshot(readyDevices:controllable.count,statusText:status,gpuName:title,boardVendor:gpu?.vendor ?? "",profileReady:!controllable.isEmpty,lastCommand:state.scene.mode,updatedAt:Date(),colors:state.scene.palette,brightness:state.scene.brightness)
+        let value=WidgetStatusSnapshot(language:AppLocalization.shared.identifier,readyLabel:L10n.text("Ready").uppercased(),readyDevices:activeCount,statusText:L10n.text(status),gpuName:title,boardVendor:gpu?.vendor ?? "",profileReady:!controllable.isEmpty,lastCommand:L10n.text(EffectLibrary.effect(state.scene.mode)?.name ?? state.scene.mode.capitalized),updatedAt:Date(),colors:state.scene.palette,brightness:state.scene.brightness)
         let folder=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("HackinFX/Widget",isDirectory:true)
         do {
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
@@ -351,13 +411,13 @@ struct CenterPanel<Content:View>:View {
 private struct CenterBadge:View {
     let text:String
     var good=false
-    var body:some View { HStack(spacing:5) { Circle().fill(good ? CenterTheme.accent : CenterTheme.muted).frame(width:4,height:4);Text(text.uppercased()).font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(0.8) }.foregroundStyle(good ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,9).padding(.vertical,6).background((good ? CenterTheme.accent : .white).opacity(0.055)).clipShape(Capsule()) }
+    var body:some View { HStack(spacing:5) { Circle().fill(good ? CenterTheme.accent : CenterTheme.muted).frame(width:4,height:4);Text(L10n.text(text.uppercased())).font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(0.8) }.foregroundStyle(good ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,9).padding(.vertical,6).background((good ? CenterTheme.accent : .white).opacity(0.055)).clipShape(Capsule()) }
 }
 private struct CenterHeading:View {
     let eyebrow:String
     let title:String
     let subtitle:String
-    var body:some View { VStack(alignment:.leading,spacing:9) { Text(eyebrow.uppercased()).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2.6).foregroundStyle(CenterTheme.accent);Text(title).font(.system(size:32,weight:.semibold,design:.rounded));Text(subtitle).font(.system(size:12)).foregroundStyle(CenterTheme.muted).fixedSize(horizontal:false,vertical:true) } }
+    var body:some View { VStack(alignment:.leading,spacing:9) { Text(L10n.text(eyebrow.uppercased())).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2.6).foregroundStyle(CenterTheme.accent);Text(L10n.text(title)).font(.system(size:32,weight:.semibold,design:.rounded));Text(L10n.text(subtitle)).font(.system(size:12)).foregroundStyle(CenterTheme.muted).fixedSize(horizontal:false,vertical:true) } }
 }
 private struct CenterSecondaryStyle:ButtonStyle {
     @Environment(\.isEnabled) var enabled
@@ -370,7 +430,7 @@ private struct CenterAction:View {
     let title:String
     let symbol:String
     let action:()->Void
-    var body:some View { Button(action:action) { HStack { Text(title);Image(systemName:symbol) }.font(.system(size:12,weight:.semibold)).foregroundStyle(CenterTheme.background).padding(.horizontal,17).frame(height:38).background(CenterTheme.accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle()) }
+    var body:some View { Button(action:action) { HStack { Text(L10n.text(title));Image(systemName:symbol) }.font(.system(size:12,weight:.semibold)).foregroundStyle(CenterTheme.background).padding(.horizontal,17).frame(height:38).background(CenterTheme.accent).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle()) }
 }
 
 private struct CenterScenePreview:View {
@@ -386,10 +446,10 @@ private struct CenterScenePreview:View {
         TimelineView(.animation(minimumInterval:0.05,paused:reduceMotion || ["static","gradient"].contains(scene.mode))) { context in
             let time=reduceMotion ? 0:context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3600)
             VStack(alignment:.leading,spacing:20) {
-                HStack { Text(EffectLibrary.effect(scene.mode)?.name ?? scene.mode.capitalized).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text("EFFECT VISUALIZATION").font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
+                HStack { Text(L10n.text(EffectLibrary.effect(scene.mode)?.name ?? scene.mode.capitalized)).font(.system(size:20,weight:.semibold,design:.rounded));Spacer();Text(L10n.text("EFFECT VISUALIZATION")).font(.system(size:7,design:.monospaced)).tracking(1.3).foregroundStyle(CenterTheme.muted) }
                 HStack(spacing:4) { ForEach(0..<40) { i in Capsule().fill(tint(i,time)).frame(height:34).shadow(color:tint(i,time).opacity(0.45),radius:8) } }
             }.padding(20).background(LinearGradient(colors:[CenterTheme.background,CenterTheme.elevated.opacity(0.35)],startPoint:.topLeading,endPoint:.bottomTrailing)).clipShape(RoundedRectangle(cornerRadius:14))
-        }.accessibilityLabel("Effect visualization. Not live LED feedback.")
+        }.accessibilityLabel(L10n.text("Effect visualization. Not live LED feedback."))
     }
 }
 
@@ -397,34 +457,27 @@ struct CenterNavigation:View {
     @ObservedObject var model:Model
     @ObservedObject var center:CenterModel
     @Environment(\.accessibilityReduceMotion) var reduceMotion
-    @State private var advanced=false
     @Namespace private var selection
     private let pages=[("Overview","sun.max"),("Devices","externaldrive.connected.to.line.below"),("Canvas","rectangle.3.group"),("Effects","sparkles"),("Feedback","bubble.left.and.text.bubble.right")]
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
-            HStack(spacing:11) { Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:36,height:36);VStack(alignment:.leading,spacing:3) { Text("HackinFX").font(.system(size:21,weight:.semibold,design:.rounded));Text("LIGHTING STUDIO").font(.system(size:7,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted) } }.padding(.bottom,35)
-            Text("WORKSPACE").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,12)
+            HStack(spacing:11) { Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:36,height:36);VStack(alignment:.leading,spacing:3) { Text(L10n.text("HackinFX")).font(.system(size:21,weight:.semibold,design:.rounded));Text(L10n.text("LIGHTING STUDIO")).font(.system(size:7,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted) } }.padding(.bottom,35)
+            Text(L10n.text("WORKSPACE")).font(.system(size:8,weight:.medium,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,12)
             ForEach(pages,id:\.0) { page,symbol in
                 Button { model.page=page } label: {
-                    HStack(spacing:12) { Image(systemName:symbol).font(.system(size:14)).frame(width:18);Text(page == "Overview" ? "Lighting" : page).font(.system(size:12,weight:.medium));Spacer();if page == "Devices" { Text("\(center.state.devices.count)").font(.system(size:10,design:.monospaced)) } }.foregroundStyle(model.page == page ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,13).frame(height:43).background { if model.page == page { RoundedRectangle(cornerRadius:10).fill(CenterTheme.accent.opacity(0.08)).matchedGeometryEffect(id:"center-nav",in:selection) } }
+                    HStack(spacing:12) { Image(systemName:symbol).font(.system(size:14)).frame(width:18);Text(L10n.text(page == "Overview" ? "Lighting" : page)).font(.system(size:12,weight:.medium));Spacer();if page == "Devices" { Text(L10n.text("\(center.state.devices.count)")).font(.system(size:10,design:.monospaced)) } }.foregroundStyle(model.page == page ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,13).frame(height:43).background { if model.page == page { RoundedRectangle(cornerRadius:10).fill(CenterTheme.accent.opacity(0.08)).matchedGeometryEffect(id:"center-nav",in:selection) } }
                 }.buttonStyle(PressFeedbackStyle()).padding(.bottom,5)
             }
             Spacer(minLength:20)
-            DisclosureGroup("Advanced",isExpanded:$advanced) {
-                VStack(alignment:.leading,spacing:8) {
-                    ForEach([("Studio","GPU Lab","cpu"),("Hardware","Diagnostics","waveform.path.ecg"),("Credits","Credits","heart")],id:\.0) { key,title,symbol in
-                        Button { model.page=key } label: { Label(title,systemImage:symbol).font(.system(size:11)).foregroundStyle(model.page == key ? CenterTheme.accent:CenterTheme.muted).frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,6) }.buttonStyle(.plain)
-                    }
-                }.padding(.top,10)
-            }.font(.system(size:11)).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,18)
-            Button { model.page="Settings" } label: { Label("Settings",systemImage:"gearshape").font(.system(size:12,weight:.medium)).foregroundStyle(model.page == "Settings" ? CenterTheme.accent:CenterTheme.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }.buttonStyle(PressFeedbackStyle()).padding(.bottom,16)
+            Button { model.page="Credits" } label: { Label(L10n.text("Credits & licenses"),systemImage:"heart").font(.system(size:12,weight:.medium)).foregroundStyle(model.page == "Credits" ? CenterTheme.accent:CenterTheme.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }.buttonStyle(PressFeedbackStyle())
+            Button { model.page="Settings" } label: { Label(L10n.text("Settings"),systemImage:"gearshape").font(.system(size:12,weight:.medium)).foregroundStyle(model.page == "Settings" ? CenterTheme.accent:CenterTheme.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }.buttonStyle(PressFeedbackStyle()).padding(.bottom,16)
             VStack(alignment:.leading,spacing:12) {
-                HStack { Image(systemName:"circle.hexagongrid").foregroundStyle(CenterTheme.accent);Text("HACKINFX CORE").font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(1) }
-                Text(center.online ? "Local engine online" : "Core offline").font(.system(size:12,weight:.medium))
-                HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text("LOCAL ONLY · x86-64").font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Image(systemName:"circle.hexagongrid").foregroundStyle(CenterTheme.accent);Text(L10n.text("HACKINFX CORE")).font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(1) }
+                Text(L10n.text(center.online ? "Local engine online" : "Core offline")).font(.system(size:12,weight:.medium))
+                HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text(L10n.text("LOCAL ONLY · x86-64")).font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text("2.4.0");Spacer();Text("LOCAL RGB") }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
-        }.onChange(of:model.page) { _,page in if ["Studio","Hardware","Credits"].contains(page) { advanced=true } }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
+            HStack { Text(L10n.text("2.7.0"));Spacer();Text(L10n.text("LOCAL RGB")) }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+        }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
 
@@ -437,16 +490,17 @@ private struct CenterDeviceCard:View {
         Button { center.toggle(device) } label: {
             VStack(alignment:.leading,spacing:17) {
                 HStack { ZStack { RoundedRectangle(cornerRadius:13).fill(CenterTheme.aqua.opacity(0.07)).frame(width:46,height:46);Image(systemName:device.symbol).font(.system(size:23,weight:.light)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted) };Spacer();Image(systemName:!device.controllable ? "info.circle" : center.selected.contains(device.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(center.selected.contains(device.id) ? CenterTheme.accent : CenterTheme.muted.opacity(0.4)) }
-                VStack(alignment:.leading,spacing:5) { Text(device.name).font(.system(size:13,weight:.semibold)).lineLimit(2).frame(height:34,alignment:.topLeading);Text(device.vendor.isEmpty ? device.categoryLabel : device.vendor+" · "+device.categoryLabel).font(.system(size:10)).foregroundStyle(CenterTheme.muted).lineLimit(1) }
-                HStack { CenterBadge(text:device.controllable ? "Ready" : device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable);Spacer();if device.led_count>0 { Text(device.lightCountLabel).font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
-                if let output=center.state.sync?.outputs?[device.id],center.state.running,!(["static","gradient"].contains(center.state.scene.mode)) { HStack { Text(String(format:"%.1f FPS",output.fps)).foregroundStyle(CenterTheme.aqua);Spacer();Text(String(format:"%.1f ms jitter",output.jitter_ms ?? 0)).foregroundStyle(CenterTheme.muted) }.font(.system(size:9,design:.monospaced)) }
-                Text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : device.backend == "native-ram" ? "Native Corsair / SMBus" : device.backend == "native-usb" ? "Native USB / HID" : "No lighting driver attached").font(.system(size:9)).foregroundStyle(CenterTheme.muted)
+                VStack(alignment:.leading,spacing:5) { Text(verbatim:device.name).font(.system(size:13,weight:.semibold)).lineLimit(2).frame(height:34,alignment:.topLeading);Text(L10n.text(device.vendor.isEmpty ? device.categoryLabel : device.vendor+" · "+device.categoryLabel)).font(.system(size:10)).foregroundStyle(CenterTheme.muted).lineLimit(1) }
+                HStack { CenterBadge(text:device.controllable ? "Ready" : device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable);Spacer();if device.led_count>0 { Text(L10n.text(device.lightCountLabel)).font(.system(size:9,design:.monospaced)).foregroundStyle(CenterTheme.muted) } }
+                if let output=center.state.sync?.outputs?[device.id],center.state.running,!(["static","gradient"].contains(center.state.scene.mode)) { HStack { Text(L10n.text(String(format:"%.1f FPS",output.fps))).foregroundStyle(CenterTheme.aqua);Spacer();Text(L10n.text(String(format:"%.1f ms jitter",output.jitter_ms ?? 0))).foregroundStyle(CenterTheme.muted) }.font(.system(size:9,design:.monospaced)) }
+                Text(L10n.text(device.backend == "openrgb" ? "OpenRGB bridge" : device.backend == "native" ? "Native NVIDIA driver" : device.backend == "native-ram" ? "Native Corsair / SMBus" : device.backend == "native-usb" ? "Native USB / HID" : "No lighting driver attached")).font(.system(size:9)).foregroundStyle(CenterTheme.muted)
             }.padding(19).frame(maxWidth:.infinity,alignment:.leading).background(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.045) : CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:17)).overlay(RoundedRectangle(cornerRadius:17).stroke(center.selected.contains(device.id) ? CenterTheme.accent.opacity(0.5) : .white.opacity(0.065),lineWidth:1))
-        }.buttonStyle(PressFeedbackStyle()).offset(y:hovered && !reduceMotion ? -3:0).shadow(color:CenterTheme.accent.opacity(hovered ? 0.06:0),radius:16,y:6).onHover { hovered=$0 }.animation(reduceMotion ? nil:.spring(duration:0.25,bounce:0.15),value:hovered).animation(reduceMotion ? nil:.spring(duration:0.28,bounce:0.15),value:center.selected.contains(device.id)).help(device.detail).contextMenu { Button("Device details") { center.activeDevice=device } }
+        }.buttonStyle(PressFeedbackStyle()).offset(y:hovered && !reduceMotion ? -3:0).shadow(color:CenterTheme.accent.opacity(hovered ? 0.06:0),radius:16,y:6).onHover { hovered=$0 }.animation(reduceMotion ? nil:.spring(duration:0.25,bounce:0.15),value:hovered).animation(reduceMotion ? nil:.spring(duration:0.28,bounce:0.15),value:center.selected.contains(device.id)).help(L10n.text(device.detail)).contextMenu { Button(L10n.text("Device details")) { center.activeDevice=device } }
     }
 }
 
 struct CenterWorkspace:View {
+    @ObservedObject private var language=AppLocalization.shared
     @ObservedObject var center:CenterModel
     let page:String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -460,8 +514,8 @@ struct CenterWorkspace:View {
             else if page == "Effects" || page == "Scenes" { EffectGallery(center:center) }
             else if page == "Canvas" || page == "Layout" { layout }
             else { connections }
-            if !center.error.isEmpty { CenterPanel { HStack { Label(center.error,systemImage:"exclamationmark.triangle").font(.system(size:12)).foregroundStyle(.orange).textSelection(.enabled);Spacer();Button { center.error="" } label: { Image(systemName:"xmark") }.help("Dismiss error") } } }
-            if !center.state.errors.isEmpty { DisclosureGroup("Connection & device details") { ForEach(Array(center.state.errors.enumerated()),id:\.offset) { _,value in Text(value).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted).textSelection(.enabled) } } }
+            if !center.error.isEmpty { CenterPanel { HStack { Label(L10n.text(center.error),systemImage:"exclamationmark.triangle").font(.system(size:12)).foregroundStyle(.orange).textSelection(.enabled);Spacer();Button { center.error="" } label: { Image(systemName:"xmark") }.help(L10n.text("Dismiss error")) } } }
+            if !center.state.errors.isEmpty { DisclosureGroup(L10n.text("Connection & device details")) { ForEach(Array(center.state.errors.enumerated()),id:\.offset) { _,value in Text(L10n.text(value)).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted).textSelection(.enabled) } } }
         }.animation(reduceMotion ? nil:.smooth(duration:0.24),value:center.filter).buttonStyle(CenterSecondaryStyle()).foregroundStyle(Color(red:0.91,green:0.94,blue:0.93)).sheet(item:$center.activeDevice) { device in CenterDeviceInspector(center:center,device:device) }
     }
     private var overview:some View {
@@ -471,39 +525,39 @@ struct CenterWorkspace:View {
                 Spacer();CenterBadge(text:center.online ? "Live control":"Connecting",good:center.online)
             }
             lightingControls
-            HStack(spacing:14) { Label("Output",systemImage:"speedometer").foregroundStyle(CenterTheme.aqua);Picker("Target output rate",selection:$center.scene.fps) { Text("20 FPS").tag(20.0);Text("30 FPS").tag(30.0);Text("60 FPS").tag(60.0) }.labelsHidden().frame(width:100);Text(center.scene.sync_policy == "adaptive" ? "Adaptive pacing · each device reports its achieved rate" : "Lockstep · group follows the slowest device").foregroundStyle(CenterTheme.muted);Spacer() }.font(.system(size:10)).padding(14).background(CenterTheme.elevated.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius:12))
+            HStack(spacing:14) { Label(L10n.text("Output"),systemImage:"speedometer").foregroundStyle(CenterTheme.aqua);Picker(L10n.text("Target output rate"),selection:$center.scene.fps) { Text(L10n.text("20 FPS")).tag(20.0);Text(L10n.text("30 FPS")).tag(30.0);Text(L10n.text("60 FPS")).tag(60.0) }.labelsHidden().frame(width:100);Text(L10n.text(center.scene.sync_policy == "adaptive" ? "Adaptive pacing · each device reports its achieved rate" : "Lockstep · group follows the slowest device")).foregroundStyle(CenterTheme.muted);Spacer() }.font(.system(size:10)).padding(14).background(CenterTheme.elevated.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius:12))
             HStack {
-                VStack(alignment:.leading,spacing:5) { Text("Connected lighting").font(.system(size:17,weight:.semibold));Text("\(center.controllable.count) ready · \(center.selected.count) selected").font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-                Spacer();Button(center.busy ? "Discovering…":"Rediscover",action:center.discover).disabled(center.busy || !center.online)
-                if !center.online { Button("Start Core",action:center.start) }
+                VStack(alignment:.leading,spacing:5) { Text(L10n.text("Connected lighting")).font(.system(size:17,weight:.semibold));Text(L10n.text("\(center.controllable.count) ready · \(center.selected.count) selected")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+                Spacer();Button(L10n.text(center.busy ? "Discovering…":"Rediscover"),action:center.discover).disabled(center.busy || !center.online)
+                if !center.online { Button(L10n.text("Start Core"),action:center.start) }
             }
             grid(center.visible.filter { $0.controllable }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
             if center.controllable.isEmpty { emptyState }
             if center.state.devices.contains(where:{ !$0.controllable && $0.driver != nil }) {
-                Label("Some devices need setup. Open Devices → Needs attention for details.",systemImage:"info.circle").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                Label(L10n.text("Some devices need setup. Open Devices → Needs attention for details."),systemImage:"info.circle").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
             }
         }
     }
-    private func metric(_ title:String,value:String,symbol:String)->some View { CenterPanel { HStack(alignment:.top) { VStack(alignment:.leading,spacing:10) { Text(title).font(.system(size:10)).foregroundStyle(CenterTheme.muted);Text(value).font(.system(size:25,weight:.medium,design:.rounded)) };Spacer();Image(systemName:symbol).foregroundStyle(CenterTheme.aqua) } } }
-    private func grid(_ devices:[CenterDevice])->some View { LazyVGrid(columns:[GridItem(.adaptive(minimum:210),spacing:14)],spacing:14) { ForEach(devices) { device in CenterDeviceCard(center:center,device:device) } } }
-    private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text("Connect your lighting hardware").font(.headline);Text("HackinFX starts its bundled OpenRGB engine and discovers native GPU, USB/HID and memory devices. Inventory-only entries remain visible for diagnostics.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
+    private func metric(_ title:String,value:String,symbol:String)->some View { CenterPanel { HStack(alignment:.top) { VStack(alignment:.leading,spacing:10) { Text(L10n.text(title)).font(.system(size:10)).foregroundStyle(CenterTheme.muted);Text(L10n.text(value)).font(.system(size:25,weight:.medium,design:.rounded)) };Spacer();Image(systemName:symbol).foregroundStyle(CenterTheme.aqua) } } }
+    private func grid(_ devices:[CenterDevice])->some View { LazyVGrid(columns:[GridItem(.adaptive(minimum:210),spacing:14)],spacing:14) { ForEach(devices) { device in VStack(spacing:8) { CenterDeviceCard(center:center,device:device);if device.controllable { HStack(spacing:8) { Image(systemName:"sun.max");Slider(value:Binding(get:{center.deviceLevel(device.id)},set:{center.setDeviceLevel(device.id,$0)}),in:0...100);Text("\(Int(center.deviceLevel(device.id)))%").monospacedDigit().frame(width:34) }.font(.system(size:10)).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,8) } } } } }
+    private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text(L10n.text("Connect your lighting hardware")).font(.headline);Text(L10n.text("HackinFX starts its bundled OpenRGB engine and discovers native GPU, USB/HID and memory devices. Inventory-only entries remain visible for diagnostics.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
     private var devices:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Device library",title:"Your devices",subtitle:"GPU, memory, USB peripherals and cooling — grouped by actual control capability.")
             HStack(spacing:8) {
                 ForEach([("lighting","Lighting"),("attention","Needs attention"),("all","All devices")],id:\.0) { key,label in
-                    Button { center.filter=key } label: { Text(label).foregroundStyle(center.filter == key ? CenterTheme.accent:CenterTheme.muted) }
+                    Button { center.filter=key } label: { Text(L10n.text(label)).foregroundStyle(center.filter == key ? CenterTheme.accent:CenterTheme.muted) }
                 }
                 Spacer(minLength:8)
                 Menu {
-                    ForEach([("gpu","GPU"),("dram","Memory"),("keyboard","Keyboards"),("mouse","Mice"),("cooler","Cooling"),("mainboard","Mainboards"),("controller","Controllers"),("usb","Other USB")],id:\.0) { key,label in Button(label) { center.filter=key } }
-                } label: { Label(["gpu":"GPU","dram":"Memory","keyboard":"Keyboards","mouse":"Mice","cooler":"Cooling","mainboard":"Mainboards","controller":"Controllers","usb":"Other USB"][center.filter] ?? "Category",systemImage:"line.3.horizontal.decrease") }.fixedSize()
-                Button("Refresh",action:center.discover).disabled(center.busy || !center.online)
+                    ForEach([("gpu","GPU"),("dram","Memory"),("keyboard","Keyboards"),("mouse","Mice"),("cooler","Cooling"),("mainboard","Mainboards"),("controller","Controllers"),("usb","Other USB")],id:\.0) { key,label in Button(L10n.text(label)) { center.filter=key } }
+                } label: { Label(L10n.text(["gpu":"GPU","dram":"Memory","keyboard":"Keyboards","mouse":"Mice","cooler":"Cooling","mainboard":"Mainboards","controller":"Controllers","usb":"Other USB"][center.filter] ?? "Category"),systemImage:"line.3.horizontal.decrease") }.fixedSize()
+                Button(L10n.text("Refresh"),action:center.discover).disabled(center.busy || !center.online)
             }
 
             grid(center.visible)
             if center.visible.isEmpty { emptyState }
-            Text("Select devices to control together. Click an unavailable device for setup details.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            Text(L10n.text("Select devices to control together. Click an unavailable device for setup details.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
     private func sceneColor(_ index:Int)->Binding<Color> { Binding(get:{ let hex=center.scene.palette[min(index,center.scene.palette.count-1)];let rgb=UInt32(hex,radix:16) ?? 0;return Color(red:Double((rgb>>16)&255)/255,green:Double((rgb>>8)&255)/255,blue:Double(rgb&255)/255) },set:{ value in while center.scene.palette.count<=index { center.scene.palette.append(center.scene.palette.last ?? "ffffff") };let c=NSColor(value).usingColorSpace(.sRGB) ?? .white;center.scene.palette[index]=[c.redComponent,c.greenComponent,c.blueComponent].map { String(format:"%02x",Int(($0*255).rounded())) }.joined() }) }
@@ -514,83 +568,93 @@ struct CenterWorkspace:View {
                     HStack(spacing:12) {
                         Menu {
                             ForEach(EffectLibrary.catalog.categories,id:\.self) { category in
-                                Menu(category) { ForEach(EffectLibrary.catalog.effects.filter {$0.category==category}) { effect in Button(effect.name) { center.scene.mode=effect.id } } }
+                                Menu(L10n.text(category)) { ForEach(EffectLibrary.catalog.effects.filter {$0.category==category}) { effect in Button(L10n.text(effect.name)) { center.scene.mode=effect.id } } }
                             }
-                        } label: { Label(EffectLibrary.effect(center.scene.mode)?.name ?? center.scene.mode.capitalized,systemImage:EffectLibrary.effect(center.scene.mode)?.symbol ?? "sparkles") }
-                        Spacer();Button { galleryPresented=true } label: { Label("Browse 40 effects",systemImage:"square.grid.2x2") }
+                        } label: { Label(L10n.text(EffectLibrary.effect(center.scene.mode)?.name ?? center.scene.mode.capitalized),systemImage:EffectLibrary.effect(center.scene.mode)?.symbol ?? "sparkles") }
+                        Spacer();Button { galleryPresented=true } label: { Label(L10n.text("Browse 40 effects"),systemImage:"square.grid.2x2") }
                     }
-                    if EffectLibrary.effect(center.scene.mode)?.colors != false { HStack { ForEach(0..<min(4,center.scene.palette.count),id:\.self) { i in ColorPicker("Color \(i+1)",selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
-                    HStack { Text("Brightness").frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text("\(Int(center.scene.brightness))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
-                    if !["static","gradient"].contains(center.scene.mode) { HStack { Text("Speed").frame(width:75,alignment:.leading);Slider(value:$center.scene.speed,in:1...100);Text("\(Int(center.scene.speed))%").monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-                    if !["static","spectrum","breathing","color shift","pulse","heartbeat"].contains(center.scene.mode) { Picker("Direction",selection:$center.scene.axis) { Text("Horizontal").tag("x");Text("Vertical").tag("y") }.pickerStyle(.segmented) }
+                    if EffectLibrary.effect(center.scene.mode)?.colors != false { HStack { ForEach(0..<min(4,center.scene.palette.count),id:\.self) { i in ColorPicker(L10n.text("Color \(i+1)"),selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
+                    HStack { Text(L10n.text("Brightness")).frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text(L10n.text("\(Int(center.scene.brightness))%")).monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                    if !["static","gradient"].contains(center.scene.mode) { HStack { Text(L10n.text("Speed")).frame(width:75,alignment:.leading);Slider(value:$center.scene.speed,in:1...100);Text(L10n.text("\(Int(center.scene.speed))%")).monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+                    if !["static","spectrum","breathing","color shift","pulse","heartbeat"].contains(center.scene.mode) { Picker(L10n.text("Direction"),selection:$center.scene.axis) { Text(L10n.text("Horizontal")).tag("x");Text(L10n.text("Vertical")).tag("y") }.pickerStyle(.segmented) }
                     HStack(spacing:10) {
-                        Label(center.liveStatus,systemImage:"bolt.fill").font(.system(size:10)).foregroundStyle(center.error.isEmpty ? CenterTheme.aqua:.orange)
-                        Spacer();Button("Pause animation",action:center.stop).disabled(!center.state.running || center.busy)
-                        Button("Lights off",action:center.blackout).disabled(center.selected.isEmpty)
+                        Label(L10n.text(center.liveStatus),systemImage:"bolt.fill").font(.system(size:10)).foregroundStyle(center.error.isEmpty ? CenterTheme.aqua:.orange)
+                        Spacer();Button(L10n.text("Pause animation"),action:center.stop).disabled(!center.state.running || center.busy)
+                        Button(L10n.text("Lights off"),action:center.blackout).disabled(center.selected.isEmpty)
                     }
-                    if !center.sceneCompatible && !center.selected.isEmpty { Text("Devices that cannot play this effect keep their last color. Choose Static to control all ready devices.").font(.system(size:11)).foregroundStyle(.orange) }
-                    if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text("Onboard effects use their own clocks. Use Canvas with shared-clock streaming devices for synchronized effects.").font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
+                    if !center.sceneCompatible && !center.selected.isEmpty { Text(L10n.text("Devices that cannot play this effect keep their last color. Choose Static to control all ready devices.")).font(.system(size:11)).foregroundStyle(.orange) }
+                    if center.chosen.contains(where:{($0.onboard_modes ?? []).contains(center.scene.mode)}) { Text(L10n.text("Onboard effects use their own clocks. Use Canvas with shared-clock streaming devices for synchronized effects.")).font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
 
                 }
             }.animation(reduceMotion ? nil:.smooth(duration:0.25),value:center.scene.mode).sheet(isPresented:$galleryPresented) {
-                VStack(spacing:0) { HStack { Text("HackinFX / Effects").font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted);Spacer();Button("Done") { galleryPresented=false } }.padding(20);Divider();ScrollView { EffectGallery(center:center).padding(28) } }.frame(minWidth:1000,idealWidth:1120,minHeight:760,idealHeight:860).background(CenterTheme.background).preferredColorScheme(.dark)
+                VStack(spacing:0) { HStack { Text(L10n.text("HackinFX / Effects")).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted);Spacer();Button(L10n.text("Done")) { galleryPresented=false } }.padding(20);Divider();ScrollView { EffectGallery(center:center).padding(28) } }.frame(minWidth:1000,idealWidth:1120,minHeight:760,idealHeight:860).background(CenterTheme.background).preferredColorScheme(.dark)
             }
     }
     private var layout:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Spatial lighting",title:"Canvas",subtitle:"Arrange your setup in one shared effect space. Move devices without resetting the animation clock.")
             CenterPanel { VStack(alignment:.leading,spacing:12) {
-                Toggle("Shared effect timeline",isOn:$center.scene.synchronized).toggleStyle(.switch)
-                Picker("Output policy",selection:$center.scene.sync_policy) { Text("Adaptive · keep fast devices smooth").tag("adaptive");Text("Lockstep · wait for every device").tag("lockstep") }.pickerStyle(.segmented)
-                HStack { Text("Target frame rate");Picker("Target frame rate",selection:$center.scene.fps) { Text("20 FPS").tag(20.0);Text("30 FPS").tag(30.0);Text("60 FPS").tag(60.0) }.labelsHidden();Spacer();Text("Actual rates depend on each transport").foregroundStyle(CenterTheme.muted) }.font(.system(size:11))
-                Picker("Effect mapping",selection:$center.scene.mapping) { Text("Mirror on all devices").tag("mirror");Text("Across Canvas").tag("canvas") }.pickerStyle(.segmented)
-                HStack { Button("Select streaming devices") { center.selected=Set(center.controllable.filter { $0.direct }.map { $0.id }) };Spacer();Text("Shared clock · measured device FPS").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
-                Text("Adaptive output keeps one bounded frame in flight per device and samples a shared timeline using measured command latency. Slow outputs do not stall fast ones. Lockstep waits for the whole group. Hardware buffering still affects visible timing.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                Toggle(L10n.text("Shared effect timeline"),isOn:$center.scene.synchronized).toggleStyle(.switch)
+                Picker(L10n.text("Output policy"),selection:$center.scene.sync_policy) { Text(L10n.text("Adaptive · keep fast devices smooth")).tag("adaptive");Text(L10n.text("Lockstep · wait for every device")).tag("lockstep") }.pickerStyle(.segmented)
+                HStack { Text(L10n.text("Target frame rate"));Picker(L10n.text("Target frame rate"),selection:$center.scene.fps) { Text(L10n.text("20 FPS")).tag(20.0);Text(L10n.text("30 FPS")).tag(30.0);Text(L10n.text("60 FPS")).tag(60.0) }.labelsHidden();Spacer();Text(L10n.text("Actual rates depend on each transport")).foregroundStyle(CenterTheme.muted) }.font(.system(size:11))
+                Picker(L10n.text("Effect mapping"),selection:$center.scene.mapping) { Text(L10n.text("Mirror on all devices")).tag("mirror");Text(L10n.text("Across Canvas")).tag("canvas") }.pickerStyle(.segmented)
+                HStack { Button(L10n.text("Select streaming devices")) { center.selected=Set(center.controllable.filter { $0.direct }.map { $0.id }) };Spacer();Text(L10n.text("Shared clock · measured device FPS")).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
+                Text(L10n.text("Adaptive output keeps one bounded frame in flight per device and samples a shared timeline using measured command latency. Slow outputs do not stall fast ones. Lockstep waits for the whole group. Hardware buffering still affects visible timing.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
             } }
             GeometryReader { geometry in
                 ZStack {
-                    RoundedRectangle(cornerRadius:20).fill(CenterTheme.surface)
+                    CanvasEffectBackground(center:center).allowsHitTesting(false)
+                    RoundedRectangle(cornerRadius:20).fill(.black.opacity(0.36)).allowsHitTesting(false)
                     Path { path in for x in stride(from:CGFloat(0),through:geometry.size.width,by:32) { path.move(to:CGPoint(x:x,y:0));path.addLine(to:CGPoint(x:x,y:geometry.size.height)) };for y in stride(from:CGFloat(0),through:geometry.size.height,by:32) { path.move(to:CGPoint(x:0,y:y));path.addLine(to:CGPoint(x:geometry.size.width,y:y)) } }.stroke(.white.opacity(0.025),lineWidth:1)
                     ForEach(center.controllable.filter { !center.scene.synchronized || $0.direct }) { device in
                         let p=center.state.layout[device.id] ?? CenterPosition(x:0.5,y:0.5,width:0.22)
                         let location=dragLocations[device.id] ?? CGPoint(x:p.x*geometry.size.width,y:p.y*geometry.size.height)
-                        VStack(spacing:8) { Image(systemName:device.symbol).font(.system(size:25,weight:.light));Text(device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:122,height:85).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
+                        VStack(spacing:8) { Image(systemName:device.symbol).font(.system(size:25,weight:.light));Text(verbatim:device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:122,height:85).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
                     }
-                    if center.controllable.isEmpty { Text("Discover and confirm a controllable device first").font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
-                }.coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
+                    if center.controllable.isEmpty { Text(L10n.text("Discover and confirm a controllable device first")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
+                }.environment(\.layoutDirection,.leftToRight).coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
             }.frame(height:560)
-            Text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; reported keyboard/panel coordinates are used when available. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            Text(L10n.text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; reported keyboard/panel coordinates are used when available. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
     private var connections:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
+            AndroidRemotePanel(center:center)
+            CenterPanel { VStack(alignment:.leading,spacing:12) {
+                Label(L10n.text("Language"),systemImage:"globe").font(.headline)
+                Picker(L10n.text("Application language"),selection:$language.selection) {
+                    Text(L10n.text("System language")).tag("system")
+                    ForEach(AppLocalization.languages) { item in Text(verbatim:item.name).tag(item.id) }
+                }.pickerStyle(.menu)
+                Text(L10n.text("Language changes apply immediately. Device names, saved profiles and hardware commands stay unchanged.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            } }
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label("Software Update",systemImage:"arrow.down.circle").font(.headline);Spacer();Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.4.0").font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
-                Toggle("Check automatically at launch",isOn:$center.automaticUpdates).toggleStyle(.switch)
-                Text(center.updateMessage).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
-                HStack { Button(center.checkingUpdates ? "Checking…":"Check for Updates",action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link("View release",destination:url) } }
+                HStack { Label(L10n.text("Software Update"),systemImage:"arrow.down.circle").font(.headline);Spacer();Text(L10n.text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.7.0")).font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                Toggle(L10n.text("Check automatically at launch"),isOn:$center.automaticUpdates).toggleStyle(.switch)
+                Text(L10n.text(center.updateMessage)).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
+                HStack { Button(L10n.text(center.checkingUpdates ? "Checking…":"Check for Updates"),action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link(L10n.text("View release"),destination:url) } }
             } }
             CenterPanel { VStack(alignment:.leading,spacing:12) {
-                Toggle("Launch at login",isOn:Binding(get:{center.loginEnabled},set:{center.setLaunchAtLogin($0)})).toggleStyle(.switch)
-                Text(center.loginMessage).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
-                Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
-                Label("Startup & live control",systemImage:"sun.max").font(.headline);Text("On launch, ready devices receive mint Twinkle at 65% speed. RAM stays untouched until you explicitly probe and select its DIMMs. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+                Toggle(L10n.text("Launch at login"),isOn:Binding(get:{center.loginEnabled},set:{center.setLaunchAtLogin($0)})).toggleStyle(.switch)
+                Text(L10n.text(center.loginMessage)).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                Button(L10n.text("Open Login Items")) { SMAppService.openSystemSettingsLoginItems() }
+                Label(L10n.text("Startup & live control"),systemImage:"sun.max").font(.headline);Text(L10n.text("On launch, all ready devices receive green Twinkle at 65% speed. RAM joins automatically after one successful saved probe, with inventory and RGB identity revalidated on each start. Paired Nanoleaf panels join when reachable. Rediscovery keeps the current colors.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
             CenterPanel { VStack(alignment:.leading,spacing:12) {
-                Label("Nanoleaf Shapes",systemImage:"triangle").font(.headline)
-                Text("Find Shapes Triangles on your local network, select your controller, then hold its power button for 5–7 seconds until flashing and click Pair Shapes within 30 seconds.").font(.system(size:12)).foregroundStyle(CenterTheme.muted)
-                HStack { Button("Find Nanoleaf",action:center.findNanoleaf).disabled(center.busy || !center.online)
+                Label(L10n.text("Nanoleaf Shapes"),systemImage:"triangle").font(.headline)
+                Text(L10n.text("Find Shapes Triangles on your local network, select your controller, then hold its power button for 5–7 seconds until flashing and click Pair Shapes within 30 seconds.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted)
+                HStack { Button(L10n.text("Find Nanoleaf"),action:center.findNanoleaf).disabled(center.busy || !center.online)
                     if let candidates=center.state.nanoleaf_candidates,!candidates.isEmpty {
-                        Picker("Controller",selection:$center.nanoleafAddress) { ForEach(candidates) { candidate in Text(candidate.name).tag(candidate.address) } }.labelsHidden()
-                        Button("Pair Shapes",action:center.pairNanoleaf).disabled(center.busy || center.nanoleafAddress.isEmpty)
+                        Picker(L10n.text("Controller"),selection:$center.nanoleafAddress) { ForEach(candidates) { candidate in Text(L10n.text(candidate.name)).tag(candidate.address) } }.labelsHidden()
+                        Button(L10n.text("Pair Shapes"),action:center.pairNanoleaf).disabled(center.busy || center.nanoleafAddress.isEmpty)
                     }
                 }
-                Text("Pairing stores a private local token and reads the real panel layout. Select the panels in Lighting to start control. Streaming uses 10 Hz with panel interpolation; it does not change saved Nanoleaf scenes.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+                Text(L10n.text("Pairing stores a private local token and reads the real panel layout. Select the panels in Lighting to start control. Streaming uses 10 Hz with panel interpolation; it does not change saved Nanoleaf scenes.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
             } }
-            DisclosureGroup("Device connections & advanced details") {
-            CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label("Bundled OpenRGB 1.1",systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text("LOCAL ENGINE").font(.system(size:20,weight:.medium,design:.monospaced));Text("OpenRGB starts and stops with HackinFX. Its macOS device drivers are included; no separate OpenRGB installation is required. Direct-mode devices join live scenes. Native adapters own their matching hardware to avoid duplicate writes.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Rediscover devices",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
-            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label("Native NVIDIA",systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text("The existing NullMoth/NVRM controller paths remain available in GPU Lab. A local visual confirmation is required before Core can include a GPU in a scene.").font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other supported USB families use the bundled OpenRGB engine. DRAM access depends on the chipset, module and required macUSPCIO driver.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
-            CenterPanel { VStack(alignment:.leading,spacing:12) { Label("Private local Core",systemImage:"lock.shield").font(.headline);Text("The API uses a per-process credential and binds only to 127.0.0.1. No LAN listener, cloud account or Android access is enabled. Saved scenes stay in Documents/HackinFX. The engine stops when HackinFX quits.").font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+            DisclosureGroup(L10n.text("Device connections & advanced details")) {
+            CenterPanel { VStack(alignment:.leading,spacing:16) { HStack { Label(L10n.text("Bundled OpenRGB 1.1"),systemImage:"point.3.connected.trianglepath.dotted").font(.headline);Spacer();CenterBadge(text:center.state.bridge,good:center.state.bridge == "connected") };Text(L10n.text("LOCAL ENGINE")).font(.system(size:20,weight:.medium,design:.monospaced));Text(L10n.text("OpenRGB starts and stops with HackinFX. Its macOS device drivers are included; no separate OpenRGB installation is required. Direct-mode devices join live scenes. Native adapters own their matching hardware to avoid duplicate writes.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted);CenterAction(title:"Rediscover devices",symbol:"arrow.clockwise",action:center.discover).disabled(center.busy || !center.online) } }
+            CenterPanel { VStack(alignment:.leading,spacing:14) { HStack { Label(L10n.text("Native NVIDIA"),systemImage:"cpu").font(.headline);Spacer();CenterBadge(text:"Native driver") };Text(L10n.text("NVIDIA devices use the reviewed NullMoth/NVRM transport. Open a GPU in Devices to confirm its lighting or review setup requirements.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted);Text(L10n.text("Native HID LampArray covers compatible keyboards, mainboards and lighting controllers. ASUS Spatha X and NZXT Kraken X2/M2 have dedicated lighting paths. Other supported USB families use the bundled OpenRGB engine. DRAM access depends on the chipset, module and required macUSPCIO driver.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) } }
+            CenterPanel { VStack(alignment:.leading,spacing:12) { Label(L10n.text("Private local Core"),systemImage:"lock.shield").font(.headline);Text(L10n.text("The API uses a per-process credential and binds only to 127.0.0.1. No LAN listener, cloud account or Android access is enabled. Saved scenes stay in Documents/HackinFX. The engine stops when HackinFX quits.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
             }
         }
     }
@@ -603,40 +667,53 @@ private struct CenterDeviceInspector:View {
     var body:some View {
         ScrollView { VStack(alignment:.leading,spacing:19) {
             HStack { Image(systemName:device.symbol).font(.system(size:30,weight:.light)).foregroundStyle(CenterTheme.accent);Spacer();CenterBadge(text:device.backend,good:device.controllable) }
-            Text(device.name).font(.system(size:23,weight:.semibold,design:.rounded))
-            Text(device.vendor+" · "+device.categoryLabel).foregroundStyle(CenterTheme.muted)
-            Divider()
-            if let positions=device.led_positions,!positions.isEmpty { VStack(alignment:.leading,spacing:8) { Text("MAPPED LED POSITIONS · SCHEMATIC").font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);GeometryReader { geometry in ZStack { ForEach(Array(positions.enumerated()),id:\.offset) { _,point in RoundedRectangle(cornerRadius:2).fill(CenterTheme.accent.opacity(0.75)).frame(width:10,height:10).position(x:10+point.x*(geometry.size.width-20),y:10+point.y*(geometry.size.height-20)) } } }.frame(height:120) }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12)) }
-            if let usb=device.usb_id { Text("USB ID · "+usb).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
-            if let matches=device.catalog_matches,!matches.isEmpty { Text("OpenRGB identities: "+matches.joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-            Text(device.lightCountLabel).font(.system(size:13,weight:.semibold)).foregroundStyle(CenterTheme.accent)
-            if let source=device.topology_source { Text(source+(device.layout.map { " · "+$0 } ?? "")).font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
-            if let output=center.state.sync?.outputs?[device.id] { Text(String(format:"Output %.1f FPS · command %.2f ms · %d sent · %d busy ticks",output.fps,output.command_ms,output.frames,output.missed)).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
-            Text(device.detail).font(.system(size:12)).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
-            if let modes=device.static_modes,!modes.isEmpty { Text("Supported scenes: "+(device.direct ? ["Static","Gradient","Spectrum","Breathing","Wave","Aurora","Comet","Twinkle","Color shift"] : modes.map { $0.capitalized }).joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-            if device.driver == "corsair-ddr5-i801" {
-                HStack { Button("Probe RAM RGB") { center.probeRAM();dismiss() }.disabled(center.busy || !center.online || device.status.hasPrefix("unsupported"));Button("RAM setup guide") { if let path=Bundle.main.resourceURL?.appendingPathComponent("Source/docs/RAM-SETUP.md") { NSWorkspace.shared.open(path) } } }
-                Text("The initial RAM adapter requires a separately installed macUSPCIO driver and exact Corsair identity/CRC checks. The app never changes OpenCore or installs a kernel extension.").font(.system(size:10)).foregroundStyle(CenterTheme.muted)
+            Text(verbatim:device.name).font(.system(size:23,weight:.semibold,design:.rounded))
+            Text(verbatim:device.vendor+" · "+L10n.text(device.categoryLabel)).foregroundStyle(CenterTheme.muted)
+            if device.controllable {
+                VStack(alignment:.leading,spacing:8) {
+                    HStack { Text(L10n.text("Device brightness"));Spacer();Text("\(Int(center.deviceLevel(device.id)))%").monospacedDigit() }
+                    Slider(value:Binding(get:{center.deviceLevel(device.id)},set:{center.setDeviceLevel(device.id,$0)}),in:0...100)
+                    Text(L10n.text("Multiplied by the master brightness.")).font(.system(size:10)).foregroundStyle(CenterTheme.muted)
+                }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12))
             }
-            Label(device.direct ? (device.color_scope == "whole-device" ? "Host-streamed whole-device color" : device.backend == "native" ? "Host-streamed GPU color zones" : "Direct per-LED scene streaming") : device.controllable ? "Static scenes and supported native effects" : "Lighting control unavailable",systemImage:device.controllable ? "checkmark.circle" : "info.circle").font(.system(size:12)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted)
-            if let zones=device.zones,!zones.isEmpty { Text("ZONES").font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);ForEach(Array(zones.prefix(8).enumerated()),id:\.offset) { _,zone in HStack { Text(zone.name);Spacer();Text("\(zone.led_count) LEDs").foregroundStyle(CenterTheme.muted) }.font(.system(size:11)) } }
-            if let modes=device.modes,!modes.isEmpty { Text("Hardware modes: "+modes.prefix(12).map { $0.name }.joined(separator:", ")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
-            Text("Connection readiness is not a physical lighting confirmation.").font(.caption).foregroundStyle(CenterTheme.muted)
-            HStack { Spacer();Button("Close") { dismiss() }.keyboardShortcut(.cancelAction) }
+
+            Divider()
+            if let positions=device.led_positions,!positions.isEmpty { VStack(alignment:.leading,spacing:8) { Text(L10n.text("MAPPED LED POSITIONS · SCHEMATIC")).font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);GeometryReader { geometry in ZStack { ForEach(Array(positions.enumerated()),id:\.offset) { _,point in RoundedRectangle(cornerRadius:2).fill(CenterTheme.accent.opacity(0.75)).frame(width:10,height:10).position(x:10+point.x*(geometry.size.width-20),y:10+point.y*(geometry.size.height-20)) } } }.frame(height:120) }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12)) }
+            if let usb=device.usb_id { Text(L10n.text("USB ID · "+usb)).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+            if let matches=device.catalog_matches,!matches.isEmpty { Text(L10n.text("OpenRGB identities: "+matches.joined(separator:", "))).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            Text(L10n.text(device.lightCountLabel)).font(.system(size:13,weight:.semibold)).foregroundStyle(CenterTheme.accent)
+            if let source=device.topology_source { Text(L10n.text(source+(device.layout.map { " · "+$0 } ?? ""))).font(.system(size:10)).foregroundStyle(CenterTheme.muted) }
+            if let output=center.state.sync?.outputs?[device.id] { Text(L10n.text(String(format:"Output %.1f FPS · command %.2f ms · %d sent · %d busy ticks",output.fps,output.command_ms,output.frames,output.missed))).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
+            Text(L10n.text(device.detail)).font(.system(size:12)).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
+            if let modes=device.static_modes,!modes.isEmpty { Text(L10n.text("Supported scenes: "+(device.direct ? EffectLibrary.catalog.effects.map {$0.name} : modes.map { $0.capitalized }).joined(separator:", "))).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            if device.backend=="native" {
+                Button(L10n.text("Set up GPU lighting")) { dismiss();center.gpuSetupRequested?(device) }.disabled(device.setup_candidate != true || device.setup_fingerprint==nil)
+                Text(L10n.text("A visual test and exact hardware checks are required before a new GPU profile is saved.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            }
+            if device.driver == "corsair-ddr5-i801" {
+                HStack { Button(L10n.text("Probe RAM RGB")) { center.probeRAM();dismiss() }.disabled(center.busy || !center.online || device.status.hasPrefix("unsupported"));Button(L10n.text("RAM setup guide")) { if let path=Bundle.main.resourceURL?.appendingPathComponent("Source/docs/RAM-SETUP.md") { NSWorkspace.shared.open(path) } } }
+                Text(L10n.text("The initial RAM adapter requires a separately installed macUSPCIO driver and exact Corsair identity/CRC checks. The app never changes OpenCore or installs a kernel extension.")).font(.system(size:10)).foregroundStyle(CenterTheme.muted)
+            }
+            Label(L10n.text(device.direct ? (device.color_scope == "whole-device" ? "Host-streamed whole-device color" : device.backend == "native" ? "Host-streamed GPU color zones" : "Direct per-LED scene streaming") : device.controllable ? "Static scenes and supported native effects" : "Lighting control unavailable"),systemImage:device.controllable ? "checkmark.circle" : "info.circle").font(.system(size:12)).foregroundStyle(device.controllable ? CenterTheme.accent : CenterTheme.muted)
+            if let zones=device.zones,!zones.isEmpty { Text(L10n.text("ZONES")).font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);ForEach(Array(zones.prefix(8).enumerated()),id:\.offset) { _,zone in HStack { Text(L10n.text(zone.name));Spacer();Text(L10n.text("\(zone.led_count) LEDs")).foregroundStyle(CenterTheme.muted) }.font(.system(size:11)) } }
+            if let modes=device.modes,!modes.isEmpty { Text(L10n.text("Hardware modes: "+modes.prefix(12).map { $0.name }.joined(separator:", "))).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            Text(L10n.text("Connection readiness is not a physical lighting confirmation.")).font(.caption).foregroundStyle(CenterTheme.muted)
+            HStack { Spacer();Button(L10n.text("Close")) { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(28) }.frame(width:566,height:650).background(CenterTheme.background).foregroundStyle(.white).preferredColorScheme(.dark)
     }
 }
 
 // Used only by the explicit CLI design-check renderer, never by device discovery.
 extension CenterModel {
-    func loadDesignFixture() {
+    func loadDesignFixture(canvas:Bool=false) {
         let fixtures:[CenterDevice] = [
             CenterDevice(id:"sample:gpu",fingerprint:"sample-gpu",name:"GPU controller",vendor:"Sample device",category:"gpu",backend:"native",led_count:3,direct:false,controllable:true,status:"ready",detail:"Design fixture, not detected hardware"),
             CenterDevice(id:"sample:keyboard",fingerprint:"sample-keyboard",name:"Mechanical keyboard",vendor:"Sample device",category:"keyboard",backend:"openrgb",led_count:104,direct:true,controllable:true,status:"ready",detail:"Design fixture, not detected hardware"),
             CenterDevice(id:"sample:cooler",fingerprint:"sample-cooler",name:"USB cooling",vendor:"Sample device",category:"cooler",backend:"openrgb",led_count:24,direct:true,controllable:true,status:"ready",detail:"Design fixture, not detected hardware"),
             CenterDevice(id:"sample:dram",fingerprint:"sample-dram",name:"Memory kit",vendor:"Sample device",category:"dram",backend:"inventory",led_count:0,direct:false,controllable:false,status:"inventory-only",detail:"Design fixture, not detected hardware")
         ]
-        state=CenterState(schema:1,devices:fixtures,layout:Dictionary(uniqueKeysWithValues:fixtures.enumerated().map { i,d in (d.id,CenterPosition(x:Double(i+1)/5,y:0.5,width:0.2)) }),scene:CenterScene(),running:false,frames:0,errors:[],bridge:"connected",scenes:[SavedCenterScene(name:"Evening",config:CenterScene())],message:"SAMPLE DATA — design validation only")
+        var fixtureScene=CenterScene();if canvas { fixtureScene.mode="plasma";fixtureScene.palette=["103b70","20d8a4","8546cf"];self.pausedSceneTime=1.7 }
+        state=CenterState(schema:1,devices:fixtures,layout:Dictionary(uniqueKeysWithValues:fixtures.enumerated().map { i,d in (d.id,CenterPosition(x:Double(i+1)/5,y:0.5,width:0.2)) }),scene:fixtureScene,running:false,frames:0,errors:[],bridge:"connected",scenes:[SavedCenterScene(name:"Evening",config:CenterScene())],message:"SAMPLE DATA — design validation only")
         selected=["sample:keyboard","sample:cooler"];online=true
     }
 }
@@ -645,20 +722,52 @@ struct PeripheralDiagnostics:View {
     @ObservedObject var center:CenterModel
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
-            HStack { Text("USB & lighting controllers").font(.headline);Spacer();Button(center.busy ? "Scanning…" : "Refresh peripherals",action:center.discover).disabled(center.busy || !center.online) }
-            Text("Native IOKit inventory and OpenRGB identities. Refresh stops the current scene. Detection and catalog matches are separate from verified lighting control.").font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+            HStack { Text(L10n.text("USB & lighting controllers")).font(.headline);Spacer();Button(L10n.text(center.busy ? "Scanning…" : "Refresh peripherals"),action:center.discover).disabled(center.busy || !center.online) }
+            Text(L10n.text("Native IOKit inventory and OpenRGB identities. Refresh stops the current scene. Detection and catalog matches are separate from verified lighting control.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
             ForEach(center.state.devices.filter { $0.backend != "native" }) { device in
                 HStack(alignment:.top,spacing:11) {
                     Image(systemName:device.symbol).foregroundStyle(CenterTheme.aqua).frame(width:19)
                     VStack(alignment:.leading,spacing:4) {
-                        Text(device.name).font(.system(size:12,weight:.medium))
-                        Text([device.vendor,device.usb_id ?? "",device.driver ?? device.backend].filter { !$0.isEmpty }.joined(separator:" · ")).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted)
-                        if device.status == "access-required" { Text(device.detail).font(.system(size:10)).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true) }
+                        Text(verbatim:device.name).font(.system(size:12,weight:.medium))
+                        Text(L10n.text([device.vendor,device.usb_id ?? "",device.driver ?? device.backend].filter { !$0.isEmpty }.joined(separator:" · "))).font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted)
+                        if device.status == "access-required" { Text(L10n.text(device.detail)).font(.system(size:10)).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true) }
                     }
                     Spacer();CenterBadge(text:device.status.replacingOccurrences(of:"-",with:" "),good:device.controllable)
                 }.padding(.vertical,6)
             }
-            if center.state.devices.isEmpty { Text("No Core inventory yet. Start Core and discover devices in Overview.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            if center.state.devices.isEmpty { Text(L10n.text("No Core inventory yet. Start Core and discover devices in Overview.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
         }.padding(22).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:16))
+    }
+}
+
+struct AndroidRemotePanel:View {
+    @ObservedObject var center:CenterModel
+    private var qr:NSImage? {
+        guard !center.remotePairingText.isEmpty,let filter=CIFilter(name:"CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(center.remotePairingText.utf8),forKey:"inputMessage");filter.setValue("M",forKey:"inputCorrectionLevel")
+        guard let image=filter.outputImage?.transformed(by:CGAffineTransform(scaleX:6,y:6)),let cg=CIContext().createCGImage(image,from:image.extent) else { return nil }
+        return NSImage(cgImage:cg,size:NSSize(width:220,height:220))
+    }
+    var body:some View {
+        CenterPanel { VStack(alignment:.leading,spacing:14) {
+            Label("Android Remote",systemImage:"iphone.radiowaves.left.and.right").font(.headline)
+            Toggle("Enable local-network control",isOn:Binding(get:{center.remoteSettings.enabled},set:{center.loadRemote("enable",body:["enabled":$0])})).toggleStyle(.switch).disabled(center.remoteBusy || !center.online)
+            Text("Pair HackinFX Remote on Android to control devices, colors and effects over encrypted Wi-Fi. Hardware setup and diagnostics remain on this Mac.").font(.system(size:12)).foregroundStyle(CenterTheme.muted)
+            if center.remoteSettings.enabled {
+                if !center.remoteSettings.addresses.isEmpty { Picker("Mac address",selection:$center.remoteHost) { ForEach(center.remoteSettings.addresses,id:\.self) { Text(verbatim:$0).tag($0) } } }
+                Text("Port \(center.remoteSettings.port) · TLS · local IPv4 only").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted)
+                Button("Pair a phone") { center.loadRemote("pair") }.disabled(center.remoteBusy || center.remoteHost.isEmpty)
+                if let code=center.remoteSettings.pairCode {
+                    HStack(alignment:.top,spacing:22) {
+                        if let qr=qr { Image(nsImage:qr).interpolation(.none).resizable().frame(width:190,height:190).padding(12).background(.white).clipShape(RoundedRectangle(cornerRadius:12)) }
+                        VStack(alignment:.leading,spacing:10) { Text("Scan in HackinFX Remote").font(.headline);Text(verbatim:code).font(.system(size:32,weight:.medium,design:.monospaced)).tracking(5);Text("Pairing closes in \(center.remoteSettings.pairSeconds) seconds. Only scan directly from this Mac.").font(.system(size:11)).foregroundStyle(CenterTheme.muted);Button("Copy pairing details") { NSPasteboard.general.clearContents();NSPasteboard.general.setString(center.remotePairingText,forType:.string) } }
+                    }
+                }
+                DisclosureGroup("Manual pairing fingerprint") { Text(verbatim:center.remoteSettings.fingerprint).font(.system(size:10,design:.monospaced)).textSelection(.enabled) }
+                ForEach(center.remoteSettings.clients) { phone in HStack { Label(phone.name,systemImage:"iphone");Spacer();Button("Revoke") { center.loadRemote("revoke",body:["id":phone.id]) }.disabled(center.remoteBusy) } }
+                if center.remoteSettings.clients.isEmpty { Text("No phones paired.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            }
+            if !center.remoteMessage.isEmpty { Text(verbatim:center.remoteMessage).font(.system(size:11)).foregroundStyle(.orange) }
+        } }
     }
 }

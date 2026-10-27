@@ -1,3 +1,7 @@
+## 2.7.0
+
+Live per-device brightness on desktop and Remote, Android Remote 1.2.0, native USB hotplug, MAKR dial-ring/media support, identity-validated RAM startup, offline localization and Canvas/widget data-path updates. See docs/RELEASE-NOTES-2.7.0.md for compatibility limits and validation status.
+
 # Changelog
 
 ## 2.1.1 — 2026-10-26

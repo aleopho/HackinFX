@@ -24,3 +24,5 @@ not relicense that driver. Consult the upstream project for its full terms.
 
 This is an independent community project. No endorsement or affiliation with
 PNY, NVIDIA, Apple, NullMoth or OpenRGB is claimed.
+
+The combined distribution including the OpenLinkHub-derived MAKR 75 adapter is provided under GPL-3.0-or-later. See COPYING-GPL3. Existing GPL-2.0-or-later files retain their notices and are used under their later-version option in the combined program. OpenRGB and other separately bundled components retain their original licenses.

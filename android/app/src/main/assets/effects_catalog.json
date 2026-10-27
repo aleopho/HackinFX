@@ -1,0 +1,1801 @@
+{
+  "schema": 1,
+  "categories": [
+    "Essentials",
+    "Motion",
+    "Atmosphere",
+    "Particles",
+    "Geometry"
+  ],
+  "effects": [
+    {
+      "id": "static",
+      "name": "Solid color",
+      "category": "Essentials",
+      "symbol": "circle.fill",
+      "description": "One steady color across the setup.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "category": "Essentials",
+      "symbol": "slider.horizontal.3",
+      "description": "Blend your palette through space.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "spectrum",
+      "name": "Spectrum",
+      "category": "Essentials",
+      "symbol": "circle.lefthalf.filled",
+      "description": "A seamless full-spectrum color cycle.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": false
+    },
+    {
+      "id": "breathing",
+      "name": "Breathing",
+      "category": "Essentials",
+      "symbol": "waveform.path",
+      "description": "A slow, soft fade in and out.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "color shift",
+      "name": "Color shift",
+      "category": "Essentials",
+      "symbol": "circle.hexagongrid",
+      "description": "Crossfade smoothly between palette colors.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "pulse",
+      "name": "Pulse",
+      "category": "Essentials",
+      "symbol": "waveform",
+      "description": "A rounded pulse with a gentle afterglow.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "heartbeat",
+      "name": "Heartbeat",
+      "category": "Essentials",
+      "symbol": "waveform.path.ecg",
+      "description": "Two soft beats followed by a quiet pause.",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "wave",
+      "name": "Wave",
+      "category": "Motion",
+      "symbol": "water.waves",
+      "description": "Move your palette across the canvas.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "comet",
+      "name": "Comet",
+      "category": "Motion",
+      "symbol": "sparkle",
+      "description": "One bright head with a fading tail.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "rainbow wave",
+      "name": "Rainbow wave",
+      "category": "Motion",
+      "symbol": "rainbow",
+      "description": "A spatial ribbon through the full spectrum.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": false
+    },
+    {
+      "id": "scanner",
+      "name": "Scanner",
+      "category": "Motion",
+      "symbol": "viewfinder",
+      "description": "A narrow beam sweeps back and forth.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "bounce",
+      "name": "Bounce",
+      "category": "Motion",
+      "symbol": "arrow.left.and.right",
+      "description": "A soft light orb bounces between edges.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "ripple",
+      "name": "Ripple",
+      "category": "Motion",
+      "symbol": "dot.radiowaves.left.and.right",
+      "description": "Expanding circular waves from the center.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "orbit",
+      "name": "Orbit",
+      "category": "Motion",
+      "symbol": "circle.dotted",
+      "description": "A light point circles the canvas.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "marquee",
+      "name": "Marquee",
+      "category": "Motion",
+      "symbol": "ellipsis",
+      "description": "Evenly spaced lights travel in formation.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "chase",
+      "name": "Chase",
+      "category": "Motion",
+      "symbol": "chevron.right.2",
+      "description": "Alternating palette lanes move across devices.",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "category": "Atmosphere",
+      "symbol": "sparkles",
+      "description": "Slow green and violet northern lights.",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": false
+    },
+    {
+      "id": "fire",
+      "name": "Fire",
+      "category": "Atmosphere",
+      "symbol": "flame",
+      "description": "Layered heat, embers and gentle turbulence.",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "candle",
+      "name": "Candlelight",
+      "category": "Atmosphere",
+      "symbol": "flame.fill",
+      "description": "Warm, irregular flicker without hard flashes.",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "ocean",
+      "name": "Ocean",
+      "category": "Atmosphere",
+      "symbol": "water.waves",
+      "description": "Overlapping swells and luminous sea foam.",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "sunset",
+      "name": "Sunset",
+      "category": "Atmosphere",
+      "symbol": "sun.horizon",
+      "description": "A warm horizon slowly moves through space.",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "ice",
+      "name": "Ice",
+      "category": "Atmosphere",
+      "symbol": "snowflake",
+      "description": "A cold crystalline shimmer.",
+      "palette": [
+        "082449",
+        "45bfff",
+        "c3f5ff",
+        "ffffff"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "plasma",
+      "name": "Plasma",
+      "category": "Atmosphere",
+      "symbol": "circle.hexagongrid.fill",
+      "description": "Interfering color fields flow across the canvas.",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "nebula",
+      "name": "Nebula",
+      "category": "Atmosphere",
+      "symbol": "cloud",
+      "description": "Clouds of color drift through a soft field.",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "fog",
+      "name": "Fog",
+      "category": "Atmosphere",
+      "symbol": "cloud.fog",
+      "description": "A diffuse low-contrast wash of moving color.",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "twinkle",
+      "name": "Twinkle",
+      "category": "Particles",
+      "symbol": "star",
+      "description": "Independent soft sparkles on every LED.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 65,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "starfield",
+      "name": "Starfield",
+      "category": "Particles",
+      "symbol": "sparkles",
+      "description": "Scattered stars with long, quiet fades.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "fireflies",
+      "name": "Fireflies",
+      "category": "Particles",
+      "symbol": "lightbulb",
+      "description": "Small lights appear, glow and fade.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "meteor shower",
+      "name": "Meteor shower",
+      "category": "Particles",
+      "symbol": "sparkle",
+      "description": "Several trails drift at different speeds.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "rain",
+      "name": "Rain",
+      "category": "Particles",
+      "symbol": "cloud.rain",
+      "description": "Narrow droplets fall through the canvas.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "digital rain",
+      "name": "Digital rain",
+      "category": "Particles",
+      "symbol": "terminal",
+      "description": "Columns of light leave fading digital trails.",
+      "palette": [
+        "061b16",
+        "12b873",
+        "a7f3d0"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "confetti",
+      "name": "Confetti",
+      "category": "Particles",
+      "symbol": "party.popper",
+      "description": "Palette-colored specks drift and dissolve.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks",
+      "category": "Particles",
+      "symbol": "burst",
+      "description": "Soft expanding bursts with fading sparks.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "snow",
+      "name": "Snowfall",
+      "category": "Particles",
+      "symbol": "snowflake",
+      "description": "Slow, scattered flakes in a quiet background.",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "stripes",
+      "name": "Stripes",
+      "category": "Geometry",
+      "symbol": "line.3.horizontal",
+      "description": "Smooth palette bands slide through space.",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "checkerboard",
+      "name": "Checkerboard",
+      "category": "Geometry",
+      "symbol": "square.grid.3x3",
+      "description": "A moving two-dimensional palette grid.",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "spiral",
+      "name": "Spiral",
+      "category": "Geometry",
+      "symbol": "hurricane",
+      "description": "Palette ribbons curl outward from the center.",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "pinwheel",
+      "name": "Pinwheel",
+      "category": "Geometry",
+      "symbol": "fanblades",
+      "description": "Rotating arms meet at the center.",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "vortex",
+      "name": "Vortex",
+      "category": "Geometry",
+      "symbol": "tornado",
+      "description": "A soft tunnel of rotating light.",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    },
+    {
+      "id": "radar",
+      "name": "Radar",
+      "category": "Geometry",
+      "symbol": "scope",
+      "description": "A sweeping beam with a fading radial trail.",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 55,
+      "colors": true
+    }
+  ],
+  "looks": [
+    {
+      "id": "static-0",
+      "name": "Mint",
+      "effect": "static",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "static-1",
+      "name": "Warm ivory",
+      "effect": "static",
+      "category": "Essentials",
+      "palette": [
+        "ff6b92",
+        "ffb36b",
+        "fff0c2"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "gradient-0",
+      "name": "Coastal glass",
+      "effect": "gradient",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "gradient-1",
+      "name": "Golden hour",
+      "effect": "gradient",
+      "category": "Essentials",
+      "palette": [
+        "ff6b92",
+        "ffb36b",
+        "fff0c2"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "spectrum-0",
+      "name": "Slow spectrum",
+      "effect": "spectrum",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "spectrum-1",
+      "name": "Color current",
+      "effect": "spectrum",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "breathing-0",
+      "name": "Quiet mint",
+      "effect": "breathing",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "breathing-1",
+      "name": "Rose lantern",
+      "effect": "breathing",
+      "category": "Essentials",
+      "palette": [
+        "ff6b92",
+        "ffb36b",
+        "fff0c2"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "color-shift-0",
+      "name": "Sea glass",
+      "effect": "color shift",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "color-shift-1",
+      "name": "Peach glow",
+      "effect": "color shift",
+      "category": "Essentials",
+      "palette": [
+        "ff6b92",
+        "ffb36b",
+        "fff0c2"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "pulse-0",
+      "name": "Soft signal",
+      "effect": "pulse",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "pulse-1",
+      "name": "Coral pulse",
+      "effect": "pulse",
+      "category": "Essentials",
+      "palette": [
+        "ff6b92",
+        "ffb36b",
+        "fff0c2"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "heartbeat-0",
+      "name": "Emerald beat",
+      "effect": "heartbeat",
+      "category": "Essentials",
+      "palette": [
+        "a7f3d0",
+        "42d6ce",
+        "9f8bff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "heartbeat-1",
+      "name": "Amber heartbeat",
+      "effect": "heartbeat",
+      "category": "Essentials",
+      "palette": [
+        "ff6b92",
+        "ffb36b",
+        "fff0c2"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "wave-0",
+      "name": "Ocean current",
+      "effect": "wave",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "wave-1",
+      "name": "Solar ribbon",
+      "effect": "wave",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "comet-0",
+      "name": "Ion trail",
+      "effect": "comet",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "comet-1",
+      "name": "Ember trail",
+      "effect": "comet",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "rainbow-wave-0",
+      "name": "Pastel ribbon",
+      "effect": "rainbow wave",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "rainbow-wave-1",
+      "name": "Chromatic flow",
+      "effect": "rainbow wave",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "scanner-0",
+      "name": "Blue sweep",
+      "effect": "scanner",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "scanner-1",
+      "name": "Golden scanner",
+      "effect": "scanner",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "bounce-0",
+      "name": "Orbit blue",
+      "effect": "bounce",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "bounce-1",
+      "name": "Amber orb",
+      "effect": "bounce",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "ripple-0",
+      "name": "Tidal rings",
+      "effect": "ripple",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "ripple-1",
+      "name": "Solar ripples",
+      "effect": "ripple",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "orbit-0",
+      "name": "Lunar orbit",
+      "effect": "orbit",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "orbit-1",
+      "name": "Solar orbit",
+      "effect": "orbit",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "marquee-0",
+      "name": "Night train",
+      "effect": "marquee",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "marquee-1",
+      "name": "Festival lights",
+      "effect": "marquee",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "chase-0",
+      "name": "Neon lanes",
+      "effect": "chase",
+      "category": "Motion",
+      "palette": [
+        "13d7ff",
+        "4866ff",
+        "bc67ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "chase-1",
+      "name": "Sunset chase",
+      "effect": "chase",
+      "category": "Motion",
+      "palette": [
+        "ff4d6d",
+        "ffc857",
+        "fff4d4"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "aurora-0",
+      "name": "Northern sky",
+      "effect": "aurora",
+      "category": "Atmosphere",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "aurora-1",
+      "name": "Polar drift",
+      "effect": "aurora",
+      "category": "Atmosphere",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "fire-0",
+      "name": "Blue flame",
+      "effect": "fire",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "fire-1",
+      "name": "Ember hearth",
+      "effect": "fire",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "candle-0",
+      "name": "Moon candle",
+      "effect": "candle",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "candle-1",
+      "name": "Candlelit amber",
+      "effect": "candle",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "ocean-0",
+      "name": "Deep water",
+      "effect": "ocean",
+      "category": "Atmosphere",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "ocean-1",
+      "name": "Amber tides",
+      "effect": "ocean",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "sunset-0",
+      "name": "Violet horizon",
+      "effect": "sunset",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "sunset-1",
+      "name": "Desert dusk",
+      "effect": "sunset",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "ice-0",
+      "name": "Glacier",
+      "effect": "ice",
+      "category": "Atmosphere",
+      "palette": [
+        "082449",
+        "45bfff",
+        "c3f5ff",
+        "ffffff"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "ice-1",
+      "name": "Opal frost",
+      "effect": "ice",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "plasma-0",
+      "name": "Ionic field",
+      "effect": "plasma",
+      "category": "Atmosphere",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "plasma-1",
+      "name": "Solar plasma",
+      "effect": "plasma",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "nebula-0",
+      "name": "Violet cloud",
+      "effect": "nebula",
+      "category": "Atmosphere",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "nebula-1",
+      "name": "Rose nebula",
+      "effect": "nebula",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "fog-0",
+      "name": "Coastal mist",
+      "effect": "fog",
+      "category": "Atmosphere",
+      "palette": [
+        "17295c",
+        "5065c7",
+        "b48eff",
+        "75e4db"
+      ],
+      "speed": 35,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "fog-1",
+      "name": "Warm haze",
+      "effect": "fog",
+      "category": "Atmosphere",
+      "palette": [
+        "2a0400",
+        "ff3c09",
+        "ffb435",
+        "fff0b4"
+      ],
+      "speed": 55,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "twinkle-0",
+      "name": "Mint starlight",
+      "effect": "twinkle",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 65,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "twinkle-1",
+      "name": "Amethyst stars",
+      "effect": "twinkle",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 85,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "starfield-0",
+      "name": "Deep space",
+      "effect": "starfield",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "starfield-1",
+      "name": "Lavender sky",
+      "effect": "starfield",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "fireflies-0",
+      "name": "Garden lights",
+      "effect": "fireflies",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "fireflies-1",
+      "name": "Violet lanterns",
+      "effect": "fireflies",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "meteor-shower-0",
+      "name": "Mint meteors",
+      "effect": "meteor shower",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "meteor-shower-1",
+      "name": "Violet trails",
+      "effect": "meteor shower",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "rain-0",
+      "name": "Night rain",
+      "effect": "rain",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "rain-1",
+      "name": "Amethyst rain",
+      "effect": "rain",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "digital-rain-0",
+      "name": "Mint terminal",
+      "effect": "digital rain",
+      "category": "Particles",
+      "palette": [
+        "061b16",
+        "12b873",
+        "a7f3d0"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "digital-rain-1",
+      "name": "Violet terminal",
+      "effect": "digital rain",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "confetti-0",
+      "name": "Sea confetti",
+      "effect": "confetti",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "confetti-1",
+      "name": "Orchid confetti",
+      "effect": "confetti",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "fireworks-0",
+      "name": "Emerald bloom",
+      "effect": "fireworks",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "fireworks-1",
+      "name": "Violet bloom",
+      "effect": "fireworks",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "snow-0",
+      "name": "Mint snowfall",
+      "effect": "snow",
+      "category": "Particles",
+      "palette": [
+        "a7f3d0",
+        "66dfce",
+        "d3fff1"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "snow-1",
+      "name": "Lavender snow",
+      "effect": "snow",
+      "category": "Particles",
+      "palette": [
+        "302357",
+        "8d6dff",
+        "e8b9ff"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "stripes-0",
+      "name": "Neon ribbons",
+      "effect": "stripes",
+      "category": "Geometry",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "stripes-1",
+      "name": "Amber ribbons",
+      "effect": "stripes",
+      "category": "Geometry",
+      "palette": [
+        "f6ca62",
+        "ee825b",
+        "954bc6"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "checkerboard-0",
+      "name": "Neon tiles",
+      "effect": "checkerboard",
+      "category": "Geometry",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "checkerboard-1",
+      "name": "Warm mosaic",
+      "effect": "checkerboard",
+      "category": "Geometry",
+      "palette": [
+        "f6ca62",
+        "ee825b",
+        "954bc6"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "spiral-0",
+      "name": "Chromatic spiral",
+      "effect": "spiral",
+      "category": "Geometry",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "spiral-1",
+      "name": "Golden spiral",
+      "effect": "spiral",
+      "category": "Geometry",
+      "palette": [
+        "f6ca62",
+        "ee825b",
+        "954bc6"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "pinwheel-0",
+      "name": "Prism wheel",
+      "effect": "pinwheel",
+      "category": "Geometry",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "pinwheel-1",
+      "name": "Sun wheel",
+      "effect": "pinwheel",
+      "category": "Geometry",
+      "palette": [
+        "f6ca62",
+        "ee825b",
+        "954bc6"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "vortex-0",
+      "name": "Neon tunnel",
+      "effect": "vortex",
+      "category": "Geometry",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "vortex-1",
+      "name": "Amber tunnel",
+      "effect": "vortex",
+      "category": "Geometry",
+      "palette": [
+        "f6ca62",
+        "ee825b",
+        "954bc6"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    },
+    {
+      "id": "radar-0",
+      "name": "Neon radar",
+      "effect": "radar",
+      "category": "Geometry",
+      "palette": [
+        "ff4f87",
+        "9a59ff",
+        "42d6ff"
+      ],
+      "speed": 45,
+      "scale": 1,
+      "density": 45
+    },
+    {
+      "id": "radar-1",
+      "name": "Amber radar",
+      "effect": "radar",
+      "category": "Geometry",
+      "palette": [
+        "f6ca62",
+        "ee825b",
+        "954bc6"
+      ],
+      "speed": 65,
+      "scale": 1.7,
+      "density": 75
+    }
+  ]
+}

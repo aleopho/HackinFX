@@ -4,6 +4,7 @@ import base64,collections,hashlib,json,os,select,struct,subprocess,threading,tim
 from pathlib import Path
 import radius_protocol
 import asus_keyboard
+import makr75
 
 class HIDError(ValueError):pass
 
@@ -146,6 +147,12 @@ class NativeUSBAdapter:
                 elif record.get('keyboard_topology'):
                     count=len(record['keyboard_topology']['keys']);direct=True;detail='Per-key RGB from exact OpenRGB Scope II 96 layout and device layout reply. Confirm physical key mapping.'
                 else:detail='Host-streamed whole-keyboard RGB. Shared timing uses volatile Static color packets; per-key mapping is not implemented.'
+            elif vid==0x1b1c and pid==0x2b04 and page==0xff42 and record['usage']==1 and record.get('interface')==1:
+                kind='corsair-makr75';category='keyboard';record['makr']=makr75.Controller(self.transport,handle)
+                try:
+                    record['firmware']=record['makr'].discover();count=len(makr75.KEYS);direct=True
+                    detail='User-tested wired MAKR 75, firmware 7.11.104. Individually mapped key LEDs; volatile lighting only. US reference layout.'
+                except Exception as exc:status='setup-required';detail=str(exc)
             elif vid==0x36bc and pid==0x1003 and page==0xff00 and record['usage']==1 and record.get('interface')==0:
                 kind='radius';category='cooler';record['radius']=radius_protocol.Radius(self.transport,handle)
                 try:
@@ -170,7 +177,7 @@ class NativeUSBAdapter:
             elif vid==0x1e71 and pid in (0x170e,0x1715) and page>=0xff00:
                 kind='kraken-x2';count=9;category='cooler';direct=True;record['interval']=.1
             if not kind:continue
-            if kind not in ('lamp','radius','asus-keyboard'):
+            if kind not in ('lamp','radius','asus-keyboard','corsair-makr75'):
                 try:self.transport.check(handle)
                 except Exception as exc:status='access-required';direct=False;detail=str(exc)
             # A single physical collection is exposed once; no duplicate input interfaces.
@@ -180,7 +187,9 @@ class NativeUSBAdapter:
             if kind=='radius':name='Fractal Design Radius'
             if kind=='asus-keyboard':name=keyboard['paired']['name'] if keyboard['paired'] else 'ASUS ROG Keyboard · OMNI'
             if kind=='lamp':name+= ' · '+('Keyboard' if category=='keyboard' else 'LampArray')
-            row=dict(id=key,fingerprint=identity,name=name,vendor='ASUS' if vid==0x0b05 else 'GIGABYTE / ITE' if vid==0x048d else record['vendor'],category=category,backend=self.name,led_count=count,direct=direct,controllable=count>0 and status=='ready',status=status,detail=detail,static_modes=['static','gradient'],zones=[dict(name='LampArray' if kind=='lamp' else 'Lighting',led_count=count)],modes=[],usb_id='%04x:%04x'%(vid,pid),catalog_matches=names[:12],ownership_names=[record['name'].strip()]+[name for name in names if kind!='asus-spatha' or 'dock' not in name.lower()],driver=kind,refresh_interval=.5 if kind=='radius' else 0)
+            row=dict(id=key,fingerprint=identity,name=name,vendor='ASUS' if vid==0x0b05 else 'GIGABYTE / ITE' if vid==0x048d else record['vendor'],category=category,backend=self.name,led_count=count,direct=direct,controllable=count>0 and status=='ready',status=status,detail=detail,static_modes=['static','gradient'],zones=[dict(name='LampArray' if kind=='lamp' else 'Lighting',led_count=count)],modes=[],usb_id='%04x:%04x'%(vid,pid),catalog_matches=names[:12],ownership_names=[record['name'].strip()]+[name for name in names if kind!='asus-spatha' or 'dock' not in name.lower()],driver=kind,refresh_interval=.5 if kind=='radius' else 5 if kind=='corsair-makr75' else 0)
+            if kind=='corsair-makr75':
+                row.update(color_scope='per-led',physical_led_count=count,led_positions=[dict(x=k['x'],y=k['y']) for k in makr75.KEYS],layout=makr75.LAYOUT['layout'],topology_source=makr75.LAYOUT['source'],hardware_state=dict(firmware=record.get('firmware','')))
             if kind=='radius':row['zones']=[dict(name='Pump' if z['id']==1 else 'Fan RGB %02X'%z['id'],led_count=z['count']) for z in record.get('radius_zones',[])]
             if kind=='asus-keyboard':
                 row.update(direct=True,static_modes=['static','gradient'],onboard_modes=[])
@@ -204,6 +213,7 @@ class NativeUSBAdapter:
         return rows
     def activate(self,device):
         record=self.records[device['id']]
+        if record['kind']=='corsair-makr75':record['makr'].activate()
         if record['kind']=='lamp':
             reports=record['reports'];levels=[]
             # Attribute requests select metadata only. Autonomous mode changes only after explicit Start.
@@ -218,6 +228,7 @@ class NativeUSBAdapter:
     def write_frame(self,device,colors,mode):
         key=device['id'];record=self.records[key]
         if key not in self.active or len(colors)!=record['count']:raise HIDError('Native device requires activation / exact color count')
+        if record['kind']=='corsair-makr75':record['makr'].write(colors);return
         if record['kind']=='radius':
             record['radius'].write(colors);return
         if record['kind']=='asus-keyboard':
@@ -249,6 +260,9 @@ class NativeUSBAdapter:
     def release(self):
         for key in list(self.active):
             record=self.records.get(key)
+            if record and record['kind']=='corsair-makr75':
+                try:record['makr'].release()
+                except Exception:pass
             if record and record['kind']=='lamp':
                 try:self.transport.send(record['handle'],bytes([record['reports'][0x70]['id'],1]),True)
                 except Exception:pass

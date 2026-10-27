@@ -81,7 +81,7 @@ final class Model: ObservableObject {
     @Published var setupMessage = "Confirm lighting before saving a local profile."
     @Published var showReportPreview = false
     var feedbackScanPending = false
-    @Published var showSetupWizard = false
+    @Published var showDeviceLightingSetup = false
     @Published var manualVendor = ""
     @Published var manualModel = ""
     var detectedGPUName = ""
@@ -170,11 +170,11 @@ final class Model: ObservableObject {
     }
     func apply(off: Bool = false, testHex: String? = nil, testEffect: String? = nil, coreSuspended:Bool = false) {
         guard !busy && !scanning && !submitting && (!setupTesting || testEffect != nil) else { return }
-        guard canControlLighting || (testEffect != nil && configurationStatus == "supported") else { page = "Hardware"; message = configurationReason; return }
+        guard canControlLighting || (testEffect != nil && configurationStatus == "supported") else { page = "Feedback"; message = configurationReason; return }
         guard off || availableEffects.contains(testEffect ?? effect.backend) else { message = "This effect is unavailable on the detected controller."; return }
         if !coreSuspended && center.online {
-            center.suspendForGPULab { ready in
-                if ready { self.apply(off:off,testHex:testHex,testEffect:testEffect,coreSuspended:true) } else { self.message="Could not pause shared lighting for GPU Lab. Wait for the current operation.";self.setupTesting=false }
+            center.suspendForGPUSetup { ready in
+                if ready { self.apply(off:off,testHex:testHex,testEffect:testEffect,coreSuspended:true) } else { self.message="Could not pause shared lighting for device setup. Wait for the current operation.";self.setupTesting=false }
             };return
         }
         busy = true; lastSuccess = nil
@@ -238,9 +238,15 @@ final class Model: ObservableObject {
             else { DispatchQueue.main.asyncAfter(deadline: .now() + testPlan[testStep - 1].3) { self.runTestStep() } }
         }
     }
+    func openDeviceSetup(_ device:CenterDevice) {
+        guard !working && !scanning,configurationStatus=="supported",device.backend=="native",device.setup_candidate==true,device.setup_fingerprint==fingerprint else {
+            page="Feedback";scanSummary="This GPU needs a fresh supported hardware scan before setup.";return
+        }
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { self.showDeviceLightingSetup=true }
+    }
     func startSetupTest() {
         guard !working && configurationStatus == "supported" else { return }
-        showSetupWizard = true; setupTesting = true; testTransportOK = false; testStep = 0; setupState = "testing"
+        showDeviceLightingSetup = true; setupTesting = true; testTransportOK = false; testStep = 0; setupState = "testing"
         lightingEvidence = []; draftURL = nil; confirmationSource = "current-test"; record("setup-test", "started"); runTestStep()
     }
     func runTestStep() {
@@ -260,7 +266,7 @@ final class Model: ObservableObject {
             do { try setupProfiles.save(data,fingerprint:fingerprint) } catch { setupMessage = "Could not save the profile in Documents/HackinFX: \(error.localizedDescription)"; return }
             UserDefaults.standard.set(data, forKey: "VerifiedLightingSetup")
             UserDefaults.standard.removeObject(forKey: "FailedLightingSetupFingerprint")
-            showSetupWizard = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Overview"; if center.online { center.discover() }
+            showDeviceLightingSetup = false; setupState = "confirmed"; setupMessage = "Lighting confirmed. Local profile saved."; record("setup-confirmation", "confirmed"); saveTroubleshooting(); registerConfirmation(); page = "Overview"; if center.online { center.discover() }
         } else {
             setupState = outcome; UserDefaults.standard.set(fingerprint, forKey: "FailedLightingSetupFingerprint"); setupMessage = "Describe what did not work, then review the troubleshooting report."; record("setup-confirmation", outcome); saveTroubleshooting()
         }
@@ -468,7 +474,7 @@ final class Model: ObservableObject {
         let resources = Bundle.main.resourceURL!
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HackinFX/Scans", isDirectory: true)
         do { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
-        catch { scanning = false; configurationStatus = "unknown"; configurationReason = "Could not create scan directory"; page = "Hardware"; scanSummary = "Could not create scan directory."; record("scan", "directory-error"); return }
+        catch { scanning = false; configurationStatus = "unknown"; configurationReason = "Could not create scan directory"; page = "Feedback"; scanSummary = "Could not create scan directory."; record("scan", "directory-error"); return }
         let output = folder.appendingPathComponent("scan-\(UUID().uuidString).json")
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(); let pipe = Pipe()
@@ -483,7 +489,7 @@ final class Model: ObservableObject {
                 _ = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 guard let data = try? Data(contentsOf: output), let report = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    DispatchQueue.main.async { self.scanning = false; self.configurationStatus = "unknown"; self.configurationReason = "Scan produced no readable report."; self.page = "Hardware"; self.scanSummary = "Scan produced no readable report."; self.record("scan", "invalid-report") }; return
+                    DispatchQueue.main.async { self.scanning = false; self.configurationStatus = "unknown"; self.configurationReason = "Scan produced no readable report."; self.page = "Feedback"; self.scanSummary = "Scan produced no readable report."; self.record("scan", "invalid-report") }; return
                 }
                 let rawAdapters = report["adapters"] as? [[String: Any]] ?? []
                 let found = rawAdapters.enumerated().map { index, adapter -> GPUInfo in
@@ -497,7 +503,7 @@ final class Model: ObservableObject {
                 let raw = String(data: data, encoding: .utf8) ?? ""
                 let summary = errors.isEmpty ? "Scan complete. \(found.count) display adapter(s) found." : "Scan finished with \(errors.count) query error(s). Export the report for analysis."
                 DispatchQueue.main.asyncAfter(deadline:.now()+0.8) { self.configurationStatus = configStatus; self.configurationReason = configReason; self.scanJSON = raw; self.identifyHardware(report); self.restoreSetup(report); self.flushVerifications(); self.fetchCommunityCatalog(); if self.initialHardwareCheck { self.page = "Overview" }; self.initialHardwareCheck = false; self.adapters = found; self.scanJSON = raw; self.scanReport = output; self.scanSummary = summary; self.scanning = false; self.record("scan", errors.isEmpty ? "completed" : "completed-with-errors"); if self.feedbackScanPending { self.feedbackScanPending = false; self.reviewReport() } else if self.setupState == "required" && configStatus == "supported" { self.startSetupTest() } }
-            } catch { DispatchQueue.main.async { self.scanning = false; self.configurationStatus = "unknown"; self.configurationReason = "Hardware check failed"; self.page = "Hardware"; self.scanSummary = "Could not start or read the scan. \(error.localizedDescription)"; self.record("scan", "failed") } }
+            } catch { DispatchQueue.main.async { self.scanning = false; self.configurationStatus = "unknown"; self.configurationReason = "Hardware check failed"; self.page = "Feedback"; self.scanSummary = "Could not start or read the scan. \(error.localizedDescription)"; self.record("scan", "failed") } }
         }
     }
     func exportDiagnostics() {
@@ -523,7 +529,7 @@ struct Tag: View {
     var title: String
     var tint: Color = accent
     var body: some View {
-        HStack(spacing:6) { Circle().fill(tint).frame(width:4,height:4); Text(title).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(0.8).lineLimit(1).fixedSize() }
+        HStack(spacing:6) { Circle().fill(tint).frame(width:4,height:4); Text(L10n.text(title)).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(0.8).lineLimit(1).fixedSize() }
         .foregroundColor(tint).padding(.horizontal,10).padding(.vertical,7).background(tint.opacity(0.07)).clipShape(Capsule()).overlay(Capsule().stroke(tint.opacity(0.18),lineWidth:1))
     }
 }
@@ -534,122 +540,6 @@ struct Card<Content: View>: View {
         content.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(LinearGradient(colors:[panel,ink.opacity(0.75)],startPoint:.topLeading,endPoint:.bottomTrailing)).clipShape(RoundedRectangle(cornerRadius:16)).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.white.opacity(0.07),lineWidth:1))
     }
 }
-struct GPUPreview: View {
-    @ObservedObject var model: Model
-    var colors: [Color] { model.effect == .solid || model.effect == .breath ? [model.colorA,model.colorA,model.colorA] : [model.colorA,model.colorB,model.colorC] }
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius:20).fill(LinearGradient(colors:[panel,ink],startPoint:.topLeading,endPoint:.bottomTrailing))
-            Ellipse().fill(colors[0].opacity(0.12)).frame(width:380,height:120).blur(radius:35).offset(y:34)
-            Canvas { context,size in
-                var grid=Path()
-                for x in stride(from:CGFloat(0),to:size.width,by:28) { grid.move(to:CGPoint(x:x,y:0));grid.addLine(to:CGPoint(x:x,y:size.height)) }
-                for y in stride(from:CGFloat(0),to:size.height,by:28) { grid.move(to:CGPoint(x:0,y:y));grid.addLine(to:CGPoint(x:size.width,y:y)) }
-                context.stroke(grid,with:.color(.white.opacity(0.022)),lineWidth:0.5)
-            }.clipShape(RoundedRectangle(cornerRadius:20))
-            VStack(spacing:18) {
-                HStack {
-                    Label("CONTROLLER VIEW",systemImage:"square.stack.3d.up").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(1.4)
-                    Spacer();Text(model.effect.rawValue.uppercased()).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(1)
-                }.foregroundColor(muted)
-                HStack(spacing:28) {
-                    ForEach(0..<3) { i in
-                        ZStack {
-                            Circle().fill(LinearGradient(colors:[Color.white.opacity(0.04),Color.clear],startPoint:.topLeading,endPoint:.bottomTrailing))
-                            Circle().stroke(colors[i].opacity(0.20),lineWidth:1)
-                            Circle().stroke(.white.opacity(0.035),lineWidth:10).padding(7)
-                            ForEach(0..<9) { blade in RoundedRectangle(cornerRadius:5).fill(.white.opacity(0.07)).frame(width:10,height:30).offset(y:-21).rotationEffect(.degrees(Double(blade)*40)) }
-                            Circle().fill(ink).frame(width:29,height:29).overlay(Circle().stroke(colors[i].opacity(0.35),lineWidth:1))
-                        }.frame(width:88,height:88)
-                    }
-                }.padding(.vertical,5)
-                RoundedRectangle(cornerRadius:4).fill(LinearGradient(colors:colors,startPoint:.leading,endPoint:.trailing)).frame(height:4).shadow(color:colors[0].opacity(0.6),radius:10)
-                HStack { Text("SCHEMATIC · NO LIVE LED READBACK");Spacer();Text("#"+model.hex(model.colorA).uppercased()) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(0.7).foregroundColor(muted)
-            }.padding(.horizontal,30).padding(.vertical,22)
-        }.frame(height:238).overlay(RoundedRectangle(cornerRadius:20).stroke(LinearGradient(colors:[.white.opacity(0.14),.white.opacity(0.025)],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:1))
-    }
-}
-struct EffectTile: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let effect: Lighting
-    let selected: Bool
-    var body: some View {
-        VStack(spacing:11) { Image(systemName:effect.symbol).font(.system(size:20,weight:.light));Text(effect.rawValue).font(.system(size:11,weight:.medium)).lineLimit(1).minimumScaleFactor(0.85) }
-        .frame(maxWidth:.infinity).frame(height:78).foregroundColor(selected ? accent : muted).background(selected ? accent.opacity(0.075) : Color.white.opacity(0.015)).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(selected ? accent.opacity(0.45) : .white.opacity(0.055),lineWidth:1)).contentShape(RoundedRectangle(cornerRadius:12))
-        .scaleEffect(selected && !reduceMotion ? 1.025 : 1)
-        .animation(reduceMotion ? nil : .spring(duration:0.34,bounce:0.22),value:selected)
-    }
-}
-struct StudioFooter: View {
-    @ObservedObject var model: Model
-    var body: some View {
-        VStack(spacing:12) {
-            HStack(spacing:14) {
-                Image(systemName:model.lastSuccess == false ? "exclamationmark.circle" : "circle.dotted").foregroundColor(model.lastSuccess == false ? .orange : muted)
-                Text(model.message).font(.system(size:11)).foregroundColor(muted).lineLimit(2)
-                Spacer(minLength:8)
-                Button(action:model.revealReport) { Image(systemName:"doc.text.magnifyingglass") }.buttonStyle(PressFeedbackStyle()).disabled(model.lastReport == nil).help("Reveal latest lighting report")
-            }
-            HStack(spacing:12) {
-                Button { model.apply(off:true) } label: { Label("Lights off",systemImage:"power").font(.system(size:12,weight:.medium)).padding(.horizontal,16).frame(height:40).background(.white.opacity(0.045)).clipShape(RoundedRectangle(cornerRadius:10)) }.buttonStyle(PressFeedbackStyle())
-                Spacer()
-                Label(model.busy ? "Updating…":"Live control",systemImage:"bolt.fill").font(.system(size:10,weight:.medium)).foregroundColor(muted)
-
-            }.disabled(model.working || !model.canControlLighting)
-        }.padding(.horizontal,28).padding(.vertical,16).background(panel.opacity(0.9)).overlay(alignment:.top) { Rectangle().fill(.white.opacity(0.07)).frame(height:1) }
-    }
-}
-struct Studio: View {
-    @ObservedObject var model: Model
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("LIGHTING / CONTROL SURFACE").font(.system(size: 10, weight: .medium, design: .monospaced)).tracking(3).foregroundColor(accent)
-                    Text("Lighting Studio").font(.system(size:30,weight:.semibold,design:.rounded))
-                    Text(model.currentGPUName).font(.system(size:12)).foregroundColor(muted)
-                }
-                Spacer(); Tag(title: model.scanning ? "CHECKING" : model.canControlLighting ? "PROFILE READY" : "SCAN REQUIRED")
-            }
-            GPUPreview(model: model)
-            Card {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack { Text("Effect").font(.system(size: 15, weight: .semibold)); Spacer(); Tag(title: model.effectIsConfirmed(model.effect) ? "USER CONFIRMED" : "EXPERIMENTAL", tint: model.effectIsConfirmed(model.effect) ? accent : .orange) }
-                    HStack(spacing: 8) {
-                        ForEach(Lighting.allCases.filter { model.availableEffects.contains($0.backend) }) { item in
-                            Button { model.effect = item } label: {
-                                EffectTile(effect:item,selected:model.effect == item)
-                            }.buttonStyle(PressFeedbackStyle())
-                        }
-                    }
-                    Text(model.effect.detail).font(.system(size:12)).foregroundColor(muted).fixedSize(horizontal:false,vertical:true)
-                    if model.effect == .solid || model.effect == .breath || model.effect == .gradient {
-                        HStack(spacing: 18) {
-                            ColorPicker(model.effect == .gradient ? "Zone 01" : "Color", selection: $model.colorA, supportsOpacity: false)
-                            if model.effect == .gradient { ColorPicker("Zone 02", selection: $model.colorB, supportsOpacity: false); ColorPicker("Zone 03", selection: $model.colorC, supportsOpacity: false) }
-                            Spacer()
-                            Text("#" + model.hex(model.colorA).uppercased()).font(.system(size: 11, design: .monospaced)).foregroundColor(muted)
-                        }.font(.system(size: 11))
-                    }
-                    if (!["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) || model.effect != .cycle) && (model.controllerFamily != "ZotacTuringGPUController" || ![Lighting.cycle,.wave].contains(model.effect)) {
-                    HStack { Text("Brightness").frame(width: 80, alignment: .leading); Slider(value: $model.brightness, in: 0...100); Text("\(Int(model.brightness)) %").monospacedDigit().frame(width: 45) }.font(.system(size: 11)).foregroundColor(muted)
-                    }
-                    if !["EVGAPascalGPUController","AsusAuraGPUController"].contains(model.controllerFamily) && !(model.controllerFamily == "EVGATuringGPUController" && model.effect == .cycle) && model.effect != .solid && model.effect != .gradient {
-                        HStack { Text("Speed").frame(width: 80, alignment: .leading); Slider(value: $model.speed, in: 0...100); Text("\(Int(model.speed)) %").monospacedDigit().frame(width: 45) }.font(.system(size: 11)).foregroundColor(muted)
-                    }
-                }
-            }
-
-        }
-        .onChange(of:model.effect) { model.scheduleGPULive() }
-        .onChange(of:model.hex(model.colorA)) { model.scheduleGPULive() }
-        .onChange(of:model.hex(model.colorB)) { model.scheduleGPULive() }
-        .onChange(of:model.hex(model.colorC)) { model.scheduleGPULive() }
-        .onChange(of:model.brightness) { model.scheduleGPULive() }
-        .onChange(of:model.speed) { model.scheduleGPULive() }
-    }
-}
-
 struct GPUInfo: Identifiable {
     let id: Int
     let name: String
@@ -662,64 +552,40 @@ struct GPUInfo: Identifiable {
     var catalogStatus: String = ""
 }
 
-struct SetupCard: View {
-    @ObservedObject var model: Model
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack { Label("Lighting profile", systemImage: "checkmark.shield").font(.headline); Spacer(); Tag(title: model.setupState == "confirmed" ? "READY" : model.setupState.uppercased()) }
-                Text(model.currentGPUName).font(.system(size: 16, weight: .semibold))
-                Text("GPU: \(model.currentGPUVendor) · Board: \(model.currentBoardVendor)").foregroundColor(muted)
-                HStack {
-                    Text(model.setupMessage).font(.system(size:11)).foregroundColor(muted)
-                    Spacer()
-                    if model.configurationStatus == "supported" { Button(model.setupState == "confirmed" ? "Retest…" : "Continue setup…") { model.showSetupWizard = true }.disabled(model.working) }
-                }
-                if !model.communityStatus.isEmpty { Text(model.communityStatus).font(.caption).foregroundColor(accent) }
-                DisclosureGroup("Sharing & privacy") {
-                    VStack(alignment:.leading,spacing:8) {
-                        Toggle("Share successful hardware confirmations", isOn:$model.contributeConfirmation)
-                        Text("Shares card IDs, names, tested effects, software versions and a random installation ID. Troubleshooting notes are sent only after review.").font(.caption).foregroundColor(muted)
-                    }.padding(.top,8)
-                }.font(.system(size:11))
-            }
-        }
-    }
-}
-struct SetupWizard: View {
+struct DeviceLightingSetup: View {
     @ObservedObject var model: Model
     @State private var editIdentity = false
     var body: some View {
         VStack(alignment:.leading,spacing:18) {
-            HStack { Text(model.setupTesting ? "Checking your lighting" : "Confirm your lighting").font(.title2.weight(.semibold)); Spacer(); Tag(title:"SETUP") }
-            Text(model.currentGPUName).font(.headline)
-            Text("GPU: \(model.currentGPUVendor) · Board: \(model.currentBoardVendor)").foregroundColor(muted)
-            DisclosureGroup("Confirm or correct card identity",isExpanded:$editIdentity) {
-                Text("Use the board manufacturer and exact model printed on the card or packaging. PCI IDs always remain those detected by the scanner.").font(.caption).foregroundColor(muted)
-                TextField("Board manufacturer (e.g. PNY)",text:$model.manualVendor)
-                TextField("Exact model / board revision",text:$model.manualModel)
+            HStack { Text(L10n.text(model.setupTesting ? "Checking your lighting" : "Confirm your lighting")).font(.title2.weight(.semibold)); Spacer(); Tag(title:"SETUP") }
+            Text(verbatim:model.currentGPUName).font(.headline)
+            Text(L10n.text("GPU: \(model.currentGPUVendor) · Board: \(model.currentBoardVendor)")).foregroundColor(muted)
+            DisclosureGroup(L10n.text("Confirm or correct card identity"),isExpanded:$editIdentity) {
+                Text(L10n.text("Use the board manufacturer and exact model printed on the card or packaging. PCI IDs always remain those detected by the scanner.")).font(.caption).foregroundColor(muted)
+                TextField(L10n.text("Board manufacturer (e.g. PNY)"),text:$model.manualVendor)
+                TextField(L10n.text("Exact model / board revision"),text:$model.manualModel)
             }
             Divider()
             if model.setupTesting {
                 ProgressView(value:Double(model.testStep),total:Double(model.testPlan.count)).tint(accent)
-                Text(model.setupMessage).font(.headline)
-                Text("Watch the card: " + model.testPlan.map { $0.0.capitalized }.joined(separator:", ") + ". Confirm every displayed stage.").foregroundColor(muted)
-                Button("Stop test") { model.setupTesting = false; model.testTransportOK = false; model.setupState = "partial"; model.setupMessage = "Test stopped. No profile was confirmed."; model.record("setup-test","cancelled") }
+                Text(L10n.text(model.setupMessage)).font(.headline)
+                Text(L10n.text("Watch the card: " + model.testPlan.map { $0.0.capitalized }.joined(separator:", ") + ". Confirm every displayed stage.")).foregroundColor(muted)
+                Button(L10n.text("Stop test")) { model.setupTesting = false; model.testTransportOK = false; model.setupState = "partial"; model.setupMessage = "Test stopped. No profile was confirmed."; model.record("setup-test","cancelled") }
             } else if model.testTransportOK && model.setupState == "awaiting-confirmation" {
-                Text("Did every color and effect work on the physical card?").font(.headline)
-                Text(model.setupMessage).font(.caption).foregroundColor(muted)
-                Toggle("Share this confirmation with the community",isOn:$model.contributeConfirmation)
-                Text("Your observation confirms compatibility. A successful command alone cannot verify visible lighting.").font(.caption).foregroundColor(muted)
-                Button("Everything worked — save profile") { model.confirmSetup("confirmed") }.buttonStyle(.borderedProminent).disabled(model.working)
-                HStack { Button("Partially working") { model.confirmSetup("partial") }; Button("No light") { model.confirmSetup("failed") } }
+                Text(L10n.text("Did every color and effect work on the physical card?")).font(.headline)
+                Text(L10n.text(model.setupMessage)).font(.caption).foregroundColor(muted)
+                Toggle(L10n.text("Share this confirmation with the community"),isOn:$model.contributeConfirmation)
+                Text(L10n.text("Your observation confirms compatibility. A successful command alone cannot verify visible lighting.")).font(.caption).foregroundColor(muted)
+                Button(L10n.text("Everything worked — save profile")) { model.confirmSetup("confirmed") }.buttonStyle(.borderedProminent).disabled(model.working)
+                HStack { Button(L10n.text("Partially working")) { model.confirmSetup("partial") }; Button(L10n.text("No light")) { model.confirmSetup("failed") } }
             } else if model.setupState == "failed" || model.setupState == "partial" {
-                Text(model.setupMessage).foregroundColor(.orange)
+                Text(L10n.text(model.setupMessage)).foregroundColor(.orange)
                 TextEditor(text:$model.observedBehavior).onChange(of:model.observedBehavior) { model.feedbackChanged() }.frame(height:100)
-                Text("Tell us which colors, zones or effects failed. Review the report before sending.").font(.caption).foregroundColor(muted)
-                HStack { Button("Review report…") { model.showSetupWizard = false; DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { model.reviewReport() } }; Spacer(); Button("Close") { model.showSetupWizard = false } }
+                Text(L10n.text("Tell us which colors, zones or effects failed. Review the report before sending.")).font(.caption).foregroundColor(muted)
+                HStack { Button(L10n.text("Review report…")) { model.showDeviceLightingSetup = false; DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { model.reviewReport() } }; Spacer(); Button(L10n.text("Close")) { model.showDeviceLightingSetup = false } }
             } else {
-                Text("The guided test checks three primary colors and every effect offered by this controller. The final effect remains active afterwards.").foregroundColor(muted)
-                HStack { Button("Run lighting test",action:model.startSetupTest).buttonStyle(.borderedProminent); Spacer(); Button("Close") { model.showSetupWizard = false } }
+                Text(L10n.text("The guided test checks three primary colors and every effect offered by this controller. The final effect remains active afterwards.")).foregroundColor(muted)
+                HStack { Button(L10n.text("Run lighting test"),action:model.startSetupTest).buttonStyle(.borderedProminent); Spacer(); Button(L10n.text("Close")) { model.showDeviceLightingSetup = false } }
             }
         }.padding(28).frame(width:540).background(ink).foregroundColor(.white).preferredColorScheme(.dark).tint(accent).interactiveDismissDisabled(model.setupTesting).onAppear { editIdentity = model.needsIdentity }
     }
@@ -728,142 +594,50 @@ struct ReportPreview: View {
     @ObservedObject var model: Model
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Troubleshooting report").font(.title2)
-            Text("Review the exact payload. Upload happens only when you press Send.").font(.caption).foregroundColor(muted)
-            ScrollView { Text(model.reportPreview).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }.background(ink)
-            if model.reportEndpoint == nil { Text("Report inbox is not configured yet. Save the report locally and share it with the maintainer.").font(.caption).foregroundColor(.orange) }
-            if let destination = model.reportEndpoint?.host { Text("Destination: \(destination)").font(.caption).foregroundColor(muted) }
-            Text(model.submissionMessage).font(.caption).textSelection(.enabled)
+            Text(L10n.text("Troubleshooting report")).font(.title2)
+            Text(L10n.text("Review the exact payload. Upload happens only when you press Send.")).font(.caption).foregroundColor(muted)
+            ScrollView { Text(verbatim:model.reportPreview).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }.background(ink)
+            if model.reportEndpoint == nil { Text(L10n.text("Report inbox is not configured yet. Save the report locally and share it with the maintainer.")).font(.caption).foregroundColor(.orange) }
+            if let destination = model.reportEndpoint?.host { Text(L10n.text("Destination: \(destination)")).font(.caption).foregroundColor(muted) }
+            Text(L10n.text(model.submissionMessage)).font(.caption).textSelection(.enabled)
             HStack {
-                Button("Close") { model.showReportPreview = false }.disabled(model.submitting)
-                Button("Export…", action: model.exportDiagnostics)
+                Button(L10n.text("Close")) { model.showReportPreview = false }.disabled(model.submitting)
+                Button(L10n.text("Export…"), action: model.exportDiagnostics)
                 Spacer()
-                Button("Send report", action: model.submitReport).disabled(model.reportEndpoint == nil || model.working)
+                Button(L10n.text("Send report"), action: model.submitReport).disabled(model.reportEndpoint == nil || model.working)
             }
         }.padding(24).frame(width: 680, height: 570).background(panel).preferredColorScheme(.dark)
     }
 }
 
-struct Community: View {
-    @ObservedObject var model: Model
-    var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            SetupCard(model: model)
-            HStack {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Hardware scanner").font(.system(size: 28, weight: .semibold))
-                    Text("Read-only inventory for community compatibility reports.").font(.system(size: 12)).foregroundColor(muted)
-                }
-                Spacer()
-            }
-            Card {
-                VStack(alignment: .leading, spacing: 15) {
-                    HStack {
-                        Tag(title: "NO HARDWARE WRITES")
-                        Spacer()
-                        if model.scanning { ProgressView().controlSize(.small) }
-                    }
-                    Text(model.configurationReason).font(.system(size: 12, weight: .medium)).foregroundColor(model.canControlLighting ? accent : .orange)
-                    Text(model.scanSummary).font(.system(size: 12)).foregroundColor(muted)
-                    HStack {
-                        Button(model.scanning ? "Scanning…" : "Scan hardware", action: model.scanHardware).disabled(model.working)
-                        Button("Export diagnostics…", action: model.exportDiagnostics).disabled(model.scanJSON.isEmpty || model.scanning)
-                        Button("Submit diagnostics…", action:model.reviewReport).buttonStyle(.borderedProminent).disabled(model.scanJSON.isEmpty || model.working)
-                        Spacer()
-                    }
-                    Text("Exports hardware specifications, PCI / USB IDs, model labels, driver versions and query logs. No serial numbers, hostname, raw device tree or kernel addresses. No automatic uploads.").font(.system(size: 10)).foregroundColor(muted)
-                }
-            }
-            PeripheralDiagnostics(center:model.center)
-            ForEach(model.adapters) { gpu in
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack { Text(gpu.name).font(.headline); Spacer(); Tag(title:gpu.supported ? "TEST AVAILABLE" : gpu.catalogStatus.hasPrefix("upstream-known") ? "CATALOG MATCH" : "UNLISTED",tint:gpu.supported ? accent : .orange) }
-                        Text("\(gpu.vendor) · \(gpu.gpuType)").font(.system(size: 11)).foregroundColor(muted)
-                        Text("PCI \(gpu.pci) / \(gpu.subsystem)").font(.system(size: 12, design: .monospaced)).foregroundColor(accent)
-                        if !gpu.catalogStatus.isEmpty { Text(gpu.supported ? "Local lighting controller available" : gpu.catalogStatus.hasPrefix("upstream-known") ? "OpenRGB match · macOS lighting module not available" : "No match in the OpenRGB GPU catalog").font(.system(size:11)).foregroundColor(muted) }
-                        Text(gpu.nvrm ? "NVRM binding found" : "No NVRM binding found").font(.system(size: 11)).foregroundColor(muted)
-                    }
-                }
-            }
-            if !model.sessionEvents.isEmpty {
-                Card {
-                    VStack(alignment: .leading, spacing: 8) {
-                        DisclosureGroup("Session log") {
-                        ForEach(Array(model.sessionEvents.suffix(6).enumerated()), id: \.offset) { _, event in
-                            Text("\(event["time"] ?? "")  \(event["action"] ?? "") / \(event["outcome"] ?? "")").font(.system(size: 9, design: .monospaced)).foregroundColor(muted).textSelection(.enabled)
-                        }
-                        }
-                    }
-                }
-            }
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Feedback & compatibility").font(.headline)
-                    if model.needsIdentity {
-                        TextField("Board manufacturer",text:$model.manualVendor).onChange(of:model.manualVendor) { model.feedbackChanged() }
-                        TextField("Exact card model / board revision",text:$model.manualModel).onChange(of:model.manualModel) { model.feedbackChanged() }
-                    } else { TextField("Board revision or additional model details (optional)", text: $model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() } }
-                    TextEditor(text: $model.observedBehavior).onChange(of: model.observedBehavior) { model.feedbackChanged() }.frame(height: 90).overlay(RoundedRectangle(cornerRadius: 4).stroke(muted.opacity(0.3)))
-                    Text("Tell us which device or effect fails, what you expected, and what happened. The scan attaches CPU, memory, USB, PCI and storage specifications. Review everything before sending.").font(.system(size: 10)).foregroundColor(muted)
-                    Button("Scan & submit feedback…", action: model.prepareFeedback).disabled(model.working)
-                    Text("These reports help identify boards and compare drivers. They do not reveal the RGB protocol, controller address or physical LED mapping. Those still need source research and targeted hardware tests.").font(.system(size: 11)).foregroundColor(muted)
-                }
-            }
-            Card {
-                VStack(alignment:.leading,spacing:12) {
-                    Text("Widget troubleshooting").font(.headline)
-                    Text(model.widgetCheckStatus).font(.system(size:11)).foregroundColor(muted)
-                    Button(model.widgetCheckRunning ? "Collecting…" : "Collect widget diagnostics",action:model.checkWidget).disabled(model.widgetCheckRunning || model.working)
-                    Text("Includes widget-specific system log entries. Review and export or submit the report yourself.").font(.caption).foregroundColor(muted)
-                }
-            }
-            Text("Compatibility database").font(.system(size: 16, weight: .semibold))
-            ForEach(model.compatibilityRows) { row in
-                Card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack { Text("\(row.board_vendor) · \(row.gpu_vendor) \(row.gpu_name)").font(.headline); Spacer(); Tag(title: "USER CONFIRMED") }
-                        Text(row.hardware_key.uppercased()).font(.system(size: 11, design: .monospaced)).foregroundColor(accent)
-                        Text("Confirmed: " + row.confirmed_effects.map { mode in Lighting.allCases.first(where: { $0.backend == mode })?.rawValue ?? mode }.joined(separator: ", ")).font(.system(size: 11)).foregroundColor(muted)
-                        Text("\(row.reports) confirmation(s) · \(row.source ?? "Community")").font(.system(size: 10)).foregroundColor(muted)
-                    }
-                }
-            }
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Additional hardware").font(.headline)
-                    Text("Exact OpenRGB PNY Lovelace, EVGA Pascal/Turing, ASUS Aura and Zotac Turing matches can run the NVIDIA lighting test. Only controller-supported effects are offered. Community-tested status follows visual confirmation; further NVIDIA families are being ported.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(5)
-                }
-            }
-            Text("This is the verified profile, not a live connection indicator.").font(.system(size: 11)).foregroundColor(muted)
-            Spacer()
-        }
-    }
-}
 struct Credits: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Credits").font(.system(size: 28, weight: .semibold))
-            Text("HackinFX / by aleopho").font(.system(size: 14, design: .monospaced)).foregroundColor(accent)
+            Text(L10n.text("Credits")).font(.system(size: 28, weight: .semibold))
+            Text(L10n.text("HackinFX / by aleopho")).font(.system(size: 14, design: .monospaced)).foregroundColor(accent)
             Card {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("NullMoth").font(.headline)
-                    Text("The installed NVRM interface provides macOS access. The driver is installed separately and is not bundled. NVRM source v2.5.3 specifies PolyForm Noncommercial 1.0.0.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
-                    Link("NullMoth / project and license", destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
+                    Text(L10n.text("NullMoth")).font(.headline)
+                    Text(L10n.text("The installed NVRM interface provides macOS access. The driver is installed separately and is not bundled. NVRM source v2.5.3 specifies PolyForm Noncommercial 1.0.0.")).font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Link(L10n.text("NullMoth / project and license"), destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
                     Divider()
-                    Text("OpenRGB").font(.headline)
-                    Text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. GPL version 2 compatible; per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work; wired Scope II 96 per-key packets and layouts are adapted from Mola19 and OpenRGB contributors (GPL-2.0-or-later). Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.").font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
-                    Link("OpenRGB / PNY controller", destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
+                    Text(L10n.text("OpenRGB")).font(.headline)
+                    Text(L10n.text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. Per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work; wired Scope II 96 per-key packets and layouts are adapted from Mola19 and OpenRGB contributors (GPL-2.0-or-later). Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.")).font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Link(L10n.text("OpenRGB / PNY controller"), destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
                     Divider()
-                    Text("NVIDIA").font(.headline)
-                    Text("Public RM ABI definitions from open-gpu-kernel-modules 610.57.04, MIT. License notices are included.").font(.system(size: 12)).foregroundColor(muted)
-                    Link("NVIDIA / SDK sources", destination: URL(string:"https://github.com/NVIDIA/open-gpu-kernel-modules/tree/610.57.04")!)
+                    Text("OpenLinkHub / Nikola Jurkovic").font(.headline)
+                    Text("MAKR 75 lighting protocol and key-layout reference, GPL-3.0-or-later. Original source, notices and license are included.").font(.system(size:12)).foregroundColor(muted)
+                    Link("OpenLinkHub",destination:URL(string:"https://github.com/jurkovic-nikola/OpenLinkHub")!)
+                    Divider()
+                    Text(L10n.text("NVIDIA")).font(.headline)
+                    Text(L10n.text("Public RM ABI definitions from open-gpu-kernel-modules 610.57.04, MIT. License notices are included.")).font(.system(size: 12)).foregroundColor(muted)
+                    Link(L10n.text("NVIDIA / SDK sources"), destination: URL(string:"https://github.com/NVIDIA/open-gpu-kernel-modules/tree/610.57.04")!)
                 }
             }
-            Text("Independent community project. Not affiliated with PNY, NVIDIA, Apple, NullMoth or OpenRGB. GPL-2.0-or-later · No warranty. License and source are included.").font(.system(size: 11)).foregroundColor(muted).lineSpacing(4)
+            Text(L10n.text("Independent community project. Not affiliated with PNY, NVIDIA, Apple, NullMoth or OpenRGB. Combined distribution GPL-3.0-or-later · No warranty. License and source are included.")).font(.system(size: 11)).foregroundColor(muted).lineSpacing(4)
             HStack {
-                Button("License text") { if let file = Bundle.main.url(forResource: "COPYING", withExtension: nil) { NSWorkspace.shared.open(file) } }
-                Button("Source code") { if let folder = Bundle.main.resourceURL?.appendingPathComponent("Source") { NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
+                Button(L10n.text("License text")) { if let file = Bundle.main.url(forResource: "COPYING-GPL3", withExtension: nil) { NSWorkspace.shared.open(file) } }
+                Button(L10n.text("Source code")) { if let folder = Bundle.main.resourceURL?.appendingPathComponent("Source") { NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
             }
             Spacer()
         }
@@ -875,48 +649,20 @@ struct LaunchView: View {
     var body: some View {
         VStack(spacing: 20) {
             Image(nsImage: NSImage(contentsOf: Bundle.main.url(forResource: "hackinfx-logo", withExtension: "png")!) ?? NSImage()).resizable().scaledToFit().frame(width: 110, height: 110)
-            Text("HackinFX").font(.system(size: 26, weight: .semibold, design: .monospaced))
-            Text("by aleopho").font(.system(size: 11, design: .monospaced)).foregroundColor(muted)
+            Text(L10n.text("HackinFX")).font(.system(size: 26, weight: .semibold, design: .monospaced))
+            Text(L10n.text("by aleopho")).font(.system(size: 11, design: .monospaced)).foregroundColor(muted)
         }.opacity(visible ? 1 : 0).scaleEffect(reduceMotion ? 1 : visible ? 1 : 0.97)
         .frame(maxWidth: .infinity, maxHeight: .infinity).background(ink)
         .onAppear { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.4)) { visible = true } }
     }
 }
 
-struct Sidebar: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var navigation
-    @ObservedObject var model: Model
-    var body: some View {
-        VStack(alignment:.leading,spacing:0) {
-            HStack(spacing:12) {
-                Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:42,height:42)
-                VStack(alignment:.leading,spacing:4) { Text("HackinFX").font(.system(size:21,weight:.semibold,design:.rounded)).lineLimit(1).fixedSize(); Text("BY ALEOPHO").font(.system(size:8,weight:.medium,design:.monospaced)).tracking(2.4).foregroundColor(muted).lineLimit(1) }
-            }.padding(.bottom,38)
-            Text("WORKSPACE").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(2).foregroundColor(muted).padding(.bottom,14)
-            ForEach([("Studio","slider.horizontal.3"),("Hardware","cpu"),("Credits","heart")],id:\.0) { title,icon in
-                Button { model.page = title == "Studio" && !model.canControlLighting ? "Hardware" : title } label: {
-                    HStack(spacing:12) { Image(systemName:icon).font(.system(size:15)).frame(width:20);Text(title).font(.system(size:13,weight:.medium)).lineLimit(1).fixedSize();Spacer(minLength:0);if model.page == title { Circle().fill(accent).frame(width:5,height:5) } }
-                    .foregroundColor(model.page == title ? accent : muted).padding(.horizontal,13).frame(height:46).background { if model.page == title { RoundedRectangle(cornerRadius:10).fill(accent.opacity(0.10)).matchedGeometryEffect(id:"selected-page",in:navigation) } }.clipShape(RoundedRectangle(cornerRadius:10)).overlay(RoundedRectangle(cornerRadius:10).stroke(model.page == title ? accent.opacity(0.13) : .clear,lineWidth:1))
-                }.buttonStyle(PressFeedbackStyle()).padding(.bottom,6).animation(reduceMotion ? nil : .easeInOut(duration:0.25),value:model.page)
-            }
-            Spacer(minLength:24)
-            VStack(alignment:.leading,spacing:12) {
-                HStack { Image(systemName:"cpu").foregroundColor(accent);Text("LOCAL DEVICE").font(.system(size:8,weight:.semibold,design:.monospaced)).tracking(1.6).foregroundColor(muted) }
-                Text(model.currentGPUName).font(.system(size:13,weight:.medium)).lineLimit(3).fixedSize(horizontal:false,vertical:true)
-                Text([model.currentGPUVendor,model.currentBoardVendor].filter { !$0.isEmpty }.joined(separator:" / ")).font(.system(size:10,design:.monospaced)).foregroundColor(muted).lineLimit(2)
-                Tag(title:model.canControlLighting ? "PROFILE READY" : "SETUP REQUIRED",tint:model.canControlLighting ? accent : .orange)
-            }.padding(16).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.025)).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(.white.opacity(0.055),lineWidth:1))
-            HStack { Text("1.2.0");Spacer();Image(systemName:"terminal") }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1).foregroundColor(muted).padding(.top,18)
-        }.padding(22).frame(width:232).frame(maxHeight:.infinity).background(LinearGradient(colors:[panel,ink],startPoint:.topLeading,endPoint:.bottomTrailing))
-    }
-}
 struct StartupScanView: View {
     var body: some View {
         VStack(spacing:22) {
             ZStack { Circle().stroke(accent.opacity(0.10),lineWidth:1).frame(width:108,height:108);Circle().stroke(accent.opacity(0.06),lineWidth:1).frame(width:138,height:138);ProgressView().controlSize(.large).tint(accent) }
-            Text("Detecting your hardware").font(.system(size:24,weight:.semibold,design:.rounded))
-            Text("PCI identity · driver interface · controller catalog").font(.system(size:11,design:.monospaced)).foregroundColor(muted)
+            Text(L10n.text("Detecting your hardware")).font(.system(size:24,weight:.semibold,design:.rounded))
+            Text(L10n.text("PCI identity · driver interface · controller catalog")).font(.system(size:11,design:.monospaced)).foregroundColor(muted)
             Tag(title:"READ-ONLY INVENTORY")
         }.frame(maxWidth:.infinity,maxHeight:.infinity).background(ink.opacity(0.985))
     }
@@ -926,26 +672,37 @@ struct FeedbackWorkspace:View {
     @ObservedObject var model:Model
     var body:some View {
         VStack(alignment:.leading,spacing:22) {
-            VStack(alignment:.leading,spacing:9) { Text("COMMUNITY / FEEDBACK").font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2).foregroundColor(accent);Text("Help improve your setup").font(.system(size:30,weight:.semibold,design:.rounded));Text("Tell us what fails. HackinFX attaches a fresh hardware scan and device diagnostics for your review.").foregroundColor(muted) }
+            VStack(alignment:.leading,spacing:9) { Text(L10n.text("COMMUNITY / FEEDBACK")).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2).foregroundColor(accent);Text(L10n.text("Help improve your setup")).font(.system(size:30,weight:.semibold,design:.rounded));Text(L10n.text("Tell us what fails. HackinFX attaches a fresh hardware scan and device diagnostics for your review.")).foregroundColor(muted) }
             Card {
                 VStack(alignment:.leading,spacing:14) {
-                    HStack { Label("Compatibility report",systemImage:"bubble.left.and.text.bubble.right").font(.headline);Spacer();Tag(title:"REVIEW BEFORE SENDING") }
-                    TextField("Affected device / exact model (optional)",text:$model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() }
-                    Text("What did you expect, and what happened?").font(.system(size:12,weight:.medium))
+                    HStack { Label(L10n.text("Compatibility report"),systemImage:"bubble.left.and.text.bubble.right").font(.headline);Spacer();Tag(title:"REVIEW BEFORE SENDING") }
+                    TextField(L10n.text("Affected device / exact model (optional)"),text:$model.boardLabel).onChange(of:model.boardLabel) { model.feedbackChanged() }
+                    Text(L10n.text("What did you expect, and what happened?")).font(.system(size:12,weight:.medium))
                     TextEditor(text:$model.observedBehavior).onChange(of:model.observedBehavior) { model.feedbackChanged() }.font(.system(size:13)).frame(minHeight:160).padding(8).background(.white.opacity(0.025)).clipShape(RoundedRectangle(cornerRadius:10))
-                    Text("Include connection mode, the effect, and steps to reproduce. Notes are sent as typed.").font(.system(size:10)).foregroundColor(muted)
-                    HStack { Button(model.scanning ? "Collecting hardware…" : "Scan & review report…",action:model.prepareFeedback).buttonStyle(.borderedProminent).disabled(model.working || model.observedBehavior.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty);Button("Export diagnostics…",action:model.exportDiagnostics).disabled(model.scanJSON.isEmpty || model.working);Spacer();if model.scanning { ProgressView().controlSize(.small) } }
-                    if !model.submissionMessage.isEmpty { Text(model.submissionMessage).font(.system(size:11)).textSelection(.enabled) }
+                    Text(L10n.text("Include connection mode, the effect, and steps to reproduce. Notes are sent as typed.")).font(.system(size:10)).foregroundColor(muted)
+                    HStack { Button(L10n.text(model.scanning ? "Collecting hardware…" : "Scan & review report…"),action:model.prepareFeedback).buttonStyle(.borderedProminent).disabled(model.working || model.observedBehavior.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty);Button(L10n.text("Export diagnostics…"),action:model.exportDiagnostics).disabled(model.scanJSON.isEmpty || model.working);Spacer();if model.scanning { ProgressView().controlSize(.small) } }
+                    if !model.submissionMessage.isEmpty { Text(L10n.text(model.submissionMessage)).font(.system(size:11)).textSelection(.enabled) }
                 }
             }
             Card {
-                VStack(alignment:.leading,spacing:11) { Label("Included with your report",systemImage:"doc.text.magnifyingglass").font(.headline);Text("CPU, memory, USB, PCI and storage specifications; detected lighting devices, output performance and errors. Missing query results are marked explicitly.").foregroundColor(muted);Text("Automatic inventory excludes serial numbers, raw trees, volume labels and mount paths. Nothing uploads before you review the JSON and choose Send.").font(.system(size:11)).foregroundColor(muted);Text(model.scanSummary).font(.system(size:10,design:.monospaced)).foregroundColor(muted) }
+                VStack(alignment:.leading,spacing:11) { Label(L10n.text("Included with your report"),systemImage:"doc.text.magnifyingglass").font(.headline);Text(L10n.text("CPU, memory, USB, PCI and storage specifications; detected lighting devices, output performance and errors. Missing query results are marked explicitly.")).foregroundColor(muted);Text(L10n.text("Automatic inventory excludes serial numbers, raw trees, volume labels and mount paths. Nothing uploads before you review the JSON and choose Send.")).font(.system(size:11)).foregroundColor(muted);Text(L10n.text(model.scanSummary)).font(.system(size:10,design:.monospaced)).foregroundColor(muted) }
             }
         }.buttonStyle(PressFeedbackStyle())
     }
 }
 
+struct DeviceSetupPreferences:View {
+    @ObservedObject var model:Model
+    var body:some View {
+        CenterPanel { VStack(alignment:.leading,spacing:12) {
+            Label(L10n.text("Compatibility contributions"),systemImage:"heart").font(.headline)
+            Toggle(L10n.text("Share confirmed GPU compatibility"),isOn:$model.contributeConfirmation).toggleStyle(.switch)
+            Text(L10n.text("After you confirm a successful GPU test, send its compatibility result. Troubleshooting reports are still reviewed separately before sending.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
+        } }
+    }
+}
 struct Root: View {
+    @ObservedObject private var language=AppLocalization.shared
     @ObservedObject var model: Model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
@@ -953,21 +710,21 @@ struct Root: View {
             CenterNavigation(model:model,center:model.center)
             Rectangle().fill(.white.opacity(0.06)).frame(width:1)
             VStack(spacing:0) {
-                HStack(spacing:8) { Text("HACKINFX").foregroundColor(muted);Text("/").foregroundColor(muted.opacity(0.4));Text(model.page.uppercased());Spacer();Text("x86-64 / LOCAL WORKSPACE").foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
-                ScrollView { Group { if model.page == "Studio" { Studio(model:model) } else if model.page == "Feedback" { FeedbackWorkspace(model:model) } else if model.page == "Hardware" { Community(model:model) } else if model.page == "Credits" { Credits() } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
-                if model.page == "Studio" { StudioFooter(model:model) }
+                HStack(spacing:8) { Text(L10n.text("HACKINFX")).foregroundColor(muted);Text(L10n.text("/")).foregroundColor(muted.opacity(0.4));Text(L10n.text(model.page.uppercased()));Spacer();Text(L10n.text("x86-64 / LOCAL WORKSPACE")).foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
+                ScrollView { Group { if model.page == "Feedback" { FeedbackWorkspace(model:model) } else if model.page == "Credits" { Credits() } else if model.page == "Settings" { VStack(spacing:24) { CenterWorkspace(center:model.center,page:model.page);DeviceSetupPreferences(model:model) } } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
-        }.frame(minWidth:980,minHeight:650).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:"en")).tint(accent)
+        }.frame(minWidth:980,minHeight:650).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:language.identifier)).environment(\.layoutDirection,language.rtl ? .rightToLeft:.leftToRight).id(language.identifier).tint(accent)
+        .onAppear { model.center.gpuSetupRequested={ [weak model] device in model?.openDeviceSetup(device) } }
+        .onChange(of:language.identifier) { _ in model.center.publishWidget() }
         .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration:0.2),value:model.launching)
-        .overlay { if model.scanning && model.page == "Hardware" { StartupScanView() } }
-        .sheet(isPresented:$model.showSetupWizard) { SetupWizard(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
+        .overlay { if model.scanning && model.page == "Feedback" { StartupScanView() } }
+        .sheet(isPresented:$model.showDeviceLightingSetup) { DeviceLightingSetup(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
     }
 }
 final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     let model = Model()
     var window: NSWindow!
     var statusItem: NSStatusItem!
-    var actionItems: [NSMenuItem] = []
     var exportItem: NSMenuItem!
     var scanItem: NSMenuItem!
     var sceneStopItem:NSMenuItem!
@@ -1009,13 +766,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         sceneStopItem=add(menu,"Stop scene",#selector(stopCenterScene))
         sceneBlackoutItem=add(menu,"Blackout selected devices",#selector(blackoutCenter))
         menu.addItem(NSMenuItem.separator())
-        actionItems.append(add(menu,"Turn GPU lighting off",#selector(turnOff)))
-        let effects = NSMenu()
-        for (index,effect) in Lighting.allCases.enumerated() {
-            let item = add(effects,effect.rawValue,#selector(selectEffect)); item.tag = index; actionItems.append(item)
-        }
-        let effectItem = menu.addItem(withTitle:"GPU effects", action:nil, keyEquivalent:""); effectItem.submenu = effects
-        menu.addItem(NSMenuItem.separator())
         add(menu,"Feedback…",#selector(feedback))
         scanItem = add(menu,"Scan hardware…",#selector(scan))
         exportItem = add(menu,"Export diagnostics…",#selector(exportScan))
@@ -1030,10 +780,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         appMenu.addItem(NSMenuItem.separator())
         add(appMenu,"Quit HackinFX",#selector(quit),"q")
         appItem.submenu = appMenu; main.addItem(appItem)
-        let editItem = NSMenuItem(); let edit = NSMenu(title:"Edit")
-        edit.addItem(withTitle:"Copy", action:#selector(NSText.copy(_:)), keyEquivalent:"c")
-        edit.addItem(withTitle:"Paste", action:#selector(NSText.paste(_:)), keyEquivalent:"v")
-        edit.addItem(withTitle:"Select All", action:#selector(NSText.selectAll(_:)), keyEquivalent:"a")
+        let editItem = NSMenuItem(); let edit = NSMenu(title:L10n.text("Edit"))
+        edit.addItem(withTitle:L10n.text("Copy"), action:#selector(NSText.copy(_:)), keyEquivalent:"c")
+        edit.addItem(withTitle:L10n.text("Paste"), action:#selector(NSText.paste(_:)), keyEquivalent:"v")
+        edit.addItem(withTitle:L10n.text("Select All"), action:#selector(NSText.selectAll(_:)), keyEquivalent:"a")
+        for (item,key) in zip(edit.items,["Copy","Paste","Select All"]) { item.representedObject=key };edit.delegate=self;appMenu.delegate=self
         editItem.submenu = edit; main.addItem(editItem); NSApp.mainMenu = main
         let loginLaunch=NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword:keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
         if !loginLaunch { show() }
@@ -1043,17 +794,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self.model.launching = false; self.model.scanHardware() }
     }
     @discardableResult func add(_ menu: NSMenu, _ title: String, _ selector: Selector, _ key: String = "") -> NSMenuItem {
-        let item = menu.addItem(withTitle:title, action:selector, keyEquivalent:key); item.target = self; return item
+        let item = menu.addItem(withTitle:L10n.text(title), action:selector, keyEquivalent:key); item.target = self;item.representedObject=title; return item
     }
     func menuWillOpen(_ menu: NSMenu) {
-        for item in actionItems { item.isEnabled = !model.working && model.canControlLighting && (item.action != #selector(selectEffect) || model.availableEffects.contains(Lighting.allCases[item.tag].backend)) }
+        for item in menu.items { if let key=item.representedObject as? String { item.title=L10n.text(key) } }
         sceneStopItem.isEnabled = model.center.online && !model.center.busy && model.center.state.running
         sceneBlackoutItem.isEnabled = model.center.online && !model.center.busy && !model.center.selected.isEmpty
         scanItem.isEnabled = !model.working
         exportItem.isEnabled = !model.scanJSON.isEmpty && !model.scanning
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
-    func applicationWillTerminate(_ notification: Notification) { model.center.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) { MAKRMedia.shared.enabled=false;model.center.shutdown() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
@@ -1062,7 +813,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     func application(_ application:NSApplication,open urls:[URL]) {
         guard let url=urls.first,url.scheme == "hackinfx",["studio","lighting","hardware"].contains(url.host ?? "") else { return }
-        model.page = url.host == "hardware" ? "Hardware" : "Overview"
+        model.page = url.host == "hardware" ? "Feedback" : "Overview"
         show()
     }
     @objc func show() { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps:true); window.makeKeyAndOrderFront(nil) }
@@ -1070,11 +821,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     @objc func showScenes() { model.page="Canvas";show() }
     @objc func stopCenterScene() { model.center.stop() }
     @objc func blackoutCenter() { model.center.blackout() }
-    @objc func applyCurrent() { model.apply() }
-    @objc func turnOff() { model.apply(off:true) }
-    @objc func selectEffect(_ sender: NSMenuItem) { guard !model.working && model.canControlLighting else { return }; model.effect = Lighting.allCases[sender.tag]; model.apply() }
     @objc func feedback() { model.page="Feedback";show() }
-    @objc func scan() { model.page = "Hardware"; show(); model.scanHardware() }
+    @objc func scan() { model.page = "Feedback"; show(); model.scanHardware() }
     @objc func exportScan() { model.exportDiagnostics() }
     @objc func reports() {
         let folder = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("HackinFX",isDirectory:true)
@@ -1092,12 +840,12 @@ let app = NSApplication.shared
 if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes","--render-center-feedback","--render-center-gallery"].contains(CommandLine.arguments[1]) {
     app.setActivationPolicy(.prohibited)
     app.appearance = NSAppearance(named: .darkAqua)
-    let preview = Model(); preview.launching = false; preview.page = "Studio"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
+    let preview = Model(); preview.launching = false; preview.page = "Overview"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
-    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture();preview.page = CommandLine.arguments[1] == "--render-center-gallery" ? "Effects" : CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
-    let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(SetupWizard(model:preview)) : AnyView(Root(model:preview))
-    let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text("SAMPLE DATA · DESIGN CHECK").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
+    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture(canvas:CommandLine.arguments[1] == "--render-center-scenes");preview.page = CommandLine.arguments[1] == "--render-center-gallery" ? "Effects" : CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
+    let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(DeviceLightingSetup(model:preview)) : AnyView(Root(model:preview))
+    let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text(L10n.text("SAMPLE DATA · DESIGN CHECK")).font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
     let view = NSHostingView(rootView:labeled)
     view.appearance = NSAppearance(named: .darkAqua)
     view.frame = NSRect(x:0,y:0,width:1380,height:940)

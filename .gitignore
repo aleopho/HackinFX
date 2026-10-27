@@ -35,3 +35,10 @@ xcuserdata/
 *.pkg
 !vendor/macUSPCIO/macUSPCIO_Smbus_Release.kext.zip
 !vendor/macUSPCIO/macUSPCIO-v1.0-source.zip
+
+# Android build state and private signing material
+android/.gradle/
+android/**/build/
+android/local.properties
+*.keystore
+*.jks

@@ -39,7 +39,7 @@ class NanoleafTests(unittest.TestCase):
             path=Path(folder)/'pairings.json';a=nano.NanoleafAdapter(path,http,Sock)
             self.assertEqual(a.discover(),[]);a.pair('192.168.1.4')
             self.assertEqual([v[1] for v in calls],['POST','GET']);self.assertEqual(path.stat().st_mode&0o777,0o600)
-            row=a.discover()[0];self.assertNotIn(TOKEN,json.dumps(row));self.assertNotIn('PRIVATE',json.dumps(row));self.assertTrue(row['startup_excluded']);self.assertEqual(row['led_count'],2)
+            row=a.discover()[0];self.assertNotIn(TOKEN,json.dumps(row));self.assertNotIn('PRIVATE',json.dumps(row));self.assertFalse(row['startup_excluded']);self.assertEqual(row['led_count'],2)
             a.activate(row);a.write_frame(row,[(1,2,3),(4,5,6)],'wave')
             sock=a.sockets[row['id']];self.assertEqual(sock.address,('192.168.1.4',60222));self.assertEqual(len(sock.sent),1)
             self.assertEqual(calls[-2][3]['write']['extControlVersion'],'v2');self.assertEqual(calls[-1][3]['brightness']['value'],100)
@@ -59,7 +59,7 @@ class NanoleafTests(unittest.TestCase):
                 self.assertAlmostEqual(sleep.call_args.args[0],.08)
             a.close()
 
-    def test_paired_network_panels_are_not_activated_at_startup(self):
+    def test_explicit_startup_exclusion_remains_respected(self):
         import center_core as core
         from test_center import FakeSDK,FakeNative,device
         row=device();row.update(category='light',startup_excluded=True,controllable=True,direct=True)

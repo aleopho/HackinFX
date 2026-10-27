@@ -11,6 +11,8 @@ import subprocess
 import tarfile
 import tempfile
 import urllib.request
+import urllib.error
+import time
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/'vendor/openrgb-runtime/manifest.json'
@@ -23,7 +25,16 @@ def verified_download(row):
     if not valid():
         temporary=target.with_suffix(target.suffix+'.partial')
         try:
-            with urllib.request.urlopen(row['url'],timeout=90) as response,temporary.open('wb') as out:shutil.copyfileobj(response,out)
+            for attempt in range(3):
+                print('Downloading '+row['name']+' (attempt '+str(attempt+1)+'/3)',flush=True)
+                try:
+                    request=urllib.request.Request(row['url'],headers={'User-Agent':'HackinFX-build/2.5'})
+                    with urllib.request.urlopen(request,timeout=90) as response,temporary.open('wb') as out:shutil.copyfileobj(response,out)
+                    break
+                except (OSError,urllib.error.URLError):
+                    if attempt==2:raise
+                    temporary.unlink(missing_ok=True)
+                    time.sleep(2**attempt)
             if temporary.stat().st_size!=row['size'] or hashlib.sha256(temporary.read_bytes()).hexdigest()!=row['sha256']:raise ValueError('Upstream download digest mismatch: '+row['name'])
             temporary.replace(target)
         finally:temporary.unlink(missing_ok=True)

@@ -2,14 +2,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Package the built, locally signed app as a drag-and-drop UDZO disk image."""
 from pathlib import Path
+import plistlib
+import re
 import shutil
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parent
 app = root/'HackinFX.app'
-output = root.parent/'HackinFX-aleopho-2.4.0.dmg'
 if not (app/'Contents/MacOS/HackinFX').is_file():
     raise SystemExit('Build HackinFX.app first with build_community.py')
+version=plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version):raise SystemExit('Invalid built application version')
+output=root.parent/('HackinFX-aleopho-'+version+'.dmg')
 with tempfile.TemporaryDirectory(prefix='hackinfx-dmg-') as temporary:
     work = Path(temporary)
     stage = work/'stage';stage.mkdir()

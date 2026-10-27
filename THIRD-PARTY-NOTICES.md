@@ -2,7 +2,7 @@
 
 ## HackinFX
 
-Copyright (c) 2026 aleopho and contributors. Application UI and new Python implementation: **GPL-2.0-or-later**. See the full [GPL version 2 text](LICENSE), also bundled as `app/COPYING`. The project permits GPL version 2 or any later version. The upstream GPL text is preserved verbatim, including its historical example appendix; examples in the license text do not name this project's author.
+Copyright (c) 2026 aleopho and contributors. The combined application is distributed as **GPL-3.0-or-later**. See the full [GPL version 3 text](LICENSE), also bundled as `app/COPYING-GPL3`. Preexisting GPL-2.0-or-later files retain their notices and are combined under the permitted later version. The original GPL version 2 text remains in `app/COPYING`. The upstream GPL text is preserved verbatim, including its historical example appendix; examples in the license text do not name this project's author.
 
 The corresponding application source, build and packaging scripts, tests, editable icon and backend source are included. Third-party components retain their respective terms. This document is an attribution inventory, not a claim that different licenses have become identical.
 
@@ -101,3 +101,7 @@ extControl v2 wire format. Protocol references include OpenRGB's
 GPL-2.0-or-later, and the official Nanoleaf OpenAPI documentation.
 See [Nanoleaf setup and protocol notes](docs/NANOLEAF.md).
 No Nanoleaf cloud SDK or vendor firmware is bundled.
+
+## OpenLinkHub / MAKR 75
+
+Nikola Jurkovic, OpenLinkHub, GPL-3.0-or-later. Protocol, dial-event and US key-layout references for the wired MAKR 75. Exact supported identities are enforced by the adapter source. Reference sources and full license are preserved in vendor/openlinkhub-makr75; the adapter and compact derived layout are included in the application source. The combined distribution is GPL-3.0-or-later; preexisting files and separately bundled components retain their notices. See app/COPYING-GPL3.
