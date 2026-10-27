@@ -6,6 +6,7 @@ struct EffectTexture:View {
     let time:Double
     var columns=24
     var rows=6
+    var seamless=false
     var body:some View {
         Canvas { context,size in
             let palette=EffectLibrary.palette(scene.palette),dx=size.width/Double(columns),dy=size.height/Double(rows)
@@ -14,8 +15,9 @@ struct EffectTexture:View {
                 let rgb=EffectMath.composite(mode:scene.mode,palette:palette,index:index,u:u,v:v,coord:scene.axis == "x" ? u:v,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse,brightness:scene.brightness,layers:scene.layers ?? [])
                 let level=1.0/255
                 let color=Color(red:max(0,min(1,rgb[0]*level)),green:max(0,min(1,rgb[1]*level)),blue:max(0,min(1,rgb[2]*level)))
-                let rect=CGRect(x:Double(column)*dx+1.5,y:Double(row)*dy+1.5,width:max(1,dx-3),height:max(1,dy-3))
-                context.fill(Path(roundedRect:rect,cornerRadius:3),with:.color(color))
+                let gap=seamless ? 0.0:1.5
+                let rect=CGRect(x:Double(column)*dx+gap,y:Double(row)*dy+gap,width:max(1,dx-gap*2),height:max(1,dy-gap*2))
+                context.fill(Path(roundedRect:rect,cornerRadius:seamless ? 0:3),with:.color(color))
             } }
         }.background(Color.black.opacity(0.72)).clipShape(RoundedRectangle(cornerRadius:11)).accessibilityHidden(true)
     }

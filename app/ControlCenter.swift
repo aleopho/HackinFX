@@ -866,8 +866,8 @@ struct LayerStudio:View {
                 VStack(alignment:.leading,spacing:10) {
                     HStack {
                         Text("Layer \(index+1)").font(.caption.bold())
-                        Picker("Effect",selection:field(index,\.mode)) { ForEach(EffectLibrary.catalog.effects) { effect in Text(effect.name).tag(effect.id) } }.labelsHidden()
-                        Picker("Blend",selection:field(index,\.blend)) { Text("Screen").tag("screen");Text("Add").tag("add");Text("Multiply").tag("multiply");Text("Normal").tag("normal") }.labelsHidden()
+                        Picker("Effect",selection:field(index,\.mode)) { ForEach(EffectLibrary.catalog.effects) { effect in Text(effect.name).tag(effect.id) } }.pickerStyle(.menu).labelsHidden().fixedSize()
+                        Picker("Blend",selection:field(index,\.blend)) { Text("Screen").tag("screen");Text("Add").tag("add");Text("Multiply").tag("multiply");Text("Normal").tag("normal") }.pickerStyle(.menu).labelsHidden().fixedSize();Spacer()
                         Button { var layers=center.scene.layers ?? [];guard layers.indices.contains(index) else{return};layers.remove(at:index);center.scene.layers=layers } label:{Image(systemName:"trash")}.buttonStyle(.plain)
                     }
                     HStack { Text("Opacity").font(.caption);Slider(value:field(index,\.opacity),in:0...100);Text("\(Int(field(index,\.opacity).wrappedValue))%").font(.caption).frame(width:36) }
@@ -891,7 +891,7 @@ struct LightingHero:View {
     var body:some View {
         TimelineView(.animation(minimumInterval:1.0/20,paused:reduceMotion || !center.state.running)) { _ in
             ZStack(alignment:.bottomLeading) {
-                EffectTexture(scene:scene,time:reduceMotion ? 0:center.canvasTime(),columns:52,rows:18).blur(radius:6).scaleEffect(1.06).opacity(0.72)
+                EffectTexture(scene:scene,time:reduceMotion ? 0:center.canvasTime(),columns:100,rows:35,seamless:true).blur(radius:6).scaleEffect(1.06).opacity(0.72)
                 LinearGradient(colors:[Color.black.opacity(0.05),Color.black.opacity(0.86)],startPoint:.top,endPoint:.bottom)
                 VStack(alignment:.leading,spacing:18) {
                     HStack { Label("LIVE COMPOSITION",systemImage:"waveform.path").font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2);Spacer();Text("\((scene.layers?.count ?? 0)+1) LAYERS").font(.system(size:9,design:.monospaced)) }.foregroundStyle(.white.opacity(0.7))
