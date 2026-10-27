@@ -352,6 +352,7 @@ final class CenterModel: ObservableObject {
     private var placementRequest=false
     func position(_ id:String)->CenterPosition { placementDrafts[id] ?? state.layout[id] ?? CenterPosition(x:0.5,y:0.5,width:0.22) }
     func place(_ id:String,_ p:CenterPosition) {
+        let known=Set(state.devices.map { $0.id });placementDrafts=placementDrafts.filter { known.contains($0.key) }
         placementDrafts[id]=p;placementWork?.cancel()
         let task=DispatchWorkItem { [weak self] in self?.flushPlacement() };placementWork=task;DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:task)
     }
@@ -635,7 +636,7 @@ struct CenterWorkspace:View {
                     ForEach(center.controllable.filter { !center.scene.synchronized || $0.direct }) { device in
                         let p=center.position(device.id)
                         let location=dragLocations[device.id] ?? CGPoint(x:p.x*geometry.size.width,y:p.y*geometry.size.height)
-                        VStack(spacing:8) { DeviceGeometry(device:device,position:p).frame(height:52);Text(verbatim:device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:122,height:85).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
+                        VStack(spacing:8) { DeviceGeometry(device:device,position:p).frame(height:52);Text(verbatim:device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:max(90,p.width*geometry.size.width),height:max(75,(p.height ?? p.width)*geometry.size.height)).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
                     }
                     if center.controllable.isEmpty { Text(L10n.text("Discover and confirm a controllable device first")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
                 }.environment(\.layoutDirection,.leftToRight).coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
@@ -867,7 +868,7 @@ struct LayerStudio:View {
                         Text("Layer \(index+1)").font(.caption.bold())
                         Picker("Effect",selection:field(index,\.mode)) { ForEach(EffectLibrary.catalog.effects) { effect in Text(effect.name).tag(effect.id) } }.labelsHidden()
                         Picker("Blend",selection:field(index,\.blend)) { Text("Screen").tag("screen");Text("Add").tag("add");Text("Multiply").tag("multiply");Text("Normal").tag("normal") }.labelsHidden()
-                        Button { var layers=center.scene.layers ?? [];layers.remove(at:index);center.scene.layers=layers } label:{Image(systemName:"trash")}.buttonStyle(.plain)
+                        Button { var layers=center.scene.layers ?? [];guard layers.indices.contains(index) else{return};layers.remove(at:index);center.scene.layers=layers } label:{Image(systemName:"trash")}.buttonStyle(.plain)
                     }
                     HStack { Text("Opacity").font(.caption);Slider(value:field(index,\.opacity),in:0...100);Text("\(Int(field(index,\.opacity).wrappedValue))%").font(.caption).frame(width:36) }
                     HStack { Text("Speed").font(.caption);Slider(value:field(index,\.speed),in:1...100) }
