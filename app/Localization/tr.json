@@ -762,6 +762,5 @@
   "{0} ready · {1} selected": "{0} hazır · {1} seçildi",
   "Compatibility contributions": "Compatibility contributions",
   "Share confirmed GPU compatibility": "Share confirmed GPU compatibility",
-  "After you confirm a successful GPU test, send its compatibility result. Troubleshooting reports are still reviewed separately before sending.": "After you confirm a successful GPU test, send its compatibility result. Troubleshooting reports are still reviewed separately before sending.",
-  "On launch, all ready devices receive green Twinkle at 65% speed. RAM joins automatically after one successful saved probe, with inventory and RGB identity revalidated on each start. Paired Nanoleaf panels join when reachable. Rediscovery keeps the current colors.": "On launch, all ready devices receive green Twinkle at 65% speed. RAM joins automatically after one successful saved probe, with inventory and RGB identity revalidated on each start. Paired Nanoleaf panels join when reachable. Rediscovery keeps the current colors."
+  "After you confirm a successful GPU test, send its compatibility result. Troubleshooting reports are still reviewed separately before sending.": "After you confirm a successful GPU test, send its compatibility result. Troubleshooting reports are still reviewed separately before sending."
 }
