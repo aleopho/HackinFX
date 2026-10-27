@@ -77,6 +77,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/v1/scene/start':result=core.start(value)
             elif self.path=='/v1/scene/stop':result=core.pause()
             elif self.path=='/v1/devices/brightness':result=core.set_device_brightness(value.get('levels'))
+            elif self.path=='/v1/devices/calibration':result=core.set_calibration(value.get('values'))
             elif self.path=='/v1/layout':result=core.set_layout(value)
             elif self.path=='/v1/scenes/save':result=core.save_scene(value)
             elif self.path=='/v1/shutdown':

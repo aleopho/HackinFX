@@ -41,6 +41,19 @@ def color(value):
     return tuple(bytes.fromhex(value))
 
 
+def calibration_config(value):
+    if not isinstance(value,dict):raise ValueError('Calibration must be an object')
+    return dict(red=number(value.get('red',1),0,1),green=number(value.get('green',1),0,1),blue=number(value.get('blue',1),0,1),gamma=number(value.get('gamma',1),.5,3))
+
+def layout_config(value):
+    if not isinstance(value,dict):raise ValueError('Placement must be an object')
+    result=dict(x=number(value['x'],0,1),y=number(value['y'],0,1),width=number(value.get('width',.22),.01,1),height=number(value.get('height',value.get('width',.22)),.01,1),rotation=number(value.get('rotation',0),-180,180))
+    for key in ('mirror_x','mirror_y'):
+        if type(value.get(key,False)) is not bool:raise ValueError('Mirror flags must be boolean')
+        result[key]=value.get(key,False)
+    return result
+
+
 def scene_config(value):
     if not isinstance(value,dict):raise ValueError('Scene must be an object')
     mode=value.get('mode','static')
@@ -59,7 +72,16 @@ def scene_config(value):
     fps=number(value.get('fps',30),1,120)
     reverse=value.get('reverse',False)
     if type(reverse)is not bool:raise ValueError('Reverse must be boolean')
-    return dict(scale=number(value.get('scale',1),.25,4),density=number(value.get('density',55),0,100),reverse=reverse,fps=fps,sync_policy=policy,mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
+    result=dict(scale=number(value.get('scale',1),.25,4),density=number(value.get('density',55),0,100),reverse=reverse,fps=fps,sync_policy=policy,mapping=mapping,synchronized=synchronized,mode=mode,palette=[v.lower() for v in palette],brightness=number(value.get('brightness',70),0,100),speed=number(value.get('speed',35),1,100),axis=axis)
+    layers=value.get('layers',[])
+    if not isinstance(layers,list) or len(layers)>4:raise ValueError('Up to four effect layers supported')
+    result['layers']=[]
+    for layer in layers:
+        if not isinstance(layer,dict) or layer.get('layers'):raise ValueError('Nested layers are not supported')
+        blend=layer.get('blend','screen')
+        if blend not in ('screen','add','multiply','normal'):raise ValueError('Invalid layer blend')
+        result['layers'].append(dict(scene_config(dict(layer,layers=[])),blend=blend,opacity=number(layer.get('opacity',50),0,100)))
+    return result
 
 
 def frame(scene,count,position,elapsed):
@@ -183,15 +205,17 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter(),nanoleaf_control.NanoleafAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.output_locks={};self.device_brightness={};self.saved_brightness={};self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.scene_revision=0;self.selected_devices=[];self.active_devices=set();self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.calibration={};self.saved_calibration={};self.output_locks={};self.device_brightness={};self.saved_brightness={};self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.scene_revision=0;self.selected_devices=[];self.active_devices=set();self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
             for key,position in list(saved.get('layout',{}).items())[:192]:
                 if isinstance(key,str) and len(key)<=80:
-                    self.saved_layout[key]=dict(x=number(position['x'],0,1),y=number(position['y'],0,1),width=number(position.get('width',.22),.01,1))
+                    self.saved_layout[key]=layout_config(position)
             for fp,level in list(saved.get('device_brightness',{}).items())[:192]:
                 if isinstance(fp,str) and len(fp)<=80:self.saved_brightness[fp]=number(level,0,100)
+            for fp,value in list(saved.get('calibration',{}).items())[:192]:
+                if isinstance(fp,str) and len(fp)<=80:self.saved_calibration[fp]=calibration_config(value)
             for row in saved.get('scenes',[])[:64]:
                 if isinstance(row,dict) and isinstance(row.get('name'),str):self.scenes.append(dict(name=row['name'][:60],config=scene_config(row['config'])))
         except (OSError,ValueError,KeyError,TypeError):pass
@@ -199,7 +223,7 @@ class Center:
         now=time.monotonic()
         return {key:dict(frames=v['frames'],fps=round(v['fps'],1),command_ms=round(v['latency']*1000,2),age_ms=round(max(0,now-v['last'])*1000),missed=v['missed'],interval_ms=round(v.get('interval',0)*1000,2),jitter_ms=round(v.get('jitter',0)*1000,2),max_interval_ms=round(v.get('max_interval',0)*1000,2)) for key,v in self.output_stats.items()}
     def status(self):
-        with self.lock:return dict(schema=1,device_brightness=dict(self.device_brightness),host_media_devices=sorted(getattr(self.registry.adapters.get('native-usb'),'active',set())),scene_revision=self.scene_revision,selected_devices=list(self.selected_devices),active_devices=sorted(k for k in self.active_devices if self.device_brightness.get(k,100)>0) if self.scene['brightness']>0 else [],nanoleaf_candidates=list(self.nanoleaf_candidates),scene_elapsed=max(0,time.monotonic()-self.clock_started),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
+        with self.lock:return dict(schema=1,calibration=dict(self.calibration),device_brightness=dict(self.device_brightness),host_media_devices=sorted(getattr(self.registry.adapters.get('native-usb'),'active',set())),scene_revision=self.scene_revision,selected_devices=list(self.selected_devices),active_devices=sorted(k for k in self.active_devices if self.device_brightness.get(k,100)>0) if self.scene['brightness']>0 else [],nanoleaf_candidates=list(self.nanoleaf_candidates),scene_elapsed=max(0,time.monotonic()-self.clock_started),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
     def refresh(self,inventory=True):
         with self.operation:
             self.stop();self.leased_frames={};self.active_devices=set();self.selected_devices=[];rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
@@ -241,6 +265,7 @@ class Center:
             return self.status()
     def restore_device_brightness(self,rows):
         counts={d.get('fingerprint'):sum(r.get('fingerprint')==d.get('fingerprint') for r in rows) for d in rows}
+        self.calibration={d['id']:self.calibration.get(d['id'],self.saved_calibration.get(d.get('fingerprint'),calibration_config({})) if counts.get(d.get('fingerprint'))==1 else calibration_config({})) for d in rows}
         self.device_brightness={d['id']:self.device_brightness.get(d['id'],self.saved_brightness.get(d.get('fingerprint'),100) if counts.get(d.get('fingerprint'))==1 else 100) for d in rows}
     def set_device_brightness(self,values):
         if not isinstance(values,dict) or not 1<=len(values)<=64:raise ValueError('Device brightness requires one to 64 device levels')
@@ -253,10 +278,10 @@ class Center:
                 for key,level in updates.items():
                     fp=known[key].get('fingerprint')
                     if fp and sum(d.get('fingerprint')==fp for d in self.devices)==1:saved[fp]=level
-                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=self.saved_layout,device_brightness=saved))
+                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=self.saved_layout,device_brightness=saved,calibration=self.saved_calibration))
                 self.device_brightness=levels;self.saved_brightness=saved;config=dict(self.scene);selected=set(self.selected_devices)
                 targets=[dict(known[k]) for k in updates if k in selected]
-                steady=config['mode'] in ('static','gradient')
+                steady=config['mode'] in ('static','gradient') and not config.get('layers')
             # Streaming picks up levels on the next write. Steady scenes need one new frame.
             if steady:
                 for target in targets:
@@ -355,6 +380,7 @@ class Center:
                 for key in ids:
                     target=next((d for d in self.devices if d['id']==key),None)
                     if not target or not target['controllable']:raise ValueError('A selected device is not controllable; refresh or complete its setup')
+                    if config.get('layers') and not target['direct']:raise ValueError('Effect layers require host-streamed Direct devices')
                     if config['synchronized'] and config['mode'] not in ('static','gradient') and not target['direct']:raise ValueError('Canvas sync requires host-streamed Direct devices; onboard effects have independent clocks')
                     if not target['direct'] and config['mode'] not in target['static_modes']:raise ValueError('A selected device cannot play this effect. Select only compatible targets.')
                     targets.append(dict(target,scene_brightness=config['brightness']))
@@ -381,7 +407,7 @@ class Center:
             self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
     def render(self,targets,config,event):
-        active={d['id']:d for d in targets};pending={};last_sent={};animated=config['mode'] not in ('static','gradient')
+        active={d['id']:d for d in targets};pending={};last_sent={};animated=config['mode'] not in ('static','gradient') or bool(config.get('layers'))
         pool=ThreadPoolExecutor(max_workers=max(1,len(targets)),thread_name_prefix='lighting-output')
         def collect(key,future):
             try:future.result()
@@ -395,7 +421,7 @@ class Center:
             if not animated and targets_by_id[key]['backend']=='native':
                 adapter=self.registry.adapters.get('native')
                 if adapter and hasattr(adapter,'release'):adapter.release()
-            if config['mode'] in targets_by_id[key].get('onboard_modes',[]):active.pop(key,None)
+            if not config.get('layers') and config['mode'] in targets_by_id[key].get('onboard_modes',[]):active.pop(key,None)
         targets_by_id={d['id']:d for d in targets}
         try:
             while active and not event.is_set():
@@ -413,9 +439,9 @@ class Center:
                             self.sync_stats['dropped']+=1
                             if key in self.output_stats:self.output_stats[key]['missed']+=1
                         continue # Bounded latest-frame policy; never queue stale frames.
-                    mode='static' if config['mode'] in target.get('onboard_modes',[]) else config['mode']
+                    mode='static' if not config.get('layers') and config['mode'] in target.get('onboard_modes',[]) else config['mode']
                     sample_time=(tick+min(.25,self.output_latencies.get(key,0)+target.get('presentation_delay',0))-self.clock_started) if animated and config['synchronized'] and not grouped else elapsed
-                    pixels=frame(dict(config,mode=mode),target['led_count'],dict(self.layout[key],led_positions=target.get('led_positions',[])),sample_time)
+                    pixels=frame(dict(config,mode=mode),target['led_count'],dict(self.layout[key],device_id=key,led_positions=target.get('led_positions',[])),sample_time)
                     frames.append((key,target,pixels))
                 for key,target,pixels in frames:
                     if event.is_set():break
@@ -444,7 +470,9 @@ class Center:
     def _write_output(self,target,pixels,mode):
         started=time.monotonic()
         level=self.device_brightness.get(target['id'],100)/100
-        scaled=[tuple(round(c*level) for c in color) for color in pixels]
+        correction=self.calibration.get(target['id'],calibration_config({}))
+        gains=(correction['red'],correction['green'],correction['blue']);gamma=correction['gamma']
+        scaled=[tuple(max(0,min(255,round(255*(c/255)**gamma*gains[i]*level))) for i,c in enumerate(rgb)) for rgb in pixels]
         self.registry.write_frame(target,scaled,mode)
         measured=time.monotonic()-started
         key=target['id'];now=time.monotonic()
@@ -476,22 +504,47 @@ class Center:
             self.worker=threading.Thread(target=maintain,daemon=True);self.worker.start()
             self.message='Effects paused; preview-based devices retain their last colors.'
             return self.status()
+    def set_calibration(self,values):
+        if not isinstance(values,dict) or not 1<=len(values)<=64:raise ValueError('Invalid calibration batch')
+        with self.operation:
+            with self.lock:
+                known={d['id']:d for d in self.devices if d['controllable']}
+                if set(values)-set(known):raise ValueError('Calibration refers to unavailable devices')
+                updates={key:calibration_config(value) for key,value in values.items()}
+                current=dict(self.calibration);current.update(updates);saved=dict(self.saved_calibration)
+                fingerprints=[d.get('fingerprint') for d in self.devices]
+                for key,value in updates.items():
+                    fp=known[key].get('fingerprint')
+                    if fp and fingerprints.count(fp)==1:saved[fp]=value
+                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=self.saved_layout,device_brightness=self.saved_brightness,calibration=saved))
+                self.calibration=current;self.saved_calibration=saved
+                targets=[dict(known[key]) for key in updates if key in self.leased_frames]
+            if not self.running:
+                for target in targets:
+                    self.write_output(target,self.leased_frames[target['id']],'static')
+                    if target['backend']=='native':self.registry.adapters['native'].release()
+        return self.status()
     def set_layout(self,values):
         if not isinstance(values,dict) or len(values)>192:raise ValueError('Invalid layout')
         with self.operation:
-            self.stop()
             with self.lock:
                 known={d['id'] for d in self.devices}
                 if set(values)-known:raise ValueError('Layout refers to missing devices')
-                updates={key:dict(x=number(v['x'],0,1),y=number(v['y'],0,1),width=number(v.get('width',0.22),0.01,1)) for key,v in values.items()}
+                updates={key:layout_config(dict(self.layout.get(key,{}),**v)) for key,v in values.items()}
                 layout=dict(self.layout);layout.update(updates)
                 fingerprints=[d.get('fingerprint','') for d in self.devices]
                 saved=dict(self.saved_layout)
                 for d in self.devices:
                     fp=d.get('fingerprint','')
                     if fp and fingerprints.count(fp)==1:saved[fp]=layout[d['id']]
-                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=saved,device_brightness=self.saved_brightness))
+                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=saved,device_brightness=self.saved_brightness,calibration=self.saved_calibration))
                 self.layout=layout;self.saved_layout=saved
+                targets=[dict(d) for d in self.devices if d['id'] in updates and d['id'] in self.selected_devices and d.get('controllable')]
+            if not self.running and self.scene['mode'] in ('static','gradient') and not self.scene.get('layers'):
+                for target in targets:
+                    pixels=frame(self.scene,target['led_count'],dict(self.layout[target['id']],led_positions=target.get('led_positions',[])),max(0,time.monotonic()-self.clock_started))
+                    self.write_output(target,pixels,self.scene['mode'])
+                    if target['backend']=='native':self.registry.adapters['native'].release()
         return self.status()
     def save_scene(self,value):
         name=value.get('name','').strip()
@@ -500,6 +553,6 @@ class Center:
         with self.lock:
             scenes=[s for s in self.scenes if s['name']!=name]+[dict(name=name,config=config)]
             if len(scenes)>64:raise ValueError('Maximum 64 saved scenes')
-            atomic_json(self.store,dict(schema=1,scenes=scenes,layout=self.saved_layout,device_brightness=self.saved_brightness));self.scenes=scenes
+            atomic_json(self.store,dict(schema=1,scenes=scenes,layout=self.saved_layout,device_brightness=self.saved_brightness,calibration=self.saved_calibration));self.scenes=scenes
         return self.status()
     def close(self):self.stop();self.registry.close()

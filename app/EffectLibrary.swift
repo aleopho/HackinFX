@@ -3,6 +3,10 @@ import Foundation
 struct LibraryEffect:Codable,Identifiable { let id:String;let name:String;let category:String;let symbol:String;let description:String;let palette:[String];let speed:Double;let scale:Double;let density:Double;let colors:Bool }
 struct LibraryLook:Codable,Identifiable { let id:String;let name:String;let effect:String;let category:String;let palette:[String];let speed:Double;let scale:Double;let density:Double }
 struct EffectCatalog:Codable { let schema:Int;let categories:[String];let effects:[LibraryEffect];let looks:[LibraryLook] }
+struct CenterLayer:Codable,Equatable {
+    var mode="twinkle";var palette=["9bed4b"];var brightness=100.0;var speed=65.0;var scale=1.0;var density=55.0;var reverse=false;var axis="x";var mapping="canvas";var blend="screen";var opacity=50.0
+}
+
 enum EffectLibrary {
     static let catalog:EffectCatalog = {
         guard let url=Bundle.main.url(forResource:"effects_catalog",withExtension:"json"),let data=try? Data(contentsOf:url),let catalog=try? JSONDecoder().decode(EffectCatalog.self,from:data),catalog.schema==1 else { return EffectCatalog(schema:1,categories:[],effects:[],looks:[]) }
@@ -21,6 +25,20 @@ enum EffectMath {
     static func noise(_ v:Double)->Double { fract(sin(v*12.9898+78.233)*43758.5453) }
     static func smooth(_ v:Double)->Double { let n=max(0,min(1,v));return n*n*(3-2*n) }
     static func field(_ x:Double,_ y:Double,_ t:Double)->Double { (sin(x*4.7+t*0.7)+cos(y*5.3-t*0.43)+sin((x+y)*3.1+t*0.31))/6+0.5 }
+    static func composite(mode:String,palette:[[Double]],index:Int,u:Double,v:Double,coord:Double,time:Double,speed:Double,scale:Double,density:Double,reverse:Bool,brightness:Double,layers:[CenterLayer])->[Double] {
+        var rgb=sample(mode:mode,palette:palette,index:index,u:u,v:v,coord:coord,time:time,speed:speed,scale:scale,density:density,reverse:reverse).map { max(0,min(255,($0*(layers.isEmpty ? brightness:100)/100).rounded(.toNearestOrEven))) }
+        for layer in layers {
+            let overlay=sample(mode:layer.mode,palette:EffectLibrary.palette(layer.palette),index:index,u:u,v:v,coord:layer.axis == "x" ? u:v,time:time,speed:layer.speed,scale:layer.scale,density:layer.density,reverse:layer.reverse).map { max(0,min(255,($0*layer.brightness/100).rounded(.toNearestOrEven))) }
+            for k in 0..<3 {
+                let a=rgb[k],b=overlay[k],opacity=layer.opacity/100
+                let merged:Double
+                switch layer.blend { case "add":merged=min(255,a+b);case "multiply":merged=a*b/255;case "normal":merged=b;default:merged=255-(255-a)*(255-b)/255 }
+                rgb[k]=max(0,min(255,(a*(1-opacity)+merged*opacity).rounded(.toNearestOrEven)))
+            }
+        }
+        if !layers.isEmpty { rgb=rgb.map { ($0*brightness/100).rounded(.toNearestOrEven) } }
+        return rgb
+    }
     static func sample(mode:String,palette:[[Double]],index:Int,u:Double,v:Double,coord:Double,time:Double,speed:Double,scale:Double=1,density:Double=55,reverse:Bool=false)->[Double] {
         guard !palette.isEmpty else { return [0,0,0] }
         let t=time*speed/100*(reverse ? -1.0:1.0),q=coord*scale,xx=(u-0.5)*scale,yy=(v-0.5)*scale

@@ -77,15 +77,28 @@ def sample(mode,palette,index,u,v,coord,time,speed,scale=1,density=55,reverse=Fa
     return tuple(c*max(0,min(1,level)) for c in rgb)
 
 def frame(scene,count,position,elapsed):
-    palette=[tuple(bytes.fromhex(v)) for v in scene['palette']];brightness=scene['brightness']/100;out=[]
+    palette=[tuple(bytes.fromhex(v)) for v in scene['palette']];brightness=(100 if scene.get('layers') else scene['brightness'])/100;out=[]
     points=position.get('led_positions',[]);spatial=scene.get('mapping','mirror')=='canvas'
     for index in range(count):
         point=points[index] if len(points)==count else None
         u=point['x'] if point else index/max(1,count-1);v=point['y'] if point else u
         if spatial:
-            u=position.get('x',.5)+(u-.5)*position.get('width',.3)
-            v=position.get('y',.5)+((v-.5)*position.get('width',.3) if point else 0)
+            dx=(u-.5)*position.get('width',.3)*(-1 if position.get('mirror_x') else 1)
+            dy=((v-.5)*position.get('height',position.get('width',.3)) if point else 0)*(-1 if position.get('mirror_y') else 1)
+            angle=math.radians(position.get('rotation',0));ca=math.cos(angle);sa=math.sin(angle)
+            u=position.get('x',.5)+dx*ca-dy*sa
+            v=position.get('y',.5)+dx*sa+dy*ca
         coord=u if scene['axis']=='x' else v
         rgb=sample(scene['mode'],palette,index,u,v,coord,elapsed,scene['speed'],scene.get('scale',1),scene.get('density',55),scene.get('reverse',False))
         out.append(tuple(max(0,min(255,round(c*brightness))) for c in rgb))
+    for layer in scene.get('layers',[]):
+        overlay=frame(dict(layer,mapping=scene.get('mapping','mirror'),layers=[]),count,position,elapsed);opacity=layer.get('opacity',50)/100;blend=layer.get('blend','screen')
+        def mix(a,b):
+            if blend=='screen':merged=255-(255-a)*(255-b)/255
+            elif blend=='add':merged=min(255,a+b)
+            elif blend=='multiply':merged=a*b/255
+            else:merged=b
+            return max(0,min(255,round(a*(1-opacity)+merged*opacity)))
+        out=[tuple(mix(a,b) for a,b in zip(base,over)) for base,over in zip(out,overlay)]
+    if scene.get('layers'):out=[tuple(round(c*scene['brightness']/100) for c in rgb) for rgb in out]
     return out

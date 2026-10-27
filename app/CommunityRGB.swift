@@ -645,15 +645,21 @@ struct Credits: View {
 }
 struct LaunchView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
-    @State private var visible = false
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(nsImage: NSImage(contentsOf: Bundle.main.url(forResource: "hackinfx-logo", withExtension: "png")!) ?? NSImage()).resizable().scaledToFit().frame(width: 110, height: 110)
-            Text(L10n.text("HackinFX")).font(.system(size: 26, weight: .semibold, design: .monospaced))
-            Text(L10n.text("by aleopho")).font(.system(size: 11, design: .monospaced)).foregroundColor(muted)
-        }.opacity(visible ? 1 : 0).scaleEffect(reduceMotion ? 1 : visible ? 1 : 0.97)
-        .frame(maxWidth: .infinity, maxHeight: .infinity).background(ink)
-        .onAppear { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.4)) { visible = true } }
+    @State private var visible=false
+    var body:some View {
+        ZStack {
+            Color(red:0.025,green:0.035,blue:0.045)
+            RadialGradient(colors:[accent.opacity(0.12),Color.clear],center:.center,startRadius:10,endRadius:400)
+            VStack(spacing:22) {
+                ZStack {
+                    Circle().stroke(accent.opacity(0.12),lineWidth:1).frame(width:170,height:170)
+                    Circle().trim(from:0,to:visible ? 0.82:0.05).stroke(AngularGradient(colors:[accent.opacity(0),accent,Color.cyan.opacity(0.8)],center:.center),style:StrokeStyle(lineWidth:2,lineCap:.round)).frame(width:170,height:170).rotationEffect(.degrees(visible ? 80:-120))
+                    Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:90,height:90).shadow(color:accent.opacity(0.35),radius:24)
+                }
+                Text("HackinFX").font(.system(size:36,weight:.semibold,design:.rounded)).tracking(-1)
+                Text("LIGHTING STUDIO / 3.0").font(.system(size:9,weight:.medium,design:.monospaced)).tracking(4).foregroundStyle(muted)
+            }.opacity(visible ? 1:0).scaleEffect(reduceMotion ? 1:visible ? 1:0.94)
+        }.frame(maxWidth:.infinity,maxHeight:.infinity).onAppear { withAnimation(reduceMotion ? nil:.easeOut(duration:0.65)) { visible=true } }
     }
 }
 
@@ -713,10 +719,10 @@ struct Root: View {
                 HStack(spacing:8) { Text(L10n.text("HACKINFX")).foregroundColor(muted);Text(L10n.text("/")).foregroundColor(muted.opacity(0.4));Text(L10n.text(model.page.uppercased()));Spacer();Text(L10n.text("x86-64 / LOCAL WORKSPACE")).foregroundColor(muted) }.font(.system(size:8,weight:.medium,design:.monospaced)).tracking(1.5).padding(.horizontal,28).frame(height:44).overlay(alignment:.bottom) { Rectangle().fill(.white.opacity(0.045)).frame(height:1) }
                 ScrollView { Group { if model.page == "Feedback" { FeedbackWorkspace(model:model) } else if model.page == "Credits" { Credits() } else if model.page == "Settings" { VStack(spacing:24) { CenterWorkspace(center:model.center,page:model.page);DeviceSetupPreferences(model:model) } } else { CenterWorkspace(center:model.center,page:model.page) } }.id(model.page).transition(.opacity.combined(with:.offset(y:6))).padding(28).frame(maxWidth:.infinity,alignment:.leading) }.animation(reduceMotion ? nil:.easeInOut(duration:0.20),value:model.page)
             }.frame(minWidth:690,maxWidth:.infinity,maxHeight:.infinity)
-        }.frame(minWidth:980,minHeight:650).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:language.identifier)).environment(\.layoutDirection,language.rtl ? .rightToLeft:.leftToRight).id(language.identifier).tint(accent)
+        }.frame(minWidth:1080,minHeight:740).background(ink).foregroundColor(Color(red:0.90,green:0.93,blue:0.91)).font(.system(size:12)).preferredColorScheme(.dark).environment(\.locale,Locale(identifier:language.identifier)).environment(\.layoutDirection,language.rtl ? .rightToLeft:.leftToRight).id(language.identifier).tint(accent)
         .onAppear { model.center.gpuSetupRequested={ [weak model] device in model?.openDeviceSetup(device) } }
         .onChange(of:language.identifier) { _ in model.center.publishWidget() }
-        .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(.easeOut(duration:0.2),value:model.launching)
+        .overlay { if model.launching { LaunchView().transition(.opacity) } }.animation(reduceMotion ? nil:.easeOut(duration:0.25),value:model.launching)
         .overlay { if model.scanning && model.page == "Feedback" { StartupScanView() } }
         .sheet(isPresented:$model.showDeviceLightingSetup) { DeviceLightingSetup(model:model) }.sheet(isPresented:$model.showReportPreview) { ReportPreview(model:model) }
     }
@@ -837,13 +843,14 @@ struct HackinFXMain {
     static func main() throws {
 UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
 let app = NSApplication.shared
-if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes","--render-center-feedback","--render-center-gallery"].contains(CommandLine.arguments[1]) {
+if CommandLine.arguments.count == 3 && ["--render-preview","--render-setup-preview","--render-center-preview","--render-center-devices","--render-center-scenes","--render-center-feedback","--render-center-gallery","--render-center-studio"].contains(CommandLine.arguments[1]) {
     app.setActivationPolicy(.prohibited)
     app.appearance = NSAppearance(named: .darkAqua)
     let preview = Model(); preview.launching = false; preview.page = "Overview"; preview.configurationStatus = "supported"; preview.setupState = "confirmed"; preview.currentGPUName = "PNY XLR8 RTX 4080 VERTO"; preview.currentGPUVendor = "NVIDIA"; preview.currentBoardVendor = "PNY"
     preview.manualVendor = "PNY"; preview.manualModel = preview.currentGPUName
     if CommandLine.arguments[1] == "--render-setup-preview" { preview.setupState = "awaiting-confirmation"; preview.testTransportOK = true; preview.setupMessage = "All seven transport steps completed. Confirm visible operation below." }
-    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture(canvas:CommandLine.arguments[1] == "--render-center-scenes");preview.page = CommandLine.arguments[1] == "--render-center-gallery" ? "Effects" : CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
+    if CommandLine.arguments[1].hasPrefix("--render-center") { preview.center.loadDesignFixture(canvas:CommandLine.arguments[1] == "--render-center-scenes");preview.page = CommandLine.arguments[1] == "--render-center-studio" ? "Studio" : CommandLine.arguments[1] == "--render-center-gallery" ? "Effects" : CommandLine.arguments[1] == "--render-center-feedback" ? "Feedback" : CommandLine.arguments[1] == "--render-center-devices" ? "Devices" : CommandLine.arguments[1] == "--render-center-scenes" ? "Canvas" : "Overview" }
+    if CommandLine.arguments[1] == "--render-center-studio" { preview.center.scene.layers=[CenterLayer()];preview.center.scene.mode="plasma" }
     let content = CommandLine.arguments[1] == "--render-setup-preview" ? AnyView(DeviceLightingSetup(model:preview)) : AnyView(Root(model:preview))
     let labeled = CommandLine.arguments[1].hasPrefix("--render-center") ? AnyView(content.overlay(alignment:.topTrailing) { Text(L10n.text("SAMPLE DATA · DESIGN CHECK")).font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(.orange).padding(9).background(.black).padding(4) }) : content
     let view = NSHostingView(rootView:labeled)

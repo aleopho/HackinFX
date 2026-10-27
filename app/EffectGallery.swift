@@ -11,8 +11,8 @@ struct EffectTexture:View {
             let palette=EffectLibrary.palette(scene.palette),dx=size.width/Double(columns),dy=size.height/Double(rows)
             for row in 0..<rows { for column in 0..<columns {
                 let u=Double(column)/Double(max(1,columns-1)),v=Double(row)/Double(max(1,rows-1)),index=row*columns+column
-                let rgb=EffectMath.sample(mode:scene.mode,palette:palette,index:index,u:u,v:v,coord:scene.axis == "x" ? u:v,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse)
-                let level=scene.brightness/25500
+                let rgb=EffectMath.composite(mode:scene.mode,palette:palette,index:index,u:u,v:v,coord:scene.axis == "x" ? u:v,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse,brightness:scene.brightness,layers:scene.layers ?? [])
+                let level=1.0/255
                 let color=Color(red:max(0,min(1,rgb[0]*level)),green:max(0,min(1,rgb[1]*level)),blue:max(0,min(1,rgb[2]*level)))
                 let rect=CGRect(x:Double(column)*dx+1.5,y:Double(row)*dy+1.5,width:max(1,dx-3),height:max(1,dy-3))
                 context.fill(Path(roundedRect:rect,cornerRadius:3),with:.color(color))

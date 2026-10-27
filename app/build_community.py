@@ -42,7 +42,7 @@ shutil.copytree(root/'assets', source/'assets', dirs_exist_ok=True)
 shutil.copytree(root/'tests', source/'tests', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
 (app/'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleName='HackinFX',
     CFBundleDisplayName='HackinFX', CFBundleIdentifier='community.aleopho.hackinfx',
-    CFBundleVersion='2.7.0', CFBundleShortVersionString='2.7.0', CFBundleExecutable='HackinFX',
+    CFBundleVersion='3.0.0', CFBundleShortVersionString='3.0.0', CFBundleExecutable='HackinFX',
     CFBundlePackageType='APPL', NSLocalNetworkUsageDescription='Pair HackinFX Remote on your Android phone to control lighting over your local network.', LSMinimumSystemVersion='15.0', NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, NSHighResolutionCapable=True, CFBundleIconFile='HackinFX', CFBundleDevelopmentRegion='en', CFBundleLocalizations=json.loads((root/'Localization/manifest.json').read_text())['languages'], CFBundleURLTypes=[dict(CFBundleURLName='HackinFX',CFBundleURLSchemes=['hackinfx'])])))
 # Build a real WidgetKit app-extension with Xcode when available. No Apple account
 # or App Group is needed for this read-only, narrowly scoped local snapshot mode.
