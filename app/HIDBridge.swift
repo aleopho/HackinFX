@@ -52,8 +52,10 @@ func usbInventory()->[[String:Any]] {
 final class LightingInbox {
     var prefix=[UInt8]()
     var reply:[UInt8]?
+    var captureCorsairReply=false
     func receive(_ report:[UInt8]) {
         guard prefix.count==3 else { return }
+        if captureCorsairReply { if reply==nil && report.count==512 && report[0]==0 && report[1]==prefix[2] { reply=report };return }
         var bytes=report
         if prefix.first==0 { bytes.insert(0,at:0) }
         if bytes.count>=3 && Array(bytes.prefix(3))==prefix { reply=bytes }
@@ -97,7 +99,8 @@ func lightingExchange(_ device:IOHIDDevice,_ packet:[UInt8])throws->[UInt8] {
     channel.prefix=[];channel.reply=nil
     CFRunLoopRunInMode(CFRunLoopMode.defaultMode,0.001,false) // Drain stale input with no active request.
     channel.prefix=Array(packet.prefix(3))
-    defer { channel.prefix=[];channel.reply=nil }
+    channel.inbox.captureCorsairReply = integer(device,"VendorID")==0x1b1c && integer(device,"ProductID")==0x2b04 && integer(device,"PrimaryUsagePage")==0xff42 && integer(device,"PrimaryUsage")==1 && interfaceNumber(device)==1 && packet.count==513 && Array(packet.prefix(2))==[0,8]
+    defer { channel.prefix=[];channel.reply=nil;channel.inbox.captureCorsairReply=false }
     var bytes=packet;let id=bytes[0];if id==0 { bytes.removeFirst() }
     let result=IOHIDDeviceSetReport(device,kIOHIDReportTypeOutput,CFIndex(id),bytes,bytes.count)
     guard result==kIOReturnSuccess else { try fail("Lighting request failed (\(result))") }
@@ -160,9 +163,10 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
     let kraken=vid==0x1e71 && [0x170e,0x1715].contains(pid) && page>=0xff00
     let radius=vid==0x36bc && pid==0x1003 && page==0xff00 && integer(device,"PrimaryUsage")==1 && interfaceNumber(device)==0
     let keyboard=vid==0x0b05 && ((pid==0x1ace && page>=0xff00) || (pid==0x1aae && page==0xff00))
-    guard lamp || mouse || kraken || radius || keyboard else { try fail("No implemented lighting transport for this collection") }
+    let corsair=vid==0x1b1c && pid==0x2b04 && page==0xff42 && integer(device,"PrimaryUsage")==1 && interfaceNumber(device)==1
+    guard lamp || mouse || kraken || radius || keyboard || corsair else { try fail("No implemented lighting transport for this collection") }
     guard let id=request["report_id"] as? Int,(0...255).contains(id) else { try fail("Invalid report ID") }
-    let persistent=radius || keyboard
+    let persistent=radius || keyboard || corsair
     if persistent { _=try lightingChannel(device) }
     else if !openedLighting.contains(handle) {
         let opened=IOHIDDeviceOpen(device,IOOptionBits(kIOHIDOptionsTypeNone))
@@ -193,14 +197,19 @@ func execute(_ request:[String:Any],devices:[IOHIDDevice])throws->[String:Any] {
         guard result==kIOReturnSuccess,length>0,length<=size else { try fail("HID feature read failed (\(result))") }
         return ["data":Data(buffer.prefix(length)).base64EncodedString()]
     }
-    guard let encoded=request["data"] as? String,let data=Data(base64Encoded:encoded),!data.isEmpty,data.count<=512 else { try fail("Invalid lighting packet") }
+    guard let encoded=request["data"] as? String,let data=Data(base64Encoded:encoded),!data.isEmpty,data.count <= (corsair ? 513:512) else { try fail("Invalid lighting packet") }
     var bytes=[UInt8](data)
     let feature=command=="feature_set"
     if command=="exchange" {
         let radiusQuery=radius && id==2 && bytes.count==64 && bytes.prefix(4)==[2,0xa4,8,1]
         let radiusLight=radius && id==2 && bytes.count==64 && bytes[1]==0xa4 && [0x0a,0x11,0x12].contains(bytes[2])
         let keyboardQuery=keyboard && ((pid==0x1ace && bytes.count==64 && ((id==2 && bytes.prefix(3)==[2,0x12,0x12]) || (id==1 && bytes.prefix(3)==[1,0xa0,0]))) || (pid==0x1aae && bytes.count==65 && id==0 && bytes.prefix(3)==[0,0x12,0x12]))
-        guard radiusQuery || radiusLight || keyboardQuery else { try fail("Exchange outside lighting-only allowlist") }
+        let corsairQuery=corsair && id==0 && bytes.count==513 && Array(bytes.prefix(4))==[0,8,2,0x13] && bytes.dropFirst(4).allSatisfy {$0==0}
+        let corsairMode=corsair && id==0 && bytes.count==513 && Array(bytes.prefix(5))==[0,8,1,3,0] && [1,2].contains(bytes[5]) && bytes.dropFirst(6).allSatisfy {$0==0}
+        let corsairActivate=corsair && id==0 && bytes.count==513 && Array(bytes.prefix(5))==[0,8,0x0d,1,0x22] && bytes.dropFirst(5).allSatisfy {$0==0}
+        let corsairColor=corsair && id==0 && bytes.count==513 && Array(bytes.prefix(10))==[0,8,6,1,0xb8,1,0,0,0x12,0] && bytes.dropFirst(450).allSatisfy {$0==0}
+        let corsairKeepalive=corsair && id==0 && bytes.count==513 && Array(bytes.prefix(3))==[0,8,0x12] && bytes.dropFirst(3).allSatisfy {$0==0}
+        guard radiusQuery || radiusLight || keyboardQuery || corsairQuery || corsairMode || corsairActivate || corsairColor || corsairKeepalive else { try fail("Exchange outside lighting-only allowlist") }
         return ["data":Data(try lightingExchange(device,bytes)).base64EncodedString()]
     }
     guard (lamp && feature && id>0 && bytes.first==UInt8(id)) || (mouse && command=="output" && id==0 && bytes.count==65 && bytes.prefix(3)==[0,0x51,0x28]) || (kraken && command=="output" && id==2 && bytes.count==64 && bytes.prefix(2)==[2,0x4c]) || (keyboard && command=="output" && ((pid==0x1ace && id==2 && bytes.count==64) || (pid==0x1aae && id==0 && bytes.count==65)) && bytes[1]==0x51 && bytes[2]==0x2c && [0,1,2].contains(bytes[3])) else { try fail("Packet outside lighting-only protocol allowlist") }
@@ -216,6 +225,7 @@ if CommandLine.arguments.contains("--self-test") {
     inbox.receive([2,0xa4,8,1]);precondition(inbox.reply==[2,0xa4,8,1])
     inbox.reply=nil;inbox.prefix=[0,0x12,0x12];inbox.receive([0x12,0x12,1]);precondition(inbox.reply==[0,0x12,0x12,1])
     inbox.reply=nil;inbox.prefix=[];inbox.receive([0x12,0x12,1]);precondition(inbox.reply==nil)
+    inbox.prefix=[0,8,2];inbox.captureCorsairReply=true;inbox.receive([0,2,0,7,11,0]+[UInt8](repeating:0,count:506));precondition(inbox.reply==[0,2,0,7,11,0]+[UInt8](repeating:0,count:506));inbox.captureCorsairReply=false;inbox.reply=nil;inbox.prefix=[];inbox.receive([0,2,0,7,11,0]);precondition(inbox.reply==nil)
     var packet=[UInt8](repeating:0,count:65);packet[1]=0xc0;packet[2]=0x81;packet[3]=1;packet[5]=0x94
     precondition((try? scopePackets([Data(packet).base64EncodedString()]))?.count==1)
     packet[1]=0x50;precondition((try? scopePackets([Data(packet).base64EncodedString()]))==nil)

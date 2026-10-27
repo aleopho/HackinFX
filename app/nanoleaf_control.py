@@ -157,9 +157,9 @@ class NanoleafAdapter:
                 ids,positions=layout(info)
                 identity=hashlib.sha256(str(info.get('serialNo') or ip).encode()).hexdigest()[:24]
                 self.records[key]=dict(entry,ids=ids);self.locks[key]=threading.Lock()
-                rows.append(dict(id=key,fingerprint=identity,name=str(info.get('name') or 'Nanoleaf Shapes')[:100],vendor='Nanoleaf',category='light',backend=self.name,led_count=len(ids),direct=True,controllable=True,status='ready',detail='Local Shapes panel streaming, 10 Hz with 100 ms panel interpolation. UDP delivery is not acknowledged. Select explicitly to control.',static_modes=['static','gradient'],zones=[dict(name='Shapes panels',led_count=len(ids))],modes=[],led_positions=positions,driver='nanoleaf-shapes-v2',presentation_delay=.1,startup_excluded=True))
+                rows.append(dict(id=key,fingerprint=identity,name=str(info.get('name') or 'Nanoleaf Shapes')[:100],vendor='Nanoleaf',category='light',backend=self.name,led_count=len(ids),direct=True,controllable=True,status='ready',detail='Local Shapes panel streaming, 10 Hz with 100 ms panel interpolation. UDP delivery is not acknowledged. Paired panels join the startup scene when reachable.',static_modes=['static','gradient'],zones=[dict(name='Shapes panels',led_count=len(ids))],modes=[],led_positions=positions,driver='nanoleaf-shapes-v2',presentation_delay=.1,startup_excluded=False))
             except Exception:
-                rows.append(dict(id=key,fingerprint='',name='Nanoleaf Shapes',vendor='Nanoleaf',category='light',backend=self.name,led_count=0,direct=False,controllable=False,status='offline',detail='Controller unavailable, pairing invalid or panel layout unsupported. Check Settings and pair again.',static_modes=[],zones=[],modes=[],startup_excluded=True))
+                rows.append(dict(id=key,fingerprint='',name='Nanoleaf Shapes',vendor='Nanoleaf',category='light',backend=self.name,led_count=0,direct=False,controllable=False,status='offline',detail='Controller unavailable, pairing invalid or panel layout unsupported. Check Settings and pair again.',static_modes=[],zones=[],modes=[],startup_excluded=False))
         return rows
     def activate(self,device):
         key=device['id'];record=self.records[key]

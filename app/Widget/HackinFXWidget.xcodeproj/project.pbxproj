@@ -4,14 +4,16 @@
  classes = {};
  objectVersion = 56;
  objects = {
+ B00000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStatus.swift; sourceTree = "<group>";};
+ B00000000000000000000002 = {isa = PBXBuildFile; fileRef = B00000000000000000000001;};
  A00000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600;}; buildConfigurationList = A00000000000000000000011; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = A00000000000000000000002; productRefGroup = A00000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000004);};
- A00000000000000000000002 = {isa = PBXGroup; children = (A00000000000000000000005, A00000000000000000000003); sourceTree = "<group>";};
+ A00000000000000000000002 = {isa = PBXGroup; children = (A00000000000000000000005, B00000000000000000000001, A00000000000000000000003); sourceTree = "<group>";};
  A00000000000000000000003 = {isa = PBXGroup; name = Products; children = (A00000000000000000000006); sourceTree = "<group>";};
  A00000000000000000000004 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000012; buildPhases = (A00000000000000000000008, A00000000000000000000009, A00000000000000000000010); buildRules = (); dependencies = (); name = HackinFXWidget; productName = HackinFXWidget; productReference = A00000000000000000000006; productType = "com.apple.product-type.app-extension";};
  A00000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HackinFXWidget.swift; sourceTree = "<group>";};
  A00000000000000000000006 = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HackinFXWidget.appex; sourceTree = BUILT_PRODUCTS_DIR;};
  A00000000000000000000007 = {isa = PBXBuildFile; fileRef = A00000000000000000000005;};
- A00000000000000000000008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000007); runOnlyForDeploymentPostprocessing = 0;};
+ A00000000000000000000008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000007, B00000000000000000000002); runOnlyForDeploymentPostprocessing = 0;};
  A00000000000000000000009 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
  A00000000000000000000010 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
  A00000000000000000000011 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000013); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};

@@ -622,17 +622,21 @@ struct Credits: View {
                     Link(L10n.text("NullMoth / project and license"), destination: URL(string:"https://github.com/nullmoth/nvidia-macos-driver")!)
                     Divider()
                     Text(L10n.text("OpenRGB")).font(.headline)
-                    Text(L10n.text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. GPL version 2 compatible; per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work; wired Scope II 96 per-key packets and layouts are adapted from Mola19 and OpenRGB contributors (GPL-2.0-or-later). Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.")).font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
+                    Text(L10n.text("PNY Lovelace packets adapted from yufan; EVGA Pascal registers adapted from Adam Honse (CalcProgrammer1); ASUS Aura from Jan Rettig (Klapstuhl) and the OpenRGB contributors. Native USB references: Adam Honse (HID LampArray and ASUS mouse) and Martin Hartl (NZXT Kraken). The USB identity catalog includes the original OpenRGB detector notices. Per-file licenses are retained. Radius support ports aleopho’s MIT SignalRGB plugin. ASUS keyboard/OMNI references include Daniel Valfridsson’s MIT RIGStats work; wired Scope II 96 per-key packets and layouts are adapted from Mola19 and OpenRGB contributors (GPL-2.0-or-later). Corsair/i801 references retain OpenRGB credits. macUSPCIO is a separately installed GPL-3.0 transport. Thank you for the open implementation.")).font(.system(size: 12)).foregroundColor(muted).lineSpacing(4)
                     Link(L10n.text("OpenRGB / PNY controller"), destination: URL(string:"https://gitlab.com/CalcProgrammer1/OpenRGB/-/tree/master/Controllers/PNYLovelaceGPUController")!)
+                    Divider()
+                    Text("OpenLinkHub / Nikola Jurkovic").font(.headline)
+                    Text("MAKR 75 lighting protocol and key-layout reference, GPL-3.0-or-later. Original source, notices and license are included.").font(.system(size:12)).foregroundColor(muted)
+                    Link("OpenLinkHub",destination:URL(string:"https://github.com/jurkovic-nikola/OpenLinkHub")!)
                     Divider()
                     Text(L10n.text("NVIDIA")).font(.headline)
                     Text(L10n.text("Public RM ABI definitions from open-gpu-kernel-modules 610.57.04, MIT. License notices are included.")).font(.system(size: 12)).foregroundColor(muted)
                     Link(L10n.text("NVIDIA / SDK sources"), destination: URL(string:"https://github.com/NVIDIA/open-gpu-kernel-modules/tree/610.57.04")!)
                 }
             }
-            Text(L10n.text("Independent community project. Not affiliated with PNY, NVIDIA, Apple, NullMoth or OpenRGB. GPL-2.0-or-later · No warranty. License and source are included.")).font(.system(size: 11)).foregroundColor(muted).lineSpacing(4)
+            Text(L10n.text("Independent community project. Not affiliated with PNY, NVIDIA, Apple, NullMoth or OpenRGB. Combined distribution GPL-3.0-or-later · No warranty. License and source are included.")).font(.system(size: 11)).foregroundColor(muted).lineSpacing(4)
             HStack {
-                Button(L10n.text("License text")) { if let file = Bundle.main.url(forResource: "COPYING", withExtension: nil) { NSWorkspace.shared.open(file) } }
+                Button(L10n.text("License text")) { if let file = Bundle.main.url(forResource: "COPYING-GPL3", withExtension: nil) { NSWorkspace.shared.open(file) } }
                 Button(L10n.text("Source code")) { if let folder = Bundle.main.resourceURL?.appendingPathComponent("Source") { NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
             }
             Spacer()
@@ -800,7 +804,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         exportItem.isEnabled = !model.scanJSON.isEmpty && !model.scanning
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
-    func applicationWillTerminate(_ notification: Notification) { model.center.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) { MAKRMedia.shared.enabled=false;model.center.shutdown() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)

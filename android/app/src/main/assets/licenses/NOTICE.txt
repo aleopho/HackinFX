@@ -1,0 +1,8 @@
+HackinFX Remote — aleopho and contributors, GPL-3.0-or-later.
+
+ZXing Android Embedded, JourneyApps: Apache License 2.0.
+https://github.com/journeyapps/zxing-android-embedded
+ZXing, ZXing authors: Apache License 2.0.
+https://github.com/zxing/zxing
+
+Original hardware protocol credits, OpenRGB, NullMoth, OpenLinkHub and other notices are preserved in the macOS source distribution. The Android companion does not bundle hardware drivers.

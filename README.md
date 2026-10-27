@@ -9,10 +9,9 @@ coolers into one native **Lighting Studio**. Built for **macOS 15 or later** on
 **OpenRGB 1.1 macOS engine** with native NVIDIA, USB/HID, scoped RAM and
 local Nanoleaf Shapes adapters.
 
-**Current release: [2.4.0](https://github.com/aleopho/HackinFX/releases/tag/v2.4.0).**
-Corsair Dominator Titanium DDR5 RGB is now physically confirmed on the scoped
-Intel 8086:7f23 / macUSPCIO path: four DIMMs, twelve LEDs each, paced mint Twinkle.
-This is not generic RAM or chipset support.
+**Current release: [2.7.0](https://github.com/aleopho/HackinFX/releases/tag/v2.7.0).**
+Scoped Corsair Dominator Titanium DDR5 RGB support uses exact host and RGB
+identity checks. This is not generic RAM or chipset support.
 Nanoleaf Shapes pairing and visible lighting are user-confirmed.
 Apple Silicon is outside the current target.
 
@@ -21,9 +20,18 @@ Apple Silicon is outside the current target.
 Actual desktop screenshot supplied by aleopho on 26 October 2026. The effect
 visualization shows requested colors, not optical LED feedback.
 
+## New in 2.7.0
+
+- Per-device brightness, applied live on top of master brightness, available on device cards, in device details and in Android Remote. Unique device identities retain their level across restarts; identical devices without a unique identity retain independent session levels.
+- Native USB plug-and-play, MAKR 75 dial-ring lighting and host volume handling, persisted/validated Titanium RAM startup, 22 offline desktop language variants and Canvas effect backgrounds.
+- HackinFX Remote for Android: native dark/lime controls, QR or pairing-details paste, 40-effect gallery, 80 looks and encrypted same-network pairing. Download the signed APK from the same GitHub release. Phone camera/pairing behavior still needs device-specific validation; report the visible error if it fails.
+- WidgetKit data-path rewrite showing the current effect and successfully active device count. Real desktop refresh validation remains outstanding; macOS schedules updates.
+
+Windows work is deferred while macOS remains the priority. No Windows build is advertised by this release.
+
 ## Effect Gallery
 
-![HackinFX 2.4.0 native Effect Gallery layout](docs/images/effect-gallery-2.4.0.png)
+![HackinFX native Effect Gallery layout, rendered in 2.4.0](docs/images/effect-gallery-2.4.0.png)
 
 Native macOS layout render with labeled sample data. **40 distinct algorithms and
 80 curated looks**, organized into Essentials, Motion, Atmosphere, Particles and
@@ -49,24 +57,25 @@ Geometry. Search, favorite, tune and save looks; animated cards respect Reduce M
   NZXT support. Unknown keyboard layouts retain a whole-device fallback.
 - **Nanoleaf Shapes:** automatic local discovery and explicit pairing in Settings,
   actual panel geometry in Canvas, and per-panel streaming. No fixed IP required.
-- **Daily use:** launch at login, mint Twinkle at 65% speed on app/login startup
-  for ready non-RAM devices, persistent menu-bar
+- **Daily use:** launch at login, green Twinkle at 65% speed on app/login startup
+  for ready devices, including paired panels and previously probed RAM, persistent menu-bar
   controls and software-update checks. Closing the window keeps lighting active.
 - **Diagnostics & feedback:** fresh hardware specifications, device status and
   your description, reviewed before private submission; JSON export remains available.
-- **WidgetKit:** mode, palette, brightness, GPU model, ready-device count and
+- **WidgetKit:** app name, current effect, palette, active-device count and
   attention state. Desktop rendering and refresh behavior need wider validation.
 
 ## Install
 
-Download the **[2.4.0 installer](https://github.com/aleopho/HackinFX/releases/download/v2.4.0/HackinFX-2.4.0-Installer.pkg)**,
+Download the **[2.7.0 installer](https://github.com/aleopho/HackinFX/releases/download/v2.7.0/HackinFX-2.7.0-Installer.pkg)**,
 quit older copies and install into **Applications**. A DMG is also available.
 Launch the installed app, let discovery finish and inspect **Devices** for ready
-outputs or setup requirements. Ready non-RAM devices start mint Twinkle at
-65% speed once per app/Core session, after macOS sign-in. RAM requires explicit
-**Devices → Memory details → Probe RAM RGB**, then selection in Lighting.
-For the confirmed setup, start RAM at 40% brightness. Status polling preserves
-manual RAM selection. No RAM colors are automatically applied at startup.
+outputs or setup requirements. In the current development build, ready devices start green Twinkle (#9BED4B) at
+65% speed once per app/Core session, after macOS sign-in. RAM needs one successful
+**Devices → Memory details → Probe RAM RGB** in this version. It saves a private
+profile under Documents/HackinFX; subsequent starts revalidate exact inventory and
+RGB identities before including those DIMMs automatically. Paired Nanoleaf panels
+join when reachable. Unverified or unavailable devices remain visible with setup status.
 
 Requirements:
 
@@ -93,12 +102,12 @@ Developer ID or notarization. macOS may require approval for downloaded software
 | Device class | Included paths | Current evidence / limits |
 | --- | --- | --- |
 | NVIDIA GPUs | 68 exact native test profiles across PNY Lovelace, ASUS Aura, EVGA Pascal/Turing and Zotac Turing; OpenRGB paths where available | PNY XLR8 RTX 4080 VERTO visually confirmed; other native profiles need their own test and confirmation |
-| Keyboards | OpenRGB macOS drivers, native HID LampArray and ASUS Scope II 96 / supported OMNI paths | Scope II 96 USB appears ready on the development setup; recognized USB ISO-203 layout maps 102 LED addresses; physical per-key mapping still needs broader validation |
+| Keyboards | OpenRGB macOS drivers, native HID LampArray, MAKR 75 and ASUS Scope II 96 / supported OMNI paths | Scope II 96 USB appears ready on the development setup; recognized USB ISO-203 layout maps 102 LED addresses; physical per-key mapping still needs broader validation |
 | Mice | OpenRGB macOS drivers and native ASUS Spatha X | Spatha X user-reported working; connection mode and firmware can differ |
 | Mainboards / controllers | OpenRGB macOS drivers and native HID LampArray | Development GIGABYTE LampArray user-reported working; no universal board claim |
 | USB cooling / lighting | OpenRGB macOS drivers, native Fractal Radius and NZXT Kraken X2/M2 paths | Radius user-reported working; sustained color and timing need broader firmware testing; NZXT not physically verified here |
 | Nanoleaf Shapes | Native NL42 Bonjour discovery, local pairing and extControl v2 | Shapes Triangles user-confirmed working; other Nanoleaf families are not enabled |
-| DRAM | Corsair Dominator Titanium PID 0801 / protocol 4, Intel 8086:7f23 + macUSPCIO | Four DIMMs, 12 LEDs each, separate RGB regions and mint Twinkle physically confirmed; 16.65 completed FPS per DIMM in an eight-second test. Other kits/chipsets remain unverified. |
+| DRAM | Scoped Corsair Dominator Titanium direct RGB with the macUSPCIO transport | Exact host, module and RGB identity guards apply. Other kits/chipsets remain unverified. No SPD/timing/voltage writes. |
 
 The OpenRGB identity catalogs help name devices. They do not download drivers,
 turn every catalog entry into a controllable output or bypass exact native

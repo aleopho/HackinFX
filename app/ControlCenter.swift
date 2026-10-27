@@ -1,3 +1,4 @@
+import CoreImage
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 import SwiftUI
@@ -85,6 +86,11 @@ struct CenterState: Codable {
     var nanoleaf_candidates:[NanoleafCandidate]? = nil
     var scene_elapsed:Double?=nil
     var sync:CoreSync? = nil
+    var device_brightness:[String:Double]?=nil
+    var scene_revision:Int?=nil
+    var selected_devices:[String]?=nil
+    var active_devices:[String]?=nil
+    var host_media_devices:[String]?=nil
     let schema:Int
     let devices:[CenterDevice]
     let layout:[String:CenterPosition]
@@ -99,7 +105,18 @@ struct CenterState: Codable {
 }
 private struct CoreDiscovery: Codable { let schema:Int;let port:Int;let credential:String;let pid:Int }
 
+struct RemotePhone:Decodable,Identifiable { let id:String;let name:String }
+struct RemoteSettings:Decodable {
+    let enabled:Bool;let port:Int;let addresses:[String];let fingerprint:String;let pairCode:String?;let pairSeconds:Int;let clients:[RemotePhone]
+    static let empty=RemoteSettings(enabled:false,port:49735,addresses:[],fingerprint:"",pairCode:nil,pairSeconds:0,clients:[])
+}
 final class CenterModel: ObservableObject {
+    @Published var remoteSettings=RemoteSettings.empty
+    @Published var remoteBusy=false
+    @Published var remoteMessage=""
+    @Published var remoteHost=""
+    private var lastRemotePoll=Date.distantPast
+    private var observedSceneRevision:Int?
     var gpuSetupRequested:((CenterDevice)->Void)?
     private(set) var sceneClockReceived=ProcessInfo.processInfo.systemUptime
     private(set) var pausedSceneTime=0.0
@@ -124,7 +141,7 @@ final class CenterModel: ObservableObject {
             if enabled && SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
             if !enabled && SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }
             switch SMAppService.mainApp.status {
-            case .enabled:loginMessage="Enabled · starts after macOS sign-in and starts mint Twinkle on ready lighting devices. RAM is excluded."
+            case .enabled:loginMessage="Enabled · starts after macOS sign-in with green Twinkle on all ready devices, including previously probed RAM."
             case .requiresApproval:loginMessage="Allow HackinFX in System Settings → General → Login Items."
             default:loginMessage=enabled ? "Login launch is unavailable. Check Login Items in System Settings.":"Launch at login is off."
             }
@@ -186,7 +203,7 @@ final class CenterModel: ObservableObject {
             busy=true
             request("/v1/initialize") { result in
                 self.suppressLive=true;self.accept(result)
-                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.liveStatus="Mint Twinkle · 65% speed · RAM excluded" }
+                if case .success(let state)=result { self.scene=state.scene;self.selected=Set(state.devices.filter { $0.controllable && $0.startup_excluded != true }.map { $0.id });self.liveStatus="Green Twinkle · 65% speed · all ready devices" }
                 self.suppressLive=false;self.busy=false;self.livePending=false;self.publishWidget()
             };return
         }
@@ -215,19 +232,33 @@ final class CenterModel: ObservableObject {
         }
         if method == "POST" { mutationQueue.append(launch);nextMutation() } else { launch() }
     }
+    @Published private var levelDrafts:[String:Double]=[:]
+    private var levelWork:DispatchWorkItem?
+    func deviceLevel(_ id:String)->Double { levelDrafts[id] ?? state.device_brightness?[id] ?? 100 }
+    func setDeviceLevel(_ id:String,_ value:Double) {
+        levelDrafts[id]=value;levelWork?.cancel()
+        let work=DispatchWorkItem { [weak self] in
+            guard let self=self else{return};let values=self.levelDrafts
+            self.request("/v1/devices/brightness",body:["levels":values]) { result in
+                self.accept(result)
+                if case .success = result { for (key,level) in values where self.levelDrafts[key]==level { self.levelDrafts.removeValue(forKey:key) } }
+            }
+        };levelWork=work;DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:work)
+    }
     private func accept(_ result:Result<CenterState,Error>,clearError:Bool=true) {
         switch result {
-        case .success(let state):let last=self.canvasTime();self.sceneClockReceived=ProcessInfo.processInfo.systemUptime;self.pausedSceneTime=state.running ? (state.scene_elapsed ?? last):last;self.state=state;self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
-        case .failure(let error):self.error=error.localizedDescription
+        case .success(let state):let last=self.canvasTime();self.sceneClockReceived=ProcessInfo.processInfo.systemUptime;self.pausedSceneTime=state.running ? (state.scene_elapsed ?? last):last;self.state=state;MAKRMedia.shared.enabled=state.devices.contains { $0.driver=="corsair-makr75" && (state.host_media_devices ?? []).contains($0.id) && $0.controllable };if let revision=state.scene_revision,revision != self.observedSceneRevision,!self.livePending && !self.liveRequest { let old=self.suppressLive;self.suppressLive=true;self.scene=state.scene;if let ids=state.selected_devices { self.selected=Set(ids) };self.suppressLive=old;self.observedSceneRevision=revision };self.publishWidget();let known=Set(state.devices.filter { $0.controllable }.map { $0.id });selected.formIntersection(known);if clearError { error="" }
+        case .failure(let error):MAKRMedia.shared.enabled=false;self.error=error.localizedDescription
         }
     }
     func poll() {
         guard online && !busy && !liveRequest && !mutating && !polling else { return };polling=true
+        if Date().timeIntervalSince(lastRemotePoll)>5 { lastRemotePoll=Date();loadRemote() }
         request("/v1/status",method:"GET") { result in self.polling=false;if !self.mutating && !self.liveRequest { self.accept(result,clearError:false) };self.flushLive() }
     }
     func discover() {
         guard online && !busy else { return };busy=true
-        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.category != "dram" && $0.startup_excluded != true }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
+        request("/v1/discover") { result in self.suppressLive=true;self.accept(result);self.selected=Set(self.controllable.filter { $0.startup_excluded != true }.map { $0.id });self.suppressLive=false;self.busy=false;self.scheduleLive() }
     }
     func toggle(_ device:CenterDevice) { guard device.controllable else { activeDevice=device;return };if selected.contains(device.id) { selected.remove(device.id) } else { selected.insert(device.id) } }
     func scheduleLive() {
@@ -278,7 +309,7 @@ final class CenterModel: ObservableObject {
                 self.checkingUpdates=false
                 switch result {
                 case .success(let release):
-                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.5.0"
+                    let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.7.0"
                     let newer=ReleaseVersion.isNewer(release.tag_name,than:current)
                     self.updateMessage=newer ? "HackinFX \(release.tag_name) is available." : "You're up to date. Installed: \(current) · public release: \(release.tag_name)."
                     if newer { self.updateURL=URL(string:release.html_url) }
@@ -302,7 +333,7 @@ final class CenterModel: ObservableObject {
     }
     func probeRAM() {
         guard online && !busy else { return };busy=true;error=""
-        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);if case .success=result { self.livePending=true };self.flushLive() }
+        request("/v1/ram/probe") { result in self.busy=false;self.accept(result);if case .success=result { self.selected.formUnion(self.controllable.filter { $0.category == "dram" }.map { $0.id });self.livePending=true };self.flushLive() }
     }
     func saveScene() {
         guard online && !busy else { return };busy=true
@@ -317,14 +348,36 @@ final class CenterModel: ObservableObject {
     private var widgetKey=""
     private var lastWidgetReload=Date.distantPast
     private var widgetReload:DispatchWorkItem?
+    func loadRemote(_ action:String?=nil,body:[String:Any]=[:]) {
+        guard let info=discovery,!remoteBusy else { return }
+        remoteBusy=true
+        let path=action.map { "/v1/remote/"+$0 } ?? "/v1/remote/status"
+        var request=URLRequest(url:URL(string:"http://127.0.0.1:\(info.port)\(path)")!);request.timeoutInterval=40;request.setValue("Bearer "+info.credential,forHTTPHeaderField:"Authorization")
+        if action != nil { request.httpMethod="POST";request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.httpBody=try? JSONSerialization.data(withJSONObject:body) }
+        session.dataTask(with:request) { data,response,error in
+            let value=data.flatMap { try? JSONDecoder().decode(RemoteSettings.self,from:$0) }
+            let failure=data.flatMap { try? JSONSerialization.jsonObject(with:$0) as? [String:Any] }?["error"] as? String
+            DispatchQueue.main.async {
+                self.remoteBusy=false
+                if (response as? HTTPURLResponse)?.statusCode==200,let value=value { self.remoteSettings=value;self.remoteMessage="";if !value.addresses.contains(self.remoteHost) { self.remoteHost=value.addresses.first ?? "" } }
+                else { self.remoteMessage=failure ?? error?.localizedDescription ?? "Remote status is unavailable" }
+            }
+        }.resume()
+    }
+    var remotePairingText:String {
+        guard let code=remoteSettings.pairCode,!remoteHost.isEmpty else { return "" }
+        let value:[String:Any]=["schema":1,"host":remoteHost,"port":remoteSettings.port,"fingerprint":remoteSettings.fingerprint,"code":code]
+        return (try? JSONSerialization.data(withJSONObject:value,options:[.sortedKeys])).map { String(decoding:$0,as:UTF8.self) } ?? ""
+    }
     func publishWidget() {
         guard online && !state.devices.isEmpty else { return }
         let gpu=state.devices.first { $0.category=="gpu" && $0.controllable } ?? state.devices.first { $0.category=="gpu" }
         let title=gpu?.name ?? "Lighting workspace"
         let status=state.errors.isEmpty ? "Lighting commands":"Needs attention"
-        let key="\(AppLocalization.shared.identifier)|\(state.scene.mode)|\(state.scene.palette)|\(state.scene.brightness)|\(controllable.count)|\(title)|\(status)"
+        let activeCount=state.active_devices?.count ?? 0
+        let key="\(AppLocalization.shared.identifier)|\(state.scene.mode)|\(state.scene.palette)|\(state.scene.brightness)|\(activeCount)|\(state.running)|\(title)|\(status)"
         guard key != widgetKey else { return }
-        let value=WidgetStatusSnapshot(language:AppLocalization.shared.identifier,readyLabel:L10n.text("Ready").uppercased(),readyDevices:controllable.count,statusText:L10n.text(status),gpuName:title,boardVendor:gpu?.vendor ?? "",profileReady:!controllable.isEmpty,lastCommand:L10n.text(EffectLibrary.effect(state.scene.mode)?.name ?? state.scene.mode.capitalized),updatedAt:Date(),colors:state.scene.palette,brightness:state.scene.brightness)
+        let value=WidgetStatusSnapshot(language:AppLocalization.shared.identifier,readyLabel:L10n.text("Ready").uppercased(),readyDevices:activeCount,statusText:L10n.text(status),gpuName:title,boardVendor:gpu?.vendor ?? "",profileReady:!controllable.isEmpty,lastCommand:L10n.text(EffectLibrary.effect(state.scene.mode)?.name ?? state.scene.mode.capitalized),updatedAt:Date(),colors:state.scene.palette,brightness:state.scene.brightness)
         let folder=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("HackinFX/Widget",isDirectory:true)
         do {
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
@@ -423,7 +476,7 @@ struct CenterNavigation:View {
                 Text(L10n.text(center.online ? "Local engine online" : "Core offline")).font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text(L10n.text("LOCAL ONLY · x86-64")).font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text(L10n.text("2.5.0"));Spacer();Text(L10n.text("LOCAL RGB")) }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text(L10n.text("2.7.0"));Spacer();Text(L10n.text("LOCAL RGB")) }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -486,7 +539,7 @@ struct CenterWorkspace:View {
         }
     }
     private func metric(_ title:String,value:String,symbol:String)->some View { CenterPanel { HStack(alignment:.top) { VStack(alignment:.leading,spacing:10) { Text(L10n.text(title)).font(.system(size:10)).foregroundStyle(CenterTheme.muted);Text(L10n.text(value)).font(.system(size:25,weight:.medium,design:.rounded)) };Spacer();Image(systemName:symbol).foregroundStyle(CenterTheme.aqua) } } }
-    private func grid(_ devices:[CenterDevice])->some View { LazyVGrid(columns:[GridItem(.adaptive(minimum:210),spacing:14)],spacing:14) { ForEach(devices) { device in CenterDeviceCard(center:center,device:device) } } }
+    private func grid(_ devices:[CenterDevice])->some View { LazyVGrid(columns:[GridItem(.adaptive(minimum:210),spacing:14)],spacing:14) { ForEach(devices) { device in VStack(spacing:8) { CenterDeviceCard(center:center,device:device);if device.controllable { HStack(spacing:8) { Image(systemName:"sun.max");Slider(value:Binding(get:{center.deviceLevel(device.id)},set:{center.setDeviceLevel(device.id,$0)}),in:0...100);Text("\(Int(center.deviceLevel(device.id)))%").monospacedDigit().frame(width:34) }.font(.system(size:10)).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,8) } } } } }
     private var emptyState:some View { CenterPanel { VStack(alignment:.leading,spacing:12) { Image(systemName:"cable.connector").font(.system(size:25,weight:.light)).foregroundStyle(CenterTheme.aqua);Text(L10n.text("Connect your lighting hardware")).font(.headline);Text(L10n.text("HackinFX starts its bundled OpenRGB engine and discovers native GPU, USB/HID and memory devices. Inventory-only entries remain visible for diagnostics.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) } } }
     private var devices:some View {
         VStack(alignment:.leading,spacing:22) {
@@ -567,6 +620,7 @@ struct CenterWorkspace:View {
     private var connections:some View {
         VStack(alignment:.leading,spacing:22) {
             CenterHeading(eyebrow:"Preferences",title:"Settings",subtitle:"Updates, startup behavior and device connections.")
+            AndroidRemotePanel(center:center)
             CenterPanel { VStack(alignment:.leading,spacing:12) {
                 Label(L10n.text("Language"),systemImage:"globe").font(.headline)
                 Picker(L10n.text("Application language"),selection:$language.selection) {
@@ -576,7 +630,7 @@ struct CenterWorkspace:View {
                 Text(L10n.text("Language changes apply immediately. Device names, saved profiles and hardware commands stay unchanged.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
             } }
             CenterPanel { VStack(alignment:.leading,spacing:14) {
-                HStack { Label(L10n.text("Software Update"),systemImage:"arrow.down.circle").font(.headline);Spacer();Text(L10n.text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.5.0")).font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
+                HStack { Label(L10n.text("Software Update"),systemImage:"arrow.down.circle").font(.headline);Spacer();Text(L10n.text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "2.7.0")).font(.system(size:12,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
                 Toggle(L10n.text("Check automatically at launch"),isOn:$center.automaticUpdates).toggleStyle(.switch)
                 Text(L10n.text(center.updateMessage)).font(.system(size:12)).foregroundStyle(CenterTheme.muted).textSelection(.enabled)
                 HStack { Button(L10n.text(center.checkingUpdates ? "Checking…":"Check for Updates"),action:center.checkForUpdates).disabled(center.checkingUpdates);if let url=center.updateURL { Link(L10n.text("View release"),destination:url) } }
@@ -585,7 +639,7 @@ struct CenterWorkspace:View {
                 Toggle(L10n.text("Launch at login"),isOn:Binding(get:{center.loginEnabled},set:{center.setLaunchAtLogin($0)})).toggleStyle(.switch)
                 Text(L10n.text(center.loginMessage)).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
                 Button(L10n.text("Open Login Items")) { SMAppService.openSystemSettingsLoginItems() }
-                Label(L10n.text("Startup & live control"),systemImage:"sun.max").font(.headline);Text(L10n.text("On launch, ready devices receive mint Twinkle at 65% speed. RAM stays untouched until you explicitly probe and select its DIMMs. Rediscovery keeps the current colors. Color and effect changes are sent automatically to selected compatible devices.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
+                Label(L10n.text("Startup & live control"),systemImage:"sun.max").font(.headline);Text(L10n.text("On launch, all ready devices receive green Twinkle at 65% speed. RAM joins automatically after one successful saved probe, with inventory and RGB identity revalidated on each start. Paired Nanoleaf panels join when reachable. Rediscovery keeps the current colors.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) } }
             CenterPanel { VStack(alignment:.leading,spacing:12) {
                 Label(L10n.text("Nanoleaf Shapes"),systemImage:"triangle").font(.headline)
                 Text(L10n.text("Find Shapes Triangles on your local network, select your controller, then hold its power button for 5–7 seconds until flashing and click Pair Shapes within 30 seconds.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted)
@@ -615,6 +669,14 @@ private struct CenterDeviceInspector:View {
             HStack { Image(systemName:device.symbol).font(.system(size:30,weight:.light)).foregroundStyle(CenterTheme.accent);Spacer();CenterBadge(text:device.backend,good:device.controllable) }
             Text(verbatim:device.name).font(.system(size:23,weight:.semibold,design:.rounded))
             Text(verbatim:device.vendor+" · "+L10n.text(device.categoryLabel)).foregroundStyle(CenterTheme.muted)
+            if device.controllable {
+                VStack(alignment:.leading,spacing:8) {
+                    HStack { Text(L10n.text("Device brightness"));Spacer();Text("\(Int(center.deviceLevel(device.id)))%").monospacedDigit() }
+                    Slider(value:Binding(get:{center.deviceLevel(device.id)},set:{center.setDeviceLevel(device.id,$0)}),in:0...100)
+                    Text(L10n.text("Multiplied by the master brightness.")).font(.system(size:10)).foregroundStyle(CenterTheme.muted)
+                }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12))
+            }
+
             Divider()
             if let positions=device.led_positions,!positions.isEmpty { VStack(alignment:.leading,spacing:8) { Text(L10n.text("MAPPED LED POSITIONS · SCHEMATIC")).font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);GeometryReader { geometry in ZStack { ForEach(Array(positions.enumerated()),id:\.offset) { _,point in RoundedRectangle(cornerRadius:2).fill(CenterTheme.accent.opacity(0.75)).frame(width:10,height:10).position(x:10+point.x*(geometry.size.width-20),y:10+point.y*(geometry.size.height-20)) } } }.frame(height:120) }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12)) }
             if let usb=device.usb_id { Text(L10n.text("USB ID · "+usb)).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
@@ -675,5 +737,37 @@ struct PeripheralDiagnostics:View {
             }
             if center.state.devices.isEmpty { Text(L10n.text("No Core inventory yet. Start Core and discover devices in Overview.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
         }.padding(22).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:16))
+    }
+}
+
+struct AndroidRemotePanel:View {
+    @ObservedObject var center:CenterModel
+    private var qr:NSImage? {
+        guard !center.remotePairingText.isEmpty,let filter=CIFilter(name:"CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(center.remotePairingText.utf8),forKey:"inputMessage");filter.setValue("M",forKey:"inputCorrectionLevel")
+        guard let image=filter.outputImage?.transformed(by:CGAffineTransform(scaleX:6,y:6)),let cg=CIContext().createCGImage(image,from:image.extent) else { return nil }
+        return NSImage(cgImage:cg,size:NSSize(width:220,height:220))
+    }
+    var body:some View {
+        CenterPanel { VStack(alignment:.leading,spacing:14) {
+            Label("Android Remote",systemImage:"iphone.radiowaves.left.and.right").font(.headline)
+            Toggle("Enable local-network control",isOn:Binding(get:{center.remoteSettings.enabled},set:{center.loadRemote("enable",body:["enabled":$0])})).toggleStyle(.switch).disabled(center.remoteBusy || !center.online)
+            Text("Pair HackinFX Remote on Android to control devices, colors and effects over encrypted Wi-Fi. Hardware setup and diagnostics remain on this Mac.").font(.system(size:12)).foregroundStyle(CenterTheme.muted)
+            if center.remoteSettings.enabled {
+                if !center.remoteSettings.addresses.isEmpty { Picker("Mac address",selection:$center.remoteHost) { ForEach(center.remoteSettings.addresses,id:\.self) { Text(verbatim:$0).tag($0) } } }
+                Text("Port \(center.remoteSettings.port) · TLS · local IPv4 only").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.muted)
+                Button("Pair a phone") { center.loadRemote("pair") }.disabled(center.remoteBusy || center.remoteHost.isEmpty)
+                if let code=center.remoteSettings.pairCode {
+                    HStack(alignment:.top,spacing:22) {
+                        if let qr=qr { Image(nsImage:qr).interpolation(.none).resizable().frame(width:190,height:190).padding(12).background(.white).clipShape(RoundedRectangle(cornerRadius:12)) }
+                        VStack(alignment:.leading,spacing:10) { Text("Scan in HackinFX Remote").font(.headline);Text(verbatim:code).font(.system(size:32,weight:.medium,design:.monospaced)).tracking(5);Text("Pairing closes in \(center.remoteSettings.pairSeconds) seconds. Only scan directly from this Mac.").font(.system(size:11)).foregroundStyle(CenterTheme.muted);Button("Copy pairing details") { NSPasteboard.general.clearContents();NSPasteboard.general.setString(center.remotePairingText,forType:.string) } }
+                    }
+                }
+                DisclosureGroup("Manual pairing fingerprint") { Text(verbatim:center.remoteSettings.fingerprint).font(.system(size:10,design:.monospaced)).textSelection(.enabled) }
+                ForEach(center.remoteSettings.clients) { phone in HStack { Label(phone.name,systemImage:"iphone");Spacer();Button("Revoke") { center.loadRemote("revoke",body:["id":phone.id]) }.disabled(center.remoteBusy) } }
+                if center.remoteSettings.clients.isEmpty { Text("No phones paired.").font(.system(size:11)).foregroundStyle(CenterTheme.muted) }
+            }
+            if !center.remoteMessage.isEmpty { Text(verbatim:center.remoteMessage).font(.system(size:11)).foregroundStyle(.orange) }
+        } }
     }
 }

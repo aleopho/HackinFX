@@ -19,7 +19,8 @@ assert 'hackinfx' in host_info['CFBundleURLTypes'][0]['CFBundleURLSchemes']
 signature=subprocess.run(['/usr/bin/codesign','-d','--entitlements',':-',str(widget.parent)],check=True,capture_output=True)
 entitlements=plistlib.loads(signature.stdout)
 assert entitlements['com.apple.security.app-sandbox'] is True
-assert entitlements['com.apple.security.temporary-exception.files.home-relative-path.read-only']==['Library/Application Support/HackinFX/Widget/']
+assert entitlements['com.apple.security.network.client'] is True
+assert 'com.apple.security.temporary-exception.files.home-relative-path.read-only' not in entitlements
 assert 'com.apple.security.application-groups' not in entitlements
 assert not (app/'Resources/Source/Widget/build').exists()
 assert json.loads((app/'Resources/openrgb_gpu_catalog.json').read_text())['schema_version']==1

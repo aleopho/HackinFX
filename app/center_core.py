@@ -183,13 +183,15 @@ class Center:
         if sdk is None and native is None:defaults.extend([usb_devices.NativeUSBAdapter(),ram_control.RAMAdapter(),nanoleaf_control.NanoleafAdapter()])
         self.registry=AdapterRegistry(adapters if adapters is not None else defaults)
         self.lock=threading.RLock();self.operation=threading.RLock();self.stop_event=threading.Event();self.worker=None
-        self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['a7f3d0'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
+        self.output_locks={};self.device_brightness={};self.saved_brightness={};self.devices=[];self.layout={};self.scene=scene_config(dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65));self.running=False;self.frames=0;self.errors=[];self.bridge='disconnected';self.scenes=[];self.message='Ready to discover devices';self.generation='';self.saved_layout={};self.initialized=False;self.scene_revision=0;self.selected_devices=[];self.active_devices=set();self.output_latencies={};self.output_stats={};self.leased_frames={};self.clock_started=time.monotonic();self.sync_stats=dict(clock="shared-monotonic",dropped=0,frames=0)
         try:
             if self.store.stat().st_size>524288:raise ValueError('Scene file is too large')
             saved=json.loads(self.store.read_text())
             for key,position in list(saved.get('layout',{}).items())[:192]:
                 if isinstance(key,str) and len(key)<=80:
                     self.saved_layout[key]=dict(x=number(position['x'],0,1),y=number(position['y'],0,1),width=number(position.get('width',.22),.01,1))
+            for fp,level in list(saved.get('device_brightness',{}).items())[:192]:
+                if isinstance(fp,str) and len(fp)<=80:self.saved_brightness[fp]=number(level,0,100)
             for row in saved.get('scenes',[])[:64]:
                 if isinstance(row,dict) and isinstance(row.get('name'),str):self.scenes.append(dict(name=row['name'][:60],config=scene_config(row['config'])))
         except (OSError,ValueError,KeyError,TypeError):pass
@@ -197,15 +199,15 @@ class Center:
         now=time.monotonic()
         return {key:dict(frames=v['frames'],fps=round(v['fps'],1),command_ms=round(v['latency']*1000,2),age_ms=round(max(0,now-v['last'])*1000),missed=v['missed'],interval_ms=round(v.get('interval',0)*1000,2),jitter_ms=round(v.get('jitter',0)*1000,2),max_interval_ms=round(v.get('max_interval',0)*1000,2)) for key,v in self.output_stats.items()}
     def status(self):
-        with self.lock:return dict(schema=1,nanoleaf_candidates=list(self.nanoleaf_candidates),scene_elapsed=max(0,time.monotonic()-self.clock_started),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
+        with self.lock:return dict(schema=1,device_brightness=dict(self.device_brightness),host_media_devices=sorted(getattr(self.registry.adapters.get('native-usb'),'active',set())),scene_revision=self.scene_revision,selected_devices=list(self.selected_devices),active_devices=sorted(k for k in self.active_devices if self.device_brightness.get(k,100)>0) if self.scene['brightness']>0 else [],nanoleaf_candidates=list(self.nanoleaf_candidates),scene_elapsed=max(0,time.monotonic()-self.clock_started),devices=[dict(d) for d in self.devices],layout=dict(self.layout),scene=dict(self.scene),running=self.running,frames=self.frames,errors=list(self.errors[-12:]),bridge=self.bridge,scenes=list(self.scenes),message=self.message,local_only=True,sync=dict(self.sync_stats,outputs=self.performance()))
     def refresh(self,inventory=True):
         with self.operation:
-            self.stop();self.leased_frames={};rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
+            self.stop();self.leased_frames={};self.active_devices=set();self.selected_devices=[];rows=[];errors=[];self.generation=uuid.uuid4().hex[:12]
             bridge='disconnected'
             for name,adapter in self.registry.adapters.items():
                 try:
                     for index,record in enumerate(adapter.discover()):
-                        d=dict(record);d['backend']='inventory' if record.get('backend')=='inventory' and not record.get('controllable') else name
+                        d=dict(record);d['discovery_adapter']=name;d['backend']='inventory' if record.get('backend')=='inventory' and not record.get('controllable') else name
                         d.setdefault('id',name+':'+self.generation+':'+str(index))
                         d.setdefault('controllable',d.get('direct',False))
                         d.setdefault('static_modes',['static','gradient'] if d.get('direct',False) else [])
@@ -232,10 +234,70 @@ class Center:
                         rows.append(d)
                 except Exception as exc:errors.append('USB / DRAM inventory unavailable: '+type(exc).__name__)
             with self.lock:
-                self.devices=rows;self.errors=errors;self.bridge=bridge
+                self.devices=rows;self.restore_device_brightness(rows);self.errors=errors;self.bridge=bridge
                 fingerprints=[d.get('fingerprint','') for d in rows]
                 self.layout={d['id']:(dict(self.saved_layout[d['fingerprint']]) if d.get('fingerprint') in self.saved_layout and fingerprints.count(d['fingerprint'])==1 else dict(x=(i%4+0.5)/4,y=(i//4+0.5)/max(1,math.ceil(len(rows)/4)),width=0.22)) for i,d in enumerate(rows)}
                 self.message=str(sum(bool(d['controllable']) for d in rows))+' controllable devices; '+str(len(rows))+' detected entries'
+            return self.status()
+    def restore_device_brightness(self,rows):
+        counts={d.get('fingerprint'):sum(r.get('fingerprint')==d.get('fingerprint') for r in rows) for d in rows}
+        self.device_brightness={d['id']:self.device_brightness.get(d['id'],self.saved_brightness.get(d.get('fingerprint'),100) if counts.get(d.get('fingerprint'))==1 else 100) for d in rows}
+    def set_device_brightness(self,values):
+        if not isinstance(values,dict) or not 1<=len(values)<=64:raise ValueError('Device brightness requires one to 64 device levels')
+        with self.operation:
+            updates={key:number(level,0,100) for key,level in values.items()}
+            with self.lock:
+                known={d['id']:d for d in self.devices}
+                if any(key not in known or not known[key]['controllable'] for key in updates):raise ValueError('Brightness target is not controllable')
+                levels=dict(self.device_brightness);levels.update(updates);saved=dict(self.saved_brightness)
+                for key,level in updates.items():
+                    fp=known[key].get('fingerprint')
+                    if fp and sum(d.get('fingerprint')==fp for d in self.devices)==1:saved[fp]=level
+                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=self.saved_layout,device_brightness=saved))
+                self.device_brightness=levels;self.saved_brightness=saved;config=dict(self.scene);selected=set(self.selected_devices)
+                targets=[dict(known[k]) for k in updates if k in selected]
+                steady=config['mode'] in ('static','gradient')
+            # Streaming picks up levels on the next write. Steady scenes need one new frame.
+            if steady:
+                for target in targets:
+                    pixels=frame(config,target['led_count'],dict(self.layout[target['id']],led_positions=target.get('led_positions',[])),max(0,time.monotonic()-self.clock_started))
+                    self.write_output(target,pixels,config['mode'])
+                    if target['backend']=='native':self.registry.adapters['native'].release()
+            elif not self.running:
+                for target in targets:
+                    if target['id'] in self.leased_frames:self.write_output(target,self.leased_frames[target['id']],'static')
+            return self.status()
+    def hotplug_refresh(self):
+        """Refresh USB adapters only; no GPU setup or RAM rediscovery/probe."""
+        with self.operation:
+            with self.lock:
+                old=[dict(d) for d in self.devices];selected=set(self.selected_devices);config=dict(self.scene);running=self.running;positions=dict(self.layout)
+            selected_fp={d.get('fingerprint') for d in old if d['id'] in selected and d.get('fingerprint')}
+            known_fp={d.get('fingerprint') for d in old if d.get('fingerprint')}
+            names=[n for n in ('native-usb','openrgb') if n in self.registry.adapters]
+            if not names:return self.status()
+            self.stop();rows=[d for d in old if d.get('discovery_adapter',d['backend']) not in names];errors=[]
+            for name in names:
+                try:
+                    for index,record in enumerate(self.registry.adapters[name].discover()):
+                        d=dict(record);d['discovery_adapter']=name;d['backend']='inventory' if record.get('backend')=='inventory' and not record.get('controllable') else name
+                        d.setdefault('id',name+':hotplug:'+str(index));d.setdefault('controllable',d.get('direct',False));d.setdefault('static_modes',['static','gradient'] if d.get('direct') else []);rows.append(d)
+                except Exception as exc:errors.append(name+': '+str(exc))
+            native=[d for d in rows if d['backend']=='native-usb' and d.get('controllable')]
+            for d in rows:
+                if d['backend']=='openrgb' and ((d.get('category')=='gpu' and any(r.get('owns_gpu') for r in rows if r['backend']=='native')) or any(d['name'].casefold() in {n.casefold() for n in r.get('ownership_names',[])} for r in native)):
+                    d.update(controllable=False,direct=False,status='native-owned',detail='Native adapter owns this device; duplicate bridge writes disabled.')
+            targets=[]
+            for d in rows:
+                fp=d.get('fingerprint');chosen=d['id'] in selected or fp and (fp in selected_fp or fp not in known_fp)
+                compatible=d.get('direct') or config['mode'] in d.get('static_modes',[])
+                if chosen and compatible and d.get('controllable') and not d.get('startup_excluded'):targets.append(d['id'])
+            with self.lock:
+                self.devices=rows;self.restore_device_brightness(rows);self.active_devices=set();self.selected_devices=targets;self.scene_revision+=1
+                self.layout={d['id']:positions.get(d['id'],dict(x=(i%4+.5)/4,y=(i//4+.5)/max(1,math.ceil(len(rows)/4)),width=.22)) for i,d in enumerate(rows)}
+                self.errors=(self.errors+errors)[-12:];self.message='USB devices updated automatically'
+            targets=list(dict.fromkeys(targets))[:64]
+            if running and targets:return self.start(dict(config=config,devices=targets),isolate_failures=True,initial_errors=errors)
             return self.status()
     def stop(self):
         with self.operation:
@@ -274,15 +336,15 @@ class Center:
         with self.operation:
             if self.initialized:return self.status()
             self.refresh(inventory=inventory);self.initialized=True
-            # RAM is never automatically activated or colored at launch.
-            direct=[d['id'] for d in self.devices if d['controllable'] and d['direct'] and d['category']!='dram' and not d.get('startup_excluded')]
-            fallback=[d['id'] for d in self.devices if d['controllable'] and not d['direct'] and 'static' in d['static_modes'] and d['category']!='dram' and not d.get('startup_excluded')]
+            # Ready RAM targets have passed a saved-profile match and fresh RGB identity validation.
+            direct=[d['id'] for d in self.devices if d['controllable'] and d['direct'] and not d.get('startup_excluded')]
+            fallback=[d['id'] for d in self.devices if d['controllable'] and not d['direct'] and 'static' in d['static_modes'] and not d.get('startup_excluded')]
             errors=list(self.errors)
             if fallback:
-                self.start(dict(config=dict(mode='static',palette=['a7f3d0'],brightness=100),devices=fallback),isolate_failures=True,initial_errors=errors)
+                self.start(dict(config=dict(mode='static',palette=['9bed4b'],brightness=100),devices=fallback),isolate_failures=True,initial_errors=errors)
                 if self.worker:self.worker.join(timeout=30)
                 errors=list(self.errors)
-            if direct:self.start(dict(config=dict(mode='twinkle',palette=['a7f3d0'],brightness=100,speed=65,fps=30,sync_policy='adaptive'),devices=direct),isolate_failures=True,initial_errors=errors)
+            if direct:self.start(dict(config=dict(mode='twinkle',palette=['9bed4b'],brightness=100,speed=65,fps=30,sync_policy='adaptive'),devices=direct),isolate_failures=True,initial_errors=errors)
             return self.status()
     def start(self,value,isolate_failures=False,initial_errors=None):
         with self.operation:
@@ -315,7 +377,7 @@ class Center:
                             except Exception:pass
                     self.message='Could not activate all targets. Some devices may already be in Direct mode.'
                     raise
-            with self.lock:self.scene=config;self.running=True;self.frames=0;self.output_stats={};self.errors=activation_errors;self.message='Scene active; commands sent, not live LED readback'
+            with self.lock:self.scene_revision+=1;self.selected_devices=[d['id'] for d in ready];self.active_devices=set();self.scene=config;self.running=True;self.frames=0;self.output_stats={};self.errors=activation_errors;self.message='Scene active; commands sent, not live LED readback'
             self.worker=threading.Thread(target=self.render,args=(ready,config,self.stop_event),daemon=True);self.worker.start()
             return self.status()
     def render(self,targets,config,event):
@@ -326,6 +388,7 @@ class Center:
             except Exception as exc:
                 active.pop(key,None)
                 with self.lock:
+                    self.active_devices.discard(key)
                     self.errors=(self.errors+[targets_by_id[key]['name']+': '+str(exc)])[-12:]
                     for device in self.devices:
                         if device['id']==key:device.update(status='command-failed',controllable=False,detail=str(exc))
@@ -376,11 +439,17 @@ class Center:
         if event.wait(delay):return
         self.write_output(target,pixels,mode)
     def write_output(self,target,pixels,mode):
+        with self.lock:output_lock=self.output_locks.setdefault(target['id'],threading.RLock())
+        with output_lock:self._write_output(target,pixels,mode)
+    def _write_output(self,target,pixels,mode):
         started=time.monotonic()
-        self.registry.write_frame(target,pixels,mode)
+        level=self.device_brightness.get(target['id'],100)/100
+        scaled=[tuple(round(c*level) for c in color) for color in pixels]
+        self.registry.write_frame(target,scaled,mode)
         measured=time.monotonic()-started
         key=target['id'];now=time.monotonic()
         with self.lock:
+            self.active_devices.add(key)
             previous=self.output_latencies.get(key,measured)
             self.output_latencies[key]=.2*measured+.8*previous
             old=self.output_stats.get(key)
@@ -389,8 +458,7 @@ class Center:
             mean_interval=(.2*interval+.8*old.get('interval',interval)) if old and interval>0 else interval
             jitter=(.2*abs(interval-old.get('interval',interval))+.8*old.get('jitter',0)) if old and old.get('interval',0)>0 else 0
             self.output_stats[key]=dict(interval=mean_interval,jitter=jitter,max_interval=max(interval,old.get('max_interval',0) if old else 0),frames=(old['frames']+1 if old else 1),fps=(.2*observed+.8*old['fps'] if old and old['fps'] else observed),latency=self.output_latencies[key],last=now,missed=old['missed'] if old else 0)
-        if target.get('refresh_interval'):
-            with self.lock:self.leased_frames[target['id']]=list(pixels)
+        with self.lock:self.leased_frames[target['id']]=list(pixels)
     def pause(self):
         with self.operation:
             self.stop()
@@ -422,7 +490,7 @@ class Center:
                 for d in self.devices:
                     fp=d.get('fingerprint','')
                     if fp and fingerprints.count(fp)==1:saved[fp]=layout[d['id']]
-                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=saved))
+                atomic_json(self.store,dict(schema=1,scenes=self.scenes,layout=saved,device_brightness=self.saved_brightness))
                 self.layout=layout;self.saved_layout=saved
         return self.status()
     def save_scene(self,value):
@@ -432,6 +500,6 @@ class Center:
         with self.lock:
             scenes=[s for s in self.scenes if s['name']!=name]+[dict(name=name,config=config)]
             if len(scenes)>64:raise ValueError('Maximum 64 saved scenes')
-            atomic_json(self.store,dict(schema=1,scenes=scenes,layout=self.saved_layout));self.scenes=scenes
+            atomic_json(self.store,dict(schema=1,scenes=scenes,layout=self.saved_layout,device_brightness=self.saved_brightness));self.scenes=scenes
         return self.status()
     def close(self):self.stop();self.registry.close()
