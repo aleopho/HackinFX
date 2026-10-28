@@ -127,7 +127,7 @@ Then select Shapes in Lighting. [Nanoleaf setup](docs/NANOLEAF.md).
 
 Confirmed native GPU profiles and saved scenes use **`~/Documents/HackinFX`**.
 Core logs and private state use `~/Library/Application Support/HackinFX/Core`.
-Native GPU Lab tests implemented controllers and saves a reusable profile only
+Native GPU setup tests implemented controllers and saves a reusable profile only
 after successful calls and your visual confirmation. Manual identity corrections
 retain the original detected PCI identity.
 
@@ -145,12 +145,13 @@ they do not automatically create driver support in the next release.
 
 - [Installation and everyday use](docs/USER-GUIDE.md)
 - [Devices, tests and compatibility](docs/COMPATIBILITY.md)
+- [Layer Studio and composition](docs/STUDIO-3.0.md)
 - [Core, engine and synchronization architecture](docs/ARCHITECTURE.md)
 - [RAM / OpenCore setup and recovery](docs/RAM-SETUP.md)
 - [USB lighting](docs/USB-LIGHTING.md) · [Radius and ASUS keyboard](docs/RADIUS-AND-KEYBOARD.md)
 - [Build and release checks](docs/DEVELOPMENT.md)
 - [Report service](report-inbox/README.md) · [Contributing](CONTRIBUTING.md)
-- [Release notes](docs/RELEASE-NOTES-2.1.1.md) · [Changelog](CHANGELOG.md)
+- [Release notes](docs/RELEASE-NOTES-3.0.2.md) · [Changelog](CHANGELOG.md)
 - [Licenses and acknowledgements](THIRD-PARTY-NOTICES.md)
 
 ## Build from source
