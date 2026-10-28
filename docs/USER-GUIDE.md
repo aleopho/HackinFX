@@ -27,12 +27,12 @@ needed. The visualization shows requested colors, not LED feedback.
 
 ## Effect Gallery and Canvas
 
-Effects opens the gallery: 40 distinct algorithms and 80 curated looks in five
+Effects opens the gallery: 41 effects and 82 curated looks in five
 categories. Search by name/description, filter categories and star favorites.
 Click a card to apply it to selected compatible devices. Built-in cards preserve
 brightness and device selection; saved looks restore their full configuration.
 Use speed, brightness, scale, density, reverse and palette controls to customize
-then Save look. Lighting also has a compact effect menu and Browse 40 effects.
+then Save look. Lighting also has a compact effect menu and Browse effects.
 Preview cards illustrate algorithms rather than live physical feedback.
 Reduce Motion pauses animated preview playback.
 
@@ -99,3 +99,16 @@ remove old diagnostic widgets and re-add the main HackinFX widget. It shows Core
 mode, palette, brightness, GPU, ready count and attention status. WidgetKit controls
 refresh timing. A useful fallback is shown when no state is readable; real desktop
 registration/rendering still needs wider community validation.
+
+## Layer Studio and refined effects
+
+Studio composes a base effect with up to four layers. Choose Screen, Add,
+Multiply or Normal blend and tune opacity, palette and speed. Layered scenes
+require Direct host-streamed devices. In Canvas, arrange and rotate devices;
+RGB gains and gamma in device details fine-tune color matching.
+
+Fireplace is a fixed deep-red/orange ember palette with smooth rising motion.
+Gallery illustrations are artwork, not live optical feedback. Mirror repeats
+one normalized effect field per device; Canvas samples each physical placement.
+Different positions can display different colors while sharing the same clock.
+Physical transport latency and refresh limits remain relevant.

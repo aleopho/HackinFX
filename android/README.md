@@ -2,7 +2,7 @@
 
 Version 1.1.0: dedicated camera permission flow, pairing-details paste, visible connection errors, private crash diagnostics and animated effect gallery illustrations.
 
-Native Android companion for HackinFX on the same Wi-Fi network. Android 8+ (API 26). Dark charcoal panels, lime controls, animated preview, device selection, 40 effects, 80 looks and saved scenes. QR pairing and manual pairing are available.
+Native Android companion for HackinFX on the same Wi-Fi network. Android 8+ (API 26). Dark charcoal panels, lime controls, animated preview, device selection, 41 effects, 82 looks and saved scenes. QR pairing and manual pairing are available.
 
 ## Pair
 
@@ -17,3 +17,5 @@ JDK 17, Gradle 8.9, Android SDK platform 35 / build tools 35.0.0. Run `gradle -p
 The Mac must remain running; macOS owns lighting rendering and device transport. Effects shown in the phone preview are illustrations. Local IPv4 networks only in this first version. Pairing/firewall isolation and physical Android behavior require testing on the target network.
 
 GPL-3.0-or-later, aleopho and contributors. ZXing Android Embedded (JourneyApps) and ZXing are Apache-2.0; retain their upstream notices in redistribution. OpenRGB, NullMoth and the macOS hardware adapters retain the credits documented by the main project.
+
+Remote 2.0.1 adds Layer Studio, a native color wheel, the orbital FX identity and centered bottom navigation labels. The Mac remains the effect renderer and hardware owner.

@@ -42,7 +42,7 @@ shutil.copytree(root/'assets', source/'assets', dirs_exist_ok=True)
 shutil.copytree(root/'tests', source/'tests', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
 (app/'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleName='HackinFX',
     CFBundleDisplayName='HackinFX', CFBundleIdentifier='community.aleopho.hackinfx',
-    CFBundleVersion='3.0.1', CFBundleShortVersionString='3.0.1', CFBundleExecutable='HackinFX',
+    CFBundleVersion='3.0.2', CFBundleShortVersionString='3.0.2', CFBundleExecutable='HackinFX',
     CFBundlePackageType='APPL', NSLocalNetworkUsageDescription='Pair HackinFX Remote on your Android phone to control lighting over your local network.', LSMinimumSystemVersion='15.0', NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, NSHighResolutionCapable=True, CFBundleIconFile='HackinFX', CFBundleDevelopmentRegion='en', CFBundleLocalizations=json.loads((root/'Localization/manifest.json').read_text())['languages'], CFBundleURLTypes=[dict(CFBundleURLName='HackinFX',CFBundleURLSchemes=['hackinfx'])])))
 # Build a real WidgetKit app-extension with Xcode when available. No Apple account
 # or App Group is needed for this read-only, narrowly scoped local snapshot mode.
@@ -64,7 +64,7 @@ else:
 shutil.copytree(root/'Widget',source/'Widget',dirs_exist_ok=True,ignore=shutil.ignore_patterns('build','DerivedData','xcuserdata','*.xcuserstate'))
 repo=root.parent
 for folder in ['tools','vendor','docs','installer','android']:
-    if (repo/folder).is_dir():shutil.copytree(repo/folder,source/folder,ignore=shutil.ignore_patterns('__pycache__','.gradle','build','local.properties','*.keystore'),dirs_exist_ok=True)
+    if (repo/folder).is_dir():shutil.copytree(repo/folder,source/folder,ignore=shutil.ignore_patterns('__pycache__','.gradle','build','local.properties','*.keystore','FAN-CONTROL.md'),dirs_exist_ok=True)
 # Prepared, hash-verified full OpenRGB CLI and corresponding library sources.
 prepared=root.parent/'.build-cache/openrgb/prepared'
 if not (prepared/'manifest.json').is_file():

@@ -31,6 +31,18 @@ public class StudioUITest {
             for(String tab:new String[]{"Lighting","Devices","Studio","Effects","Settings"}){
                 set(a,"tab",tab);render.invoke(a);View page=(View)get(a,"page");page.animate().cancel();page.setAlpha(1);page.setTranslationY(0);
                 View view=(View)get(a,"root");view.measure(View.MeasureSpec.makeMeasureSpec(1080,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(2340,View.MeasureSpec.EXACTLY));view.layout(0,0,1080,2340);
+                android.widget.LinearLayout nav=(android.widget.LinearLayout)get(a,"nav");
+                for(int n=0;n<nav.getChildCount();n++){
+                    android.widget.LinearLayout item=(android.widget.LinearLayout)nav.getChildAt(n);
+                    android.widget.TextView caption=(android.widget.TextView)item.getChildAt(1);
+                    assertEquals(android.view.Gravity.CENTER,caption.getGravity());
+                    assertFalse(caption.getIncludeFontPadding());
+                    assertEquals(item.getWidth(),caption.getWidth());
+                    assertTrue(caption.getHeight()>0);
+                    assertTrue(caption.getBottom()<=item.getHeight());
+                    assertTrue(caption.getPaint().measureText(caption.getText().toString())<=caption.getWidth());
+                    System.out.println("NAV "+caption.getText()+" "+caption.getTop()+".."+caption.getBottom()+" parent="+item.getHeight()+" text="+caption.getTextSize()+" baseline="+caption.getBaseline());
+                }
                 assertTrue(view.getMeasuredWidth()>0);Bitmap image=Bitmap.createBitmap(1080,2340,Bitmap.Config.ARGB_8888);view.draw(new Canvas(image));
                 File dir=new File("build/outputs/design");assertTrue(dir.exists()||dir.mkdirs());try(OutputStream out=new FileOutputStream(new File(dir,"remote-"+tab.toLowerCase()+"-sample.png"))){assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,out));}image.recycle();
             }

@@ -8,8 +8,8 @@ import center_core as core
 class EffectLibraryTests(unittest.TestCase):
     def test_catalog_and_curated_looks_are_complete_and_executable(self):
         catalog=effects.CATALOG
-        self.assertEqual(len(catalog['effects']),40);self.assertEqual(len(catalog['looks']),80)
-        self.assertEqual(len(effects.MODES),40);self.assertEqual(len({v['id'] for v in catalog['looks']}),80)
+        self.assertEqual(len(catalog['effects']),41);self.assertEqual(len(catalog['looks']),82)
+        self.assertEqual(len(effects.MODES),41);self.assertEqual(len({v['id'] for v in catalog['looks']}),82)
         for look in catalog['looks']:
             self.assertIn(look['effect'],effects.MODES)
             scene=core.scene_config(dict(look,mode=look['effect']))
@@ -35,7 +35,7 @@ class EffectLibraryTests(unittest.TestCase):
         for mode in effects.MODES:
             scene=core.scene_config(dict(mode=mode,palette=['ff3050','10d0a0','4070ff'],brightness=100))
             signatures.append(tuple(tuple(core.frame(scene,24,{},t)) for t in [.4,1.9,4.2]))
-        self.assertEqual(len(set(signatures)),40)
+        self.assertEqual(len(set(signatures)),41)
     def test_spatial_mapping_and_reverse_are_real_controls(self):
         scene=core.scene_config(dict(mode='spiral',palette=['ff0000','00ff00','0000ff'],mapping='canvas'))
         a=core.frame(scene,12,dict(x=.2,y=.1,width=.3),1.1)
@@ -49,10 +49,10 @@ class EffectLibraryTests(unittest.TestCase):
         scene=core.scene_config(dict(mode='twinkle',palette=['a7f3d0'],speed=65))
         self.assertEqual((scene['scale'],scene['density'],scene['reverse']),(1,55,False))
         palette=[tuple(bytes.fromhex('a7f3d0'))]
-        import math
-        value=effects.sample('twinkle',palette,3,.2,.2,.2,1.5,65)
-        level=.08+.92*max(0,math.sin(3*12.9898+.2*78.233+1.5*.65*3))**12
-        self.assertTrue(all(abs(value[i]-palette[0][i]*level)<1e-9 for i in range(3)))
+        palette=[tuple(bytes.fromhex('a7f3d0'))]
+        a=effects.sample('twinkle',palette,0,.2,.2,.2,1.5,65)
+        b=effects.sample('twinkle',palette,99,.2,.2,.2,1.5,65)
+        self.assertEqual(a,b) # device-local LED indexing must not alter canvas output
 
     def test_custom_effect_controls_survive_save_and_reload(self):
         import tempfile
@@ -63,3 +63,25 @@ class EffectLibraryTests(unittest.TestCase):
             first.save_scene(dict(name='My plasma',config=config));first.close()
             second=core.Center(store,folder,sdk=FakeSDK([]),native=FakeNative())
             self.assertEqual(second.scenes[0]['config'],config);second.close()
+
+    def test_all_effects_share_canvas_coordinates_independent_of_device_index(self):
+        for e in effects.CATALOG['effects']:
+            palette=[tuple(bytes.fromhex(c)) for c in e['palette']]
+            for t in (0.0,1.37,12.9):
+                a=effects.sample(e['id'],palette,0,.31,.72,.31,t,65)
+                b=effects.sample(e['id'],palette,86,.31,.72,.31,t,65)
+                self.assertEqual(a,b,e['id'])
+    def test_fireplace_is_warm_and_temporally_smooth(self):
+        palette=[(255,255,255)]
+        for u,v in ((.1,.2),(.5,.5),(.9,.8)):
+            frames=[effects.sample('fireplace',palette,0,u,v,u,i/60,65) for i in range(600)]
+            self.assertTrue(all(r>g*2 and g>=b for r,g,b in frames))
+            self.assertLess(max(abs(a-b) for x,y in zip(frames,frames[1:]) for a,b in zip(x,y)),6)
+    def test_keyboard_topology_is_spatial_and_preserves_rgb_payload_offsets(self):
+        import makr75
+        positions={(k['x'],k['y']) for k in makr75.KEYS}
+        self.assertEqual(len(positions),87)
+        self.assertEqual(len({k['offset'] for k in makr75.KEYS}),87)
+        scene=core.scene_config(dict(mode='twinkle',palette=['9bed4b'],brightness=100))
+        pixels=core.frame(scene,87,dict(led_positions=[dict(x=k['x'],y=k['y']) for k in makr75.KEYS]),3.7)
+        self.assertGreater(len(set(pixels)),20)

@@ -1,4 +1,38 @@
-# PNY effects, 0.4.0
+# Shared-clock effect library
+
+HackinFX renders 41 effects and 82 curated looks from one monotonic scene clock.
+`effects.py` is the hardware renderer; `EffectLibrary.swift` mirrors the same
+math for native previews. `tools/verify_effect_previews.py` compares both.
+
+## Refined canvas engine
+
+All effects sample physical canvas coordinates. Device-local LED indices no
+longer seed particles, palette choices or flicker: a canvas point returns the
+same color regardless of which device samples it. Mirror mapping repeats the
+same normalized field per device; Canvas mapping follows device placement.
+Different physical positions are intentionally different colors, not a loss of
+synchronization. Transport latency and hardware refresh limits still apply.
+
+Palette transitions use smooth interpolation. Particle envelopes, trails,
+scanners, waves and atmosphere effects have broader, continuous movement rather
+than narrow flashes and abrupt wraparound. The MAKR 75 reference layout now
+contains distinct staggered positions for every key, preserving all verified
+RGB packet offsets and the separate dial ring.
+
+Fireplace uses an advected multi-scale flame field, with deep red, burnt orange
+and amber. Its fixed warm gradient deliberately avoids white-hot and blue
+flashes. Brightness, speed, scale and direction remain available.
+
+The gallery uses original procedural illustrations above a continuous effect
+field. Gallery art is illustrative, never LED readback. Reduced Motion pauses
+its animation. No SignalRGB effect source, stock photographs or remote assets
+are included. Canvas concepts were reviewed in SignalRGB's public developer
+documentation: https://docs.signalrgb.com/lightscripts
+
+## Legacy PNY onboard protocol reference
+
+The following documents the standalone GPU protocol. Shared-clock effects in
+Lighting use host-rendered Direct frames instead of independent onboard clocks.
 
 Protocol adaptation from OpenRGB PNYLovelaceGPUController.cpp by yufan (2023),
 GPL-2.0-or-later; reviewed 2026-10-23:

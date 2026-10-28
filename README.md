@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/hackinfx.svg" width="120" alt="HackinFX RGB fan icon"></p>
+<p align="center"><img src="app/assets/hackinfx-mark-v2.png" width="120" alt="HackinFX orbital FX icon"></p>
 <h1 align="center">HackinFX</h1>
 <p align="center">Lighting Studio for macOS Hackintosh systems · by <a href="https://github.com/aleopho">aleopho</a></p>
 <p align="center"><a href="https://github.com/aleopho/HackinFX/releases/latest">Download</a> · <a href="docs/USER-GUIDE.md">Getting started</a> · <a href="docs/COMPATIBILITY.md">Device compatibility</a> · <a href="THIRD-PARTY-NOTICES.md">Licenses & credits</a></p>
@@ -9,7 +9,7 @@ coolers into one native **Lighting Studio**. Built for **macOS 15 or later** on
 **OpenRGB 1.1 macOS engine** with native NVIDIA, USB/HID, scoped RAM and
 local Nanoleaf Shapes adapters.
 
-**Current release: [2.7.0](https://github.com/aleopho/HackinFX/releases/tag/v2.7.0).**
+**Current release: [3.0.2](https://github.com/aleopho/HackinFX/releases/tag/v3.0.2).**
 Scoped Corsair Dominator Titanium DDR5 RGB support uses exact host and RGB
 identity checks. This is not generic RAM or chipset support.
 Nanoleaf Shapes pairing and visible lighting are user-confirmed.
@@ -20,26 +20,30 @@ Apple Silicon is outside the current target.
 Actual desktop screenshot supplied by aleopho on 26 October 2026. The effect
 visualization shows requested colors, not optical LED feedback.
 
-## New in 2.7.0
+## New in 3.0.2
 
-- Per-device brightness, applied live on top of master brightness, available on device cards, in device details and in Android Remote. Unique device identities retain their level across restarts; identical devices without a unique identity retain independent session levels.
-- Native USB plug-and-play, MAKR 75 dial-ring lighting and host volume handling, persisted/validated Titanium RAM startup, 22 offline desktop language variants and Canvas effect backgrounds.
-- HackinFX Remote for Android: native dark/lime controls, QR or pairing-details paste, 40-effect gallery, 80 looks and encrypted same-network pairing. Download the signed APK from the same GitHub release. Phone camera/pairing behavior still needs device-specific validation; report the visible error if it fails.
-- WidgetKit data-path rewrite showing the current effect and successfully active device count. Real desktop refresh validation remains outstanding; macOS schedules updates.
+- Shared-clock Layer Studio: base effect plus four layers, blend modes and opacity; Canvas transforms, per-device RGB calibration and brightness.
+- Rebuilt effect math with smooth palette transitions, spatially consistent particles and softer motion. **Fireplace** adds deep red/orange embers without white flashes. **41 effects and 82 looks**.
+- Corrected staggered MAKR 75 key geometry so particles and waves spread across individual keys; existing verified RGB byte offsets and dial handling stay intact.
+- Independent native HID output channels prevent a slow USB collection from blocking every device. The host targets 60 FPS while respecting actual hardware refresh limits.
+- Original animated gallery illustrations, larger cards and new orbital FX branding in the app and menu bar.
+- Graceful Core shutdown protects saved RAM authorization from helper-pipe interruption. Real bus errors and changed/unexpected RGB identities still stop RAM output. One observed controller state recovered after a cold power cycle; do not treat this as generic RAM compatibility.
+- **HackinFX Remote 2.0.1**: redesigned native Android workspace, color wheel, Layer Studio, device brightness and centered navigation captions. The existing package ID and signing identity are preserved.
+- Existing hotplug, local Nanoleaf Shapes pairing, 22 offline desktop languages, diagnostics/export and WidgetKit integration remain available. Widget refresh and Android camera/pairing still need device-specific validation.
 
 Windows work is deferred while macOS remains the priority. No Windows build is advertised by this release.
 
 ## Effect Gallery
 
-![HackinFX native Effect Gallery layout, rendered in 2.4.0](docs/images/effect-gallery-2.4.0.png)
+![HackinFX 3.0.2 gallery artwork rendered from native views](docs/images/effect-gallery-3.0.2.png)
 
-Native macOS layout render with labeled sample data. **40 distinct algorithms and
-80 curated looks**, organized into Essentials, Motion, Atmosphere, Particles and
+Native render of six gallery illustrations, not a live desktop screenshot. **41 effects and
+82 curated looks**, organized into Essentials, Motion, Atmosphere, Particles and
 Geometry. Search, favorite, tune and save looks; animated cards respect Reduce Motion.
 
 ## One workspace for your lighting
 
-- **Live lighting:** 40 host-rendered patterns, including Fire, Plasma, Nebula,
+- **Live lighting:** 41 host-rendered patterns, including Fire, Plasma, Nebula,
   Ripple, Scanner, Meteor Shower, Digital Rain, Snowfall and the original favorites.
   Palette, brightness, speed, scale, density and reverse controls apply live.
 - **Shared effects:** adaptive output follows a common timeline with bounded
@@ -48,7 +52,7 @@ Geometry. Search, favorite, tune and save looks; animated cards respect Reduce M
   depends on hardware; exact physical synchronization is not guaranteed.
 - **Canvas:** arrange devices in a shared effect space or mirror a look across
   the setup. Only outputs with a suitable streaming path join animated groups.
-- **Effect Gallery:** 80 curated looks, five categories, search, local favorites,
+- **Effect Gallery:** 82 curated looks, five categories, search, local favorites,
   native animated previews and saved custom looks. Larger screen-aware workspace.
 - **OpenRGB inside:** the pinned macOS engine and its compiled device drivers
   start locally with HackinFX. No separate OpenRGB installation or account.
@@ -67,10 +71,10 @@ Geometry. Search, favorite, tune and save looks; animated cards respect Reduce M
 
 ## Install
 
-Download the **[2.7.0 installer](https://github.com/aleopho/HackinFX/releases/download/v2.7.0/HackinFX-2.7.0-Installer.pkg)**,
+Download the **[3.0.2 installer](https://github.com/aleopho/HackinFX/releases/download/v3.0.2/HackinFX-3.0.2-Installer.pkg)**,
 quit older copies and install into **Applications**. A DMG is also available.
 Launch the installed app, let discovery finish and inspect **Devices** for ready
-outputs or setup requirements. In the current development build, ready devices start green Twinkle (#9BED4B) at
+outputs or setup requirements. Ready devices start green Twinkle (#9BED4B) at
 65% speed once per app/Core session, after macOS sign-in. RAM needs one successful
 **Devices → Memory details → Probe RAM RGB** in this version. It saves a private
 profile under Documents/HackinFX; subsequent starts revalidate exact inventory and

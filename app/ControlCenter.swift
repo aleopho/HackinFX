@@ -616,7 +616,7 @@ struct CenterWorkspace:View {
                                 Menu(L10n.text(category)) { ForEach(EffectLibrary.catalog.effects.filter {$0.category==category}) { effect in Button(L10n.text(effect.name)) { center.scene.mode=effect.id } } }
                             }
                         } label: { Label(L10n.text(EffectLibrary.effect(center.scene.mode)?.name ?? center.scene.mode.capitalized),systemImage:EffectLibrary.effect(center.scene.mode)?.symbol ?? "sparkles") }
-                        Spacer();Button { galleryPresented=true } label: { Label(L10n.text("Browse 40 effects"),systemImage:"square.grid.2x2") }
+                        Spacer();Button { galleryPresented=true } label: { Label(L10n.text("Browse effects"),systemImage:"square.grid.2x2") }
                     }
                     if EffectLibrary.effect(center.scene.mode)?.colors != false { HStack { ForEach(0..<min(4,center.scene.palette.count),id:\.self) { i in ColorPicker(L10n.text("Color \(i+1)"),selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
                     HStack { Text(L10n.text("Brightness")).frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text(L10n.text("\(Int(center.scene.brightness))%")).monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)

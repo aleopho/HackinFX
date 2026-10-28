@@ -65,3 +65,13 @@ class RAMStartupProfileTests(unittest.TestCase):
             path=Path(folder)/'profile.json';a=RAMAdapter(BusError(True),lambda:DIMMS,path);row=a.probe()[0];a.begin_shutdown()
             with self.assertRaises(ValueError):a.write_frame(row,[(1,2,3)]*12,'static')
             self.assertFalse(path.exists());self.assertTrue(a.revocation_path.exists())
+
+    def test_validation_failure_records_actual_reason_for_manual_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            t=RAMTransport(True);t.rows[0]['protocol']=99
+            a=RAMAdapter(t,lambda:DIMMS,Path(folder)/'p.json')
+            with self.assertRaisesRegex(ValueError,'unexpected controller identity'):a.probe()
+            reason=json.loads(a.revocation_path.read_text())['reason']
+            self.assertIn('unexpected controller identity',reason)
+            self.assertIn(reason,a.discover()[0]['detail'])
+            self.assertFalse(any(x['command']=='frame' for x in t.calls))
