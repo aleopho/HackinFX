@@ -38,3 +38,9 @@ Apps and helpers are ad-hoc signed, without Developer ID notarization. macOS may
 246 hardware-free Python tests and 2,214 Python/Swift effect samples passed locally; Android tests, native-graphics layouts, lint and release build passed. Installer expansion and nested signatures were verified. Automated tests do not measure actual LED frame rate or optical synchronization. The maintainer confirmed all four development DIMMs operating after recovery.
 
 GPL-3.0-or-later combined distribution; original upstream license notices remain included. OpenRGB, NullMoth, OpenLinkHub and other contributors are credited in the repository, app and bundled corresponding sources. Effect formulas and gallery art are original; SignalRGB's public Canvas documentation informed the design without importing its effect code or assets.
+
+## Desktop screenshot
+
+![HackinFX 3.0.2 on the maintainer’s setup](https://raw.githubusercontent.com/aleopho/HackinFX/v3.0.2/docs/images/lighting-studio-3.0.2.png)
+
+Actual screenshot supplied by aleopho. Displayed FPS values describe this running setup only; they are not guaranteed performance on other hardware.

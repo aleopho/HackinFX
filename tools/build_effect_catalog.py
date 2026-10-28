@@ -28,5 +28,13 @@ for cat,rows in spec:
    pal=list(base if n==0 else palettes[cat][1])
    if not colors:pal=base
    looks.append(dict(id=key.replace(' ','-')+'-'+str(n),name=title,effect=key,category=cat,palette=pal,speed=speed if n==0 else min(85,speed+20),scale=1 if n==0 else 1.7,density=45 if n==0 else 75))
-assert len(effects)==40 and len(looks)==80
+# Refined metadata and the fixed warm Fireplace are part of the reproducible source.
+for effect in effects:
+ if effect['id']=='fire':
+  effect.update(palette=['580501','b92402','f56a06'],description='Smooth rising flame field with a customizable heat palette.')
+ if effect['id']=='twinkle':effect['description']='Soft, staggered sparkles distributed over physical LED positions.'
+effects.insert(next(i for i,e in enumerate(effects) if e['id']=='fire')+1,dict(id='fireplace',name='Fireplace',category='Atmosphere',symbol='flame.fill',description='Slow molten embers and rising flames. Deep red, burnt orange and amber without white flashes.',palette=['601001','c62d03','ff7008'],speed=55,scale=1,density=65,colors=False))
+for n,speed in enumerate((35,65)):
+ looks.append(dict(id='fireplace-'+str(n),name=['Ember hearth','Crackling glow'][n],effect='fireplace',category='Atmosphere',palette=['601001','c62d03','ff7008'],speed=speed,scale=1+n*.4,density=65))
+assert len(effects)==41 and len(looks)==82
 (Path(__file__).resolve().parents[1]/'app/effects_catalog.json').write_text(json.dumps(dict(schema=1,categories=[c for c,_ in spec],effects=effects,looks=looks),indent=2)+'\n')

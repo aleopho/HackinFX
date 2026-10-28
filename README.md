@@ -15,9 +15,9 @@ identity checks. This is not generic RAM or chipset support.
 Nanoleaf Shapes pairing and visible lighting are user-confirmed.
 Apple Silicon is outside the current target.
 
-![HackinFX 2.1.1 Lighting Studio with live connected devices](docs/images/lighting-studio-2.1.1.png)
+![HackinFX 3.0.2 Lighting Studio with ten active devices](docs/images/lighting-studio-3.0.2.png)
 
-Actual desktop screenshot supplied by aleopho on 26 October 2026. The effect
+Actual desktop screenshot supplied by aleopho on 28 October 2026. The effect
 visualization shows requested colors, not optical LED feedback.
 
 ## New in 3.0.2
