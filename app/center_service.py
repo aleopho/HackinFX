@@ -77,9 +77,11 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/v1/scene/start':result=core.start(value)
             elif self.path=='/v1/scene/stop':result=core.pause()
             elif self.path=='/v1/devices/brightness':result=core.set_device_brightness(value.get('levels'))
+            elif self.path=='/v1/devices/calibration':result=core.set_calibration(value.get('values'))
             elif self.path=='/v1/layout':result=core.set_layout(value)
             elif self.path=='/v1/scenes/save':result=core.save_scene(value)
             elif self.path=='/v1/shutdown':
+                core.begin_shutdown()
                 result=dict(stopping=True)
                 threading.Thread(target=self.server.shutdown,daemon=True).start()
             else:self.reply(404,dict(error='Unknown endpoint'));return
@@ -104,7 +106,9 @@ def serve(directory,discovery,profiles,scenes,owner_pid=None):
             try:remote.enable(True)
             except Exception:core.errors.append('Remote could not start; review Settings.')
         atomic_json(discovery,dict(schema=1,port=server.server_port,credential=token,pid=os.getpid()))
-        def stop(*_):threading.Thread(target=server.shutdown,daemon=True).start()
+        def stop(*_):
+            core.begin_shutdown()
+            threading.Thread(target=server.shutdown,daemon=True).start()
         signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
         from hotplug import HotplugMonitor
         hotplug=HotplugMonitor(core)
@@ -116,7 +120,7 @@ def serve(directory,discovery,profiles,scenes,owner_pid=None):
             threading.Thread(target=watch_owner,daemon=True).start()
         try:server.serve_forever(poll_interval=0.2)
         finally:
-            finished.set();hotplug.close();remote.close();widget.close() if widget else None;core.close();server.server_close()
+            finished.set();core.begin_shutdown();core.stop();hotplug.close();remote.close();widget.close() if widget else None;core.close();server.server_close()
             try:discovery.unlink()
             except FileNotFoundError:pass
 

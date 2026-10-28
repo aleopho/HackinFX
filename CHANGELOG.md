@@ -1,8 +1,19 @@
+# Changelog
+
+## 3.0.2 — 2026-10-28
+
+- Layer Studio with four composited layers, Canvas transforms and per-device color calibration.
+- Refined spatial effect kernel, Fireplace, 41 effects, 82 looks and original gallery illustrations.
+- Corrected MAKR 75 physical key positions and independent HID output channels.
+- Graceful Core shutdown and explicit RAM identity/revocation diagnostics.
+- New orbital FX branding; redesigned Android Remote 2.0.1 with aligned navigation captions.
+- Current desktop screenshot and full GPL/upstream notices retained.
+
+See [release notes](docs/RELEASE-NOTES-3.0.2.md) for validation and compatibility limits.
+
 ## 2.7.0
 
 Live per-device brightness on desktop and Remote, Android Remote 1.2.0, native USB hotplug, MAKR dial-ring/media support, identity-validated RAM startup, offline localization and Canvas/widget data-path updates. See docs/RELEASE-NOTES-2.7.0.md for compatibility limits and validation status.
-
-# Changelog
 
 ## 2.1.1 — 2026-10-26
 

@@ -46,11 +46,11 @@ assert (app/'Resources/Source/vendor/rigstats/LICENSE').is_file()
 print('Scoped RAM helper, setup guide and Radius/ASUS protocol notices included')
 
 effects=json.loads((app/'Resources/effects_catalog.json').read_text())
-assert effects['schema']==1 and len(effects['effects'])==40 and len(effects['looks'])==80
+assert effects['schema']==1 and len(effects['effects'])==41 and len(effects['looks'])==82
 assert (app/'Resources/effects.py').is_file()
 assert (app/'Resources/Source/EffectLibrary.swift').is_file()
 assert (app/'Resources/Source/EffectGallery.swift').is_file()
-print('Shared 40-effect catalog, 80 looks, native gallery and hardware renderer are bundled')
+print('Shared 41-effect catalog, 82 looks, native gallery and hardware renderer are bundled')
 
 locales=json.loads((app/"Resources/Localization/manifest.json").read_text())["languages"]
 assert set(host_info["CFBundleLocalizations"])==set(locales)

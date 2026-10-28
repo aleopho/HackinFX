@@ -62,6 +62,7 @@ struct CenterDevice: Codable, Identifiable {
     var categoryLabel: String { ["dram":"Memory","gpu":"GPU","cooler":"Cooling","strip":"Lighting","keyboard":"Keyboard","mouse":"Mouse","usb":"USB","mainboard":"Mainboard","controller":"Controller" ][category] ?? category.capitalized }
 }
 struct CenterScene: Codable,Equatable {
+    var layers:[CenterLayer]? = nil
     var synchronized = true
     var mapping = "mirror"
     var scale = 1.0
@@ -72,13 +73,14 @@ struct CenterScene: Codable,Equatable {
     var brightness = 100.0
     var speed = 65.0
     var axis = "x"
-    var fps = 30.0
+    var fps = 60.0
     var sync_policy = "adaptive"
 }
 private struct PublicRelease:Decodable { let tag_name:String;let html_url:String;let draft:Bool;let prerelease:Bool }
 private struct StringError:LocalizedError { let message:String;init(_ message:String) { self.message=message };var errorDescription:String? { message } }
 struct SavedCenterScene: Codable, Identifiable { var id:String { name }; let name: String; let config:CenterScene }
-struct CenterPosition: Codable { var x:Double;var y:Double;var width:Double }
+struct DeviceCalibration:Codable { var red=1.0;var green=1.0;var blue=1.0;var gamma=1.0 }
+struct CenterPosition: Codable { var x:Double;var y:Double;var width:Double;var height:Double?=nil;var rotation:Double?=nil;var mirror_x:Bool?=nil;var mirror_y:Bool?=nil }
 struct CoreOutput:Codable { let frames:Int;let fps:Double;let command_ms:Double;let age_ms:Double;let missed:Int;var interval_ms:Double?=nil;var jitter_ms:Double?=nil;var max_interval_ms:Double?=nil }
 struct CoreSync:Codable { let clock:String;let dropped:Int;let frames:Int;var outputs:[String:CoreOutput]? = nil }
 struct NanoleafCandidate:Codable,Identifiable { let id:String;let address:String;let name:String;let model:String }
@@ -86,6 +88,7 @@ struct CenterState: Codable {
     var nanoleaf_candidates:[NanoleafCandidate]? = nil
     var scene_elapsed:Double?=nil
     var sync:CoreSync? = nil
+    var calibration:[String:DeviceCalibration]?=nil
     var device_brightness:[String:Double]?=nil
     var scene_revision:Int?=nil
     var selected_devices:[String]?=nil
@@ -174,7 +177,7 @@ final class CenterModel: ObservableObject {
     var visible:[CenterDevice] { state.devices.filter { device in filter == "all" || (filter == "lighting" && (device.controllable || device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || (filter == "attention" && !device.controllable && (device.driver != nil || !(device.catalog_matches ?? []).isEmpty)) || device.category == filter } }
     var chosen:[CenterDevice] { state.devices.filter { selected.contains($0.id) } }
     var canAnimate:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.direct } }
-    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && (!scene.synchronized || ["static","gradient"].contains(scene.mode) || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
+    var sceneCompatible:Bool { !chosen.isEmpty && chosen.allSatisfy { $0.controllable && (!scene.synchronized || ["static","gradient"].contains(scene.mode) || $0.direct) && ((scene.layers ?? []).isEmpty || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) } }
     func start() {
         guard process == nil && !shuttingDown else { return }
         busy=true;error=""
@@ -270,7 +273,7 @@ final class CenterModel: ObservableObject {
     }
     private func flushLive() {
         guard livePending && online && !busy && !liveRequest && !shuttingDown else { return }
-        let targets=chosen.filter { $0.controllable && (!scene.synchronized || ["static","gradient"].contains(scene.mode) || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
+        let targets=chosen.filter { $0.controllable && (!scene.synchronized || ["static","gradient"].contains(scene.mode) || $0.direct) && ((scene.layers ?? []).isEmpty || $0.direct) && ($0.direct || ($0.static_modes ?? ["static"]).contains(scene.mode)) }
         guard !targets.isEmpty else { liveStatus=selected.isEmpty ? "Select devices to control":"No selected device supports this effect";livePending=false;return }
         let skipped=selected.count-targets.count
         livePending=false;liveRequest=true;liveStatus="Updating lighting…"
@@ -341,9 +344,31 @@ final class CenterModel: ObservableObject {
         request("/v1/scenes/save",body:["name":sceneName,"config":encoded]) { result in self.busy=false;self.accept(result);self.flushLive() }
     }
     func move(_ id:String,x:Double,y:Double,width:Double?=nil) {
-        guard online && !busy else { return };busy=true
-        let w=width ?? state.layout[id]?.width ?? 0.22
-        request("/v1/layout",body:[id:["x":min(1,max(0,x)),"y":min(1,max(0,y)),"width":w]]) { result in self.busy=false;self.accept(result);self.scheduleLive() }
+        var p=position(id)
+        p.x=min(1,max(0,x));p.y=min(1,max(0,y));if let width=width { p.width=width };place(id,p)
+    }
+    @Published var placementDrafts:[String:CenterPosition]=[:]
+    private var placementWork:DispatchWorkItem?
+    private var placementRequest=false
+    func position(_ id:String)->CenterPosition { placementDrafts[id] ?? state.layout[id] ?? CenterPosition(x:0.5,y:0.5,width:0.22) }
+    func place(_ id:String,_ p:CenterPosition) {
+        let known=Set(state.devices.map { $0.id });placementDrafts=placementDrafts.filter { known.contains($0.key) }
+        placementDrafts[id]=p;placementWork?.cancel()
+        let task=DispatchWorkItem { [weak self] in self?.flushPlacement() };placementWork=task;DispatchQueue.main.asyncAfter(deadline:.now()+0.15,execute:task)
+    }
+    private func flushPlacement() {
+        guard online,!placementRequest,!placementDrafts.isEmpty else{return};placementRequest=true
+        let snapshot=placementDrafts
+        let body=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(snapshot))) as? [String:Any] ?? [:]
+        request("/v1/layout",body:body) { result in
+            self.placementRequest=false;self.accept(result)
+            if case .success=result { for (id,p) in snapshot { if let current=self.placementDrafts[id],let a=try? JSONEncoder().encode(current),let b=try? JSONEncoder().encode(p),a==b { self.placementDrafts.removeValue(forKey:id) } } }
+            if case .success=result,!self.placementDrafts.isEmpty { self.flushPlacement() }
+        }
+    }
+    func calibrate(_ id:String,_ value:DeviceCalibration) {
+        let body=(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(value))) as? [String:Any] ?? [:]
+        request("/v1/devices/calibration",body:["values":[id:body]]) { self.accept($0) }
     }
     private var widgetKey=""
     private var lastWidgetReload=Date.distantPast
@@ -387,6 +412,24 @@ final class CenterModel: ObservableObject {
             let work=DispatchWorkItem { self.lastWidgetReload=Date();WidgetCenter.shared.reloadTimelines(ofKind:"HackinFXStatus") }
             widgetReload=work;DispatchQueue.main.asyncAfter(deadline:.now()+max(0,5-Date().timeIntervalSince(lastWidgetReload)),execute:work)
         } catch { /* Widget failure must not block hardware control. */ }
+    }
+    func prepareToQuit(_ completion:@escaping()->Void) {
+        guard !shuttingDown else { completion();return }
+        shuttingDown=true;liveWork?.cancel();levelWork?.cancel();placementWork?.cancel();livePending=false;mutationQueue.removeAll();timer?.invalidate();timer=nil
+        guard let task=process,task.isRunning else { completion();return }
+        if let info=discovery {
+            var request=URLRequest(url:URL(string:"http://127.0.0.1:\(info.port)/v1/shutdown")!)
+            request.httpMethod="POST";request.timeoutInterval=3;request.httpBody=Data("{}".utf8)
+            request.setValue("Bearer "+info.credential,forHTTPHeaderField:"Authorization");request.setValue("application/json",forHTTPHeaderField:"Content-Type")
+            session.dataTask(with:request) { _,_,_ in }.resume()
+        } else { task.terminate() }
+        let started=ProcessInfo.processInfo.systemUptime
+        func waitForCore() {
+            if !task.isRunning { self.process=nil;try? self.logHandle?.close();self.logHandle=nil;completion();return }
+            if ProcessInfo.processInfo.systemUptime-started>8 { task.terminate();completion();return }
+            DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:waitForCore)
+        }
+        waitForCore()
     }
     func shutdown() {
         shuttingDown=true;liveWork?.cancel();livePending=false;timer?.invalidate();timer=nil
@@ -438,8 +481,8 @@ private struct CenterScenePreview:View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private func tint(_ index:Int,_ time:Double)->Color {
         let u=Double(index)/39
-        let rgb=EffectMath.sample(mode:scene.mode,palette:EffectLibrary.palette(scene.palette),index:index,u:u,v:u,coord:u,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse)
-        let level=scene.brightness/25500
+        let rgb=EffectMath.composite(mode:scene.mode,palette:EffectLibrary.palette(scene.palette),index:index,u:u,v:u,coord:u,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse,brightness:scene.brightness,layers:scene.layers ?? [])
+        let level=1.0/255
         return Color(red:max(0,min(1,rgb[0]*level)),green:max(0,min(1,rgb[1]*level)),blue:max(0,min(1,rgb[2]*level)))
     }
     var body:some View {
@@ -458,14 +501,14 @@ struct CenterNavigation:View {
     @ObservedObject var center:CenterModel
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Namespace private var selection
-    private let pages=[("Overview","sun.max"),("Devices","externaldrive.connected.to.line.below"),("Canvas","rectangle.3.group"),("Effects","sparkles"),("Feedback","bubble.left.and.text.bubble.right")]
+    private let pages=[("Overview","sun.max"),("Devices","externaldrive.connected.to.line.below"),("Canvas","rectangle.3.group"),("Studio","square.3.layers.3d"),("Effects","sparkles"),("Feedback","bubble.left.and.text.bubble.right")]
     var body:some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:11) { Image(nsImage:NSImage(contentsOf:Bundle.main.url(forResource:"hackinfx-logo",withExtension:"png")!) ?? NSImage()).resizable().scaledToFit().frame(width:36,height:36);VStack(alignment:.leading,spacing:3) { Text(L10n.text("HackinFX")).font(.system(size:21,weight:.semibold,design:.rounded));Text(L10n.text("LIGHTING STUDIO")).font(.system(size:7,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted) } }.padding(.bottom,35)
             Text(L10n.text("WORKSPACE")).font(.system(size:8,weight:.medium,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.muted).padding(.horizontal,12).padding(.bottom,12)
             ForEach(pages,id:\.0) { page,symbol in
                 Button { model.page=page } label: {
-                    HStack(spacing:12) { Image(systemName:symbol).font(.system(size:14)).frame(width:18);Text(L10n.text(page == "Overview" ? "Lighting" : page)).font(.system(size:12,weight:.medium));Spacer();if page == "Devices" { Text(L10n.text("\(center.state.devices.count)")).font(.system(size:10,design:.monospaced)) } }.foregroundStyle(model.page == page ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,13).frame(height:43).background { if model.page == page { RoundedRectangle(cornerRadius:10).fill(CenterTheme.accent.opacity(0.08)).matchedGeometryEffect(id:"center-nav",in:selection) } }
+                    HStack(spacing:12) { Image(systemName:symbol).font(.system(size:14)).frame(width:18);Text(L10n.text(page == "Overview" ? "Lighting" : page == "Studio" ? "Layer Studio":page)).font(.system(size:12,weight:.medium));Spacer();if page == "Devices" { Text(L10n.text("\(center.state.devices.count)")).font(.system(size:10,design:.monospaced)) } }.foregroundStyle(model.page == page ? CenterTheme.accent : CenterTheme.muted).padding(.horizontal,13).frame(height:43).background { if model.page == page { RoundedRectangle(cornerRadius:10).fill(CenterTheme.accent.opacity(0.08)).matchedGeometryEffect(id:"center-nav",in:selection) } }
                 }.buttonStyle(PressFeedbackStyle()).padding(.bottom,5)
             }
             Spacer(minLength:20)
@@ -476,7 +519,7 @@ struct CenterNavigation:View {
                 Text(L10n.text(center.online ? "Local engine online" : "Core offline")).font(.system(size:12,weight:.medium))
                 HStack(spacing:6) { Circle().fill(center.online ? CenterTheme.accent : .orange).frame(width:5,height:5);Text(L10n.text("LOCAL ONLY · x86-64")).font(.system(size:7,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
             }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(CenterTheme.elevated.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius:14))
-            HStack { Text(L10n.text("2.7.0"));Spacer();Text(L10n.text("LOCAL RGB")) }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
+            HStack { Text(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "3.0.0");Spacer();Text(L10n.text("LOCAL RGB")) }.font(.system(size:7,weight:.medium,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted).padding(.top,19)
         }.padding(22).frame(width:216).frame(maxHeight:.infinity).background(CenterTheme.background).animation(reduceMotion ? nil : .easeInOut(duration:0.22),value:model.page)
     }
 }
@@ -506,11 +549,13 @@ struct CenterWorkspace:View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var effectSelection
     @State private var galleryPresented=false
+    @State private var canvasDevice=""
     @State private var dragLocations:[String:CGPoint] = [:]
     var body:some View {
         VStack(alignment:.leading,spacing:24) {
             if page == "Overview" { overview }
             else if page == "Devices" { devices }
+            else if page == "Studio" { VStack(alignment:.leading,spacing:24) { CenterHeading(eyebrow:"COMPOSITING",title:"Layer Studio",subtitle:"Build your signature look. One timeline, multiple effects.");LightingHero(center:center);LayerStudio(center:center) } }
             else if page == "Effects" || page == "Scenes" { EffectGallery(center:center) }
             else if page == "Canvas" || page == "Layout" { layout }
             else { connections }
@@ -521,7 +566,7 @@ struct CenterWorkspace:View {
     private var overview:some View {
         VStack(alignment:.leading,spacing:22) {
             HStack(alignment:.top) {
-                CenterHeading(eyebrow:"Your workspace",title:"Lighting",subtitle:"One place for your setup. Every adjustment goes live.")
+                CenterHeading(eyebrow:"Your workspace",title:"Lighting",subtitle:"Your entire setup. One shared timeline.")
                 Spacer();CenterBadge(text:center.online ? "Live control":"Connecting",good:center.online)
             }
             lightingControls
@@ -564,14 +609,14 @@ struct CenterWorkspace:View {
     private var lightingControls:some View {
         CenterPanel {
                 VStack(alignment:.leading,spacing:20) {
-                    CenterScenePreview(scene:center.scene)
+                    LightingHero(center:center)
                     HStack(spacing:12) {
                         Menu {
                             ForEach(EffectLibrary.catalog.categories,id:\.self) { category in
                                 Menu(L10n.text(category)) { ForEach(EffectLibrary.catalog.effects.filter {$0.category==category}) { effect in Button(L10n.text(effect.name)) { center.scene.mode=effect.id } } }
                             }
                         } label: { Label(L10n.text(EffectLibrary.effect(center.scene.mode)?.name ?? center.scene.mode.capitalized),systemImage:EffectLibrary.effect(center.scene.mode)?.symbol ?? "sparkles") }
-                        Spacer();Button { galleryPresented=true } label: { Label(L10n.text("Browse 40 effects"),systemImage:"square.grid.2x2") }
+                        Spacer();Button { galleryPresented=true } label: { Label(L10n.text("Browse effects"),systemImage:"square.grid.2x2") }
                     }
                     if EffectLibrary.effect(center.scene.mode)?.colors != false { HStack { ForEach(0..<min(4,center.scene.palette.count),id:\.self) { i in ColorPicker(L10n.text("Color \(i+1)"),selection:sceneColor(i),supportsOpacity:false) };Spacer() }.font(.system(size:10)) }
                     HStack { Text(L10n.text("Brightness")).frame(width:75,alignment:.leading);Slider(value:$center.scene.brightness,in:0...100);Text(L10n.text("\(Int(center.scene.brightness))%")).monospacedDigit().frame(width:40) }.font(.system(size:11)).foregroundStyle(CenterTheme.muted)
@@ -607,13 +652,15 @@ struct CenterWorkspace:View {
                     RoundedRectangle(cornerRadius:20).fill(.black.opacity(0.36)).allowsHitTesting(false)
                     Path { path in for x in stride(from:CGFloat(0),through:geometry.size.width,by:32) { path.move(to:CGPoint(x:x,y:0));path.addLine(to:CGPoint(x:x,y:geometry.size.height)) };for y in stride(from:CGFloat(0),through:geometry.size.height,by:32) { path.move(to:CGPoint(x:0,y:y));path.addLine(to:CGPoint(x:geometry.size.width,y:y)) } }.stroke(.white.opacity(0.025),lineWidth:1)
                     ForEach(center.controllable.filter { !center.scene.synchronized || $0.direct }) { device in
-                        let p=center.state.layout[device.id] ?? CenterPosition(x:0.5,y:0.5,width:0.22)
+                        let p=center.position(device.id)
                         let location=dragLocations[device.id] ?? CGPoint(x:p.x*geometry.size.width,y:p.y*geometry.size.height)
-                        VStack(spacing:8) { Image(systemName:device.symbol).font(.system(size:25,weight:.light));Text(verbatim:device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:122,height:85).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
+                        VStack(spacing:8) { DeviceGeometry(device:device,position:p).frame(height:52);Text(verbatim:device.name).font(.system(size:9,weight:.medium)).lineLimit(2).multilineTextAlignment(.center) }.foregroundStyle(CenterTheme.accent).padding(12).frame(width:max(90,p.width*geometry.size.width),height:max(75,(p.height ?? p.width)*geometry.size.height)).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(CenterTheme.accent.opacity(0.25),lineWidth:1)).position(x:max(65,min(geometry.size.width-65,location.x)),y:max(50,min(geometry.size.height-50,location.y))).gesture(DragGesture(coordinateSpace:.named("lighting-canvas")).onChanged { value in dragLocations[device.id]=value.location }.onEnded { value in dragLocations.removeValue(forKey:device.id);center.move(device.id,x:Double(value.location.x/geometry.size.width),y:Double(value.location.y/geometry.size.height)) })
                     }
                     if center.controllable.isEmpty { Text(L10n.text("Discover and confirm a controllable device first")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
                 }.environment(\.layoutDirection,.leftToRight).coordinateSpace(name:"lighting-canvas").clipShape(RoundedRectangle(cornerRadius:20))
             }.frame(height:560)
+            Picker("Device placement",selection:$canvasDevice) { Text("Select a device to transform").tag("");ForEach(center.controllable.filter { $0.direct }) { device in Text(device.name).tag(device.id) } }
+            if let device=center.controllable.first(where:{$0.id==canvasDevice}) { CanvasPlacement(center:center,device:device) }
             Text(L10n.text("Horizontal placement drives left-to-right waves and gradients. LED strip order is used within each device; reported keyboard/panel coordinates are used when available. Unique device placement is saved locally. Identical devices need manual placement after rediscovery.")).font(.system(size:11)).foregroundStyle(CenterTheme.muted)
         }
     }
@@ -677,6 +724,7 @@ private struct CenterDeviceInspector:View {
                 }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12))
             }
 
+            if device.controllable { CalibrationPanel(center:center,device:device) }
             Divider()
             if let positions=device.led_positions,!positions.isEmpty { VStack(alignment:.leading,spacing:8) { Text(L10n.text("MAPPED LED POSITIONS · SCHEMATIC")).font(.system(size:8,design:.monospaced)).foregroundStyle(CenterTheme.muted);GeometryReader { geometry in ZStack { ForEach(Array(positions.enumerated()),id:\.offset) { _,point in RoundedRectangle(cornerRadius:2).fill(CenterTheme.accent.opacity(0.75)).frame(width:10,height:10).position(x:10+point.x*(geometry.size.width-20),y:10+point.y*(geometry.size.height-20)) } } }.frame(height:120) }.padding(14).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12)) }
             if let usb=device.usb_id { Text(L10n.text("USB ID · "+usb)).font(.system(size:11,design:.monospaced)).foregroundStyle(CenterTheme.muted) }
@@ -769,5 +817,112 @@ struct AndroidRemotePanel:View {
             }
             if !center.remoteMessage.isEmpty { Text(verbatim:center.remoteMessage).font(.system(size:11)).foregroundStyle(.orange) }
         } }
+    }
+}
+
+struct DeviceGeometry:View {
+    let device:CenterDevice;let position:CenterPosition
+    var body:some View {
+        GeometryReader { geometry in
+            if let points=device.led_positions,!points.isEmpty {
+                ZStack { ForEach(Array(points.enumerated()),id:\.offset) { _,p in
+                    RoundedRectangle(cornerRadius:2).fill(CenterTheme.accent).frame(width:5,height:5).position(x:5+p.x*(geometry.size.width-10),y:5+p.y*(geometry.size.height-10))
+                } }.scaleEffect(x:position.mirror_x == true ? -1:1,y:position.mirror_y == true ? -1:1).rotationEffect(.degrees(position.rotation ?? 0))
+            } else { Image(systemName:device.symbol).font(.system(size:28,weight:.light)).frame(maxWidth:.infinity,maxHeight:.infinity).rotationEffect(.degrees(position.rotation ?? 0)) }
+        }
+    }
+}
+struct CanvasPlacement:View {
+    @ObservedObject var center:CenterModel;let device:CenterDevice
+    var p:CenterPosition { center.position(device.id) }
+    func field(_ key:WritableKeyPath<CenterPosition,Double?>,_ fallback:Double)->Binding<Double> { Binding(get:{p[keyPath:key] ?? fallback},set:{var v=p;v[keyPath:key]=$0;center.place(device.id,v)}) }
+    var body:some View {
+        DisclosureGroup(device.name) {
+            VStack(alignment:.leading,spacing:12) {
+                HStack { Text("Width");Slider(value:Binding(get:{p.width},set:{var v=p;v.width=$0;center.place(device.id,v)}),in:0.02...1) }
+                HStack { Text("Height");Slider(value:field(\.height,p.width),in:0.02...1) }
+                HStack { Text("Rotation");Slider(value:field(\.rotation,0),in:-180...180);Text("\(Int(p.rotation ?? 0))°").frame(width:44) }
+                HStack {
+                    Toggle("Mirror horizontally",isOn:Binding(get:{p.mirror_x ?? false},set:{var v=p;v.mirror_x=$0;center.place(device.id,v)}))
+                    Toggle("Mirror vertically",isOn:Binding(get:{p.mirror_y ?? false},set:{var v=p;v.mirror_y=$0;center.place(device.id,v)}))
+                }
+                Button("Reset placement") { center.place(device.id,CenterPosition(x:0.5,y:0.5,width:0.22)) }
+            }.padding(.top,12)
+        }.padding(16).background(CenterTheme.surface).clipShape(RoundedRectangle(cornerRadius:14))
+    }
+}
+struct CalibrationPanel:View {
+    @ObservedObject var center:CenterModel;let device:CenterDevice
+    @State private var value=DeviceCalibration()
+    @State private var work:DispatchWorkItem?
+    func field(_ key:WritableKeyPath<DeviceCalibration,Double>)->Binding<Double> {
+        Binding(get:{value[keyPath:key]},set:{value[keyPath:key]=$0;work?.cancel();let snapshot=value;let task=DispatchWorkItem { center.calibrate(device.id,snapshot) };work=task;DispatchQueue.main.asyncAfter(deadline:.now()+0.18,execute:task)})
+    }
+    var body:some View {
+        DisclosureGroup("Color calibration") {
+            VStack(alignment:.leading,spacing:12) {
+                Text("Match this device to the rest of your setup. Channel gains only reduce output; no firmware settings are changed.").font(.caption).foregroundStyle(CenterTheme.muted)
+                HStack { Text("Red").frame(width:48);Slider(value:field(\.red),in:0...1) }
+                HStack { Text("Green").frame(width:48);Slider(value:field(\.green),in:0...1) }
+                HStack { Text("Blue").frame(width:48);Slider(value:field(\.blue),in:0...1) }
+                HStack { Text("Gamma").frame(width:48);Slider(value:field(\.gamma),in:0.5...3);Text(String(format:"%.2f",value.gamma)).monospacedDigit() }
+                Button("Reset calibration") { work?.cancel();value=DeviceCalibration();center.calibrate(device.id,value) }
+            }.padding(.top,12)
+        }.onAppear { value=center.state.calibration?[device.id] ?? DeviceCalibration() }.onDisappear { work?.cancel();center.calibrate(device.id,value) }
+    }
+}
+struct LayerStudio:View {
+    @ObservedObject var center:CenterModel
+    func field<T>(_ index:Int,_ key:WritableKeyPath<CenterLayer,T>)->Binding<T> {
+        Binding(get:{let layers=center.scene.layers ?? [];return (layers.indices.contains(index) ? layers[index]:CenterLayer())[keyPath:key]},set:{v in var layers=center.scene.layers ?? [];guard layers.indices.contains(index) else{return};layers[index][keyPath:key]=v;center.scene.layers=layers})
+    }
+    var body:some View {
+        CenterPanel { VStack(alignment:.leading,spacing:16) {
+            HStack { Label("Layer Studio",systemImage:"square.3.layers.3d").font(.headline);Spacer();Text("BASE + \(center.scene.layers?.count ?? 0) / 4").font(.system(size:10,design:.monospaced)).foregroundStyle(CenterTheme.aqua) }
+            Text("Combine effects on one shared timeline. Layers are applied in order above your current effect. Host-streamed devices only.").font(.caption).foregroundStyle(CenterTheme.muted)
+            ForEach(Array((center.scene.layers ?? []).indices),id:\.self) { index in
+                VStack(alignment:.leading,spacing:10) {
+                    HStack {
+                        Text("Layer \(index+1)").font(.caption.bold())
+                        Picker("Effect",selection:field(index,\.mode)) { ForEach(EffectLibrary.catalog.effects) { effect in Text(effect.name).tag(effect.id) } }.pickerStyle(.menu).labelsHidden().fixedSize()
+                        Picker("Blend",selection:field(index,\.blend)) { Text("Screen").tag("screen");Text("Add").tag("add");Text("Multiply").tag("multiply");Text("Normal").tag("normal") }.pickerStyle(.menu).labelsHidden().fixedSize();Spacer()
+                        Button { var layers=center.scene.layers ?? [];guard layers.indices.contains(index) else{return};layers.remove(at:index);center.scene.layers=layers } label:{Image(systemName:"trash")}.buttonStyle(.plain)
+                    }
+                    HStack { Text("Opacity").font(.caption);Slider(value:field(index,\.opacity),in:0...100);Text("\(Int(field(index,\.opacity).wrappedValue))%").font(.caption).frame(width:36) }
+                    HStack { Text("Speed").font(.caption);Slider(value:field(index,\.speed),in:1...100) }
+                    HStack {
+                        ColorPicker("Color",selection:Binding(get:{let hex=field(index,\.palette).wrappedValue.first ?? "ffffff";let n=UInt32(hex,radix:16) ?? 0;return Color(red:Double(n>>16&255)/255,green:Double(n>>8&255)/255,blue:Double(n&255)/255)},set:{color in let c=NSColor(color).usingColorSpace(.sRGB) ?? .white;field(index,\.palette).wrappedValue=[c.redComponent,c.greenComponent,c.blueComponent].map { String(format:"%02x",Int(($0*255).rounded())) }.joined().components(separatedBy:",")}),supportsOpacity:false)
+                        Spacer();Button("Move up") { var layers=center.scene.layers ?? [];guard index>0,layers.indices.contains(index) else{return};layers.swapAt(index,index-1);center.scene.layers=layers }.disabled(index==0)
+                    }
+
+                }.padding(12).background(CenterTheme.background).clipShape(RoundedRectangle(cornerRadius:12))
+            }
+            Button { var layers=center.scene.layers ?? [];layers.append(CenterLayer());center.scene.layers=layers } label:{Label("Add effect layer",systemImage:"plus")}.disabled((center.scene.layers?.count ?? 0)>=4)
+        } }
+    }
+}
+
+struct LightingHero:View {
+    @ObservedObject var center:CenterModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var scene:CenterScene { center.scene }
+    var body:some View {
+        TimelineView(.animation(minimumInterval:1.0/20,paused:reduceMotion || !center.state.running)) { _ in
+            ZStack(alignment:.bottomLeading) {
+                EffectTexture(scene:scene,time:reduceMotion ? 0:center.canvasTime(),columns:100,rows:35,seamless:true).blur(radius:6).scaleEffect(1.06).opacity(0.72)
+                LinearGradient(colors:[Color.black.opacity(0.05),Color.black.opacity(0.86)],startPoint:.top,endPoint:.bottom)
+                VStack(alignment:.leading,spacing:18) {
+                    HStack { Label("LIVE COMPOSITION",systemImage:"waveform.path").font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2);Spacer();Text("\((scene.layers?.count ?? 0)+1) LAYERS").font(.system(size:9,design:.monospaced)) }.foregroundStyle(.white.opacity(0.7))
+                    Spacer()
+                    Text(EffectLibrary.effect(scene.mode)?.name ?? scene.mode.capitalized).font(.system(size:44,weight:.semibold,design:.rounded)).foregroundStyle(.white)
+                    HStack(spacing:20) {
+                        Label("\(center.state.active_devices?.count ?? 0) active",systemImage:"circle.grid.2x2")
+                        Label("\(center.chosen.reduce(0) {$0+$1.led_count}) LEDs",systemImage:"sparkles")
+                        Label(scene.mapping == "canvas" ? "Spatial canvas":"Mirrored",systemImage:"rectangle.3.group")
+                        Spacer();Circle().fill(center.state.running ? CenterTheme.accent:CenterTheme.muted).frame(width:6,height:6);Text(center.state.running ? "STREAMING":"PAUSED")
+                    }.font(.system(size:10,weight:.medium,design:.monospaced)).foregroundStyle(.white.opacity(0.75))
+                }.padding(25)
+            }.frame(height:260).clipShape(RoundedRectangle(cornerRadius:18)).overlay(RoundedRectangle(cornerRadius:18).stroke(.white.opacity(0.12),lineWidth:1))
+        }.accessibilityLabel("Lighting composition preview")
     }
 }

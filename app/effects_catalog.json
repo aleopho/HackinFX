@@ -286,17 +286,32 @@
       "name": "Fire",
       "category": "Atmosphere",
       "symbol": "flame",
-      "description": "Layered heat, embers and gentle turbulence.",
+      "description": "Smooth rising flame field with a customizable heat palette.",
       "palette": [
-        "2a0400",
-        "ff3c09",
-        "ffb435",
-        "fff0b4"
+        "580501",
+        "b92402",
+        "f56a06"
       ],
       "speed": 35,
       "scale": 1,
       "density": 55,
       "colors": true
+    },
+    {
+      "id": "fireplace",
+      "name": "Fireplace",
+      "category": "Atmosphere",
+      "symbol": "flame.fill",
+      "description": "Slow molten embers and rising flames. Deep red, burnt orange and amber without white flashes.",
+      "palette": [
+        "601001",
+        "c62d03",
+        "ff7008"
+      ],
+      "speed": 55,
+      "scale": 1,
+      "density": 65,
+      "colors": false
     },
     {
       "id": "candle",
@@ -422,7 +437,7 @@
       "name": "Twinkle",
       "category": "Particles",
       "symbol": "star",
-      "description": "Independent soft sparkles on every LED.",
+      "description": "Soft, staggered sparkles distributed over physical LED positions.",
       "palette": [
         "a7f3d0",
         "66dfce",
@@ -1796,6 +1811,34 @@
       "speed": 65,
       "scale": 1.7,
       "density": 75
+    },
+    {
+      "id": "fireplace-0",
+      "name": "Ember hearth",
+      "effect": "fireplace",
+      "category": "Atmosphere",
+      "palette": [
+        "601001",
+        "c62d03",
+        "ff7008"
+      ],
+      "speed": 35,
+      "scale": 1.0,
+      "density": 65
+    },
+    {
+      "id": "fireplace-1",
+      "name": "Crackling glow",
+      "effect": "fireplace",
+      "category": "Atmosphere",
+      "palette": [
+        "601001",
+        "c62d03",
+        "ff7008"
+      ],
+      "speed": 65,
+      "scale": 1.4,
+      "density": 65
     }
   ]
 }

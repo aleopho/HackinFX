@@ -57,7 +57,7 @@ class RemoteTests(unittest.TestCase):
         self.assertIsNone(self.manager.status()['pairCode'])
     def test_scene_control_and_catalog_remain_scoped_to_paired_phone(self):
         token=self.paired();self.request('/v1/scene/start',dict(devices=['test'],config=dict(mode='twinkle')),token);self.request('/v1/scene/stop',{},token)
-        self.assertEqual(len(self.core.commands),2);self.assertEqual(len(self.request('/v1/effects',token=token)['effects']),40)
+        self.assertEqual(len(self.core.commands),2);self.assertEqual(len(self.request('/v1/effects',token=token)['effects']),41)
     def test_credentials_survive_restart_but_service_is_not_implicitly_started(self):
         token=self.paired();self.manager.close();restored=RemoteManager(self.temp.name,self.core,port=0)
         self.assertIsNotNone(restored.authorize('Bearer '+token));self.assertIsNone(restored.server);restored.close()

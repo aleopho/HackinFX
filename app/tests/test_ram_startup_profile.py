@@ -45,3 +45,33 @@ class RAMStartupProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             t=RAMTransport(True);a=RAMAdapter(t,lambda:[dict(DIMMS[0],part_number='CMP-UNKNOWN')],Path(folder)/'p.json',auto_known=True)
             self.assertFalse(a.discover()[0]['controllable']);self.assertFalse(any(x['command']=='probe' for x in t.calls))
+
+    def test_helper_pipe_close_during_orderly_shutdown_preserves_profile(self):
+        class Interrupted(RAMTransport):
+            def call(self,r):
+                if r['command']=='frame':raise BrokenPipeError('helper stopping')
+                return super().call(r)
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'profile.json';a=RAMAdapter(Interrupted(True),lambda:DIMMS,path);row=a.probe()[0];a.begin_shutdown()
+            with self.assertRaises(BrokenPipeError):a.write_frame(row,[(1,2,3)]*12,'static')
+            self.assertTrue(path.exists());self.assertFalse(a.revocation_path.exists())
+            self.assertTrue(RAMAdapter(RAMTransport(True),lambda:DIMMS,path).discover()[0]['controllable'])
+    def test_real_bus_error_during_shutdown_still_revokes(self):
+        class BusError(RAMTransport):
+            def call(self,r):
+                if r['command']=='frame':raise ValueError('SMBus NACK')
+                return super().call(r)
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'profile.json';a=RAMAdapter(BusError(True),lambda:DIMMS,path);row=a.probe()[0];a.begin_shutdown()
+            with self.assertRaises(ValueError):a.write_frame(row,[(1,2,3)]*12,'static')
+            self.assertFalse(path.exists());self.assertTrue(a.revocation_path.exists())
+
+    def test_validation_failure_records_actual_reason_for_manual_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            t=RAMTransport(True);t.rows[0]['protocol']=99
+            a=RAMAdapter(t,lambda:DIMMS,Path(folder)/'p.json')
+            with self.assertRaisesRegex(ValueError,'unexpected controller identity'):a.probe()
+            reason=json.loads(a.revocation_path.read_text())['reason']
+            self.assertIn('unexpected controller identity',reason)
+            self.assertIn(reason,a.discover()[0]['detail'])
+            self.assertFalse(any(x['command']=='frame' for x in t.calls))

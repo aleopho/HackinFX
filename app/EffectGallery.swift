@@ -6,20 +6,83 @@ struct EffectTexture:View {
     let time:Double
     var columns=24
     var rows=6
+    var seamless=false
     var body:some View {
         Canvas { context,size in
             let palette=EffectLibrary.palette(scene.palette),dx=size.width/Double(columns),dy=size.height/Double(rows)
             for row in 0..<rows { for column in 0..<columns {
                 let u=Double(column)/Double(max(1,columns-1)),v=Double(row)/Double(max(1,rows-1)),index=row*columns+column
-                let rgb=EffectMath.sample(mode:scene.mode,palette:palette,index:index,u:u,v:v,coord:scene.axis == "x" ? u:v,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse)
-                let level=scene.brightness/25500
+                let rgb=EffectMath.composite(mode:scene.mode,palette:palette,index:index,u:u,v:v,coord:scene.axis == "x" ? u:v,time:time,speed:scene.speed,scale:scene.scale,density:scene.density,reverse:scene.reverse,brightness:scene.brightness,layers:scene.layers ?? [])
+                let level=1.0/255
                 let color=Color(red:max(0,min(1,rgb[0]*level)),green:max(0,min(1,rgb[1]*level)),blue:max(0,min(1,rgb[2]*level)))
-                let rect=CGRect(x:Double(column)*dx+1.5,y:Double(row)*dy+1.5,width:max(1,dx-3),height:max(1,dy-3))
-                context.fill(Path(roundedRect:rect,cornerRadius:3),with:.color(color))
+                let gap=seamless ? 0.0:1.5
+                let rect=CGRect(x:Double(column)*dx+gap,y:Double(row)*dy+gap,width:max(1,dx-gap*2),height:max(1,dy-gap*2))
+                context.fill(Path(roundedRect:rect,cornerRadius:seamless ? 0:3),with:.color(color))
             } }
         }.background(Color.black.opacity(0.72)).clipShape(RoundedRectangle(cornerRadius:11)).accessibilityHidden(true)
     }
 }
+// Theme illustrations sit above the actual continuous effect field. They are gallery art,
+// not optical readback and never participate in device rendering.
+private struct EffectArtwork:View {
+    let scene:CenterScene
+    let time:Double
+    private var flame:Bool { ["fire","fireplace","candle"].contains(scene.mode) }
+    private var space:Bool { ["starfield","nebula","orbit","spiral","vortex","fireworks","radar","pinwheel"].contains(scene.mode) }
+    private var particles:Bool { ["twinkle","confetti","snow","fireflies","ice"].contains(scene.mode) }
+    var body:some View {
+        ZStack {
+            Color(red:0.025,green:0.035,blue:0.05)
+            EffectTexture(scene:scene,time:time,columns:28,rows:12,seamless:true).blur(radius:22).opacity(0.55).scaleEffect(1.25)
+            Canvas { context,size in
+                let w=size.width,h=size.height,palette=EffectLibrary.palette(scene.palette)
+                func color(_ i:Int,_ alpha:Double=1)->Color {
+                    if flame { return i%2==0 ? Color(red:0.95,green:0.22,blue:0.025).opacity(alpha):Color(red:1,green:0.53,blue:0.06).opacity(alpha) }
+                    let rgb=palette[i%max(1,palette.count)];return Color(red:rgb[0]/255,green:rgb[1]/255,blue:rgb[2]/255).opacity(alpha)
+                }
+                if flame {
+                    for n in 0..<9 {
+                        let x=w*(Double(n)+0.5)/9,base=h*1.12,tip=h*(0.12+0.4*EffectMath.noise(Double(n)+2))
+                        let sway=sin(time*0.45+Double(n))*w*0.025
+                        var p=Path();p.move(to:CGPoint(x:x-w*0.15,y:base));p.addCurve(to:CGPoint(x:x+sway,y:tip),control1:CGPoint(x:x-w*0.18,y:h*0.58),control2:CGPoint(x:x+w*0.10,y:h*0.48));p.addCurve(to:CGPoint(x:x+w*0.15,y:base),control1:CGPoint(x:x-w*0.06,y:h*0.65),control2:CGPoint(x:x+w*0.20,y:h*0.75));p.closeSubpath()
+                        context.fill(p,with:.linearGradient(Gradient(colors:[color(n,0.02),color(n,0.62),.black.opacity(0.7)]),startPoint:CGPoint(x:x,y:tip),endPoint:CGPoint(x:x,y:base)))
+                    }
+                    for n in 0..<5 { let x=w*(Double(n)+0.5)/5;context.fill(Path(roundedRect:CGRect(x:x-w*0.10,y:h*0.88,width:w*0.23,height:h*0.07),cornerRadius:4),with:.color(Color(red:0.15,green:0.035,blue:0.01))) }
+                } else if space {
+                    let center=CGPoint(x:w*0.5,y:h*0.53)
+                    for n in 0..<7 {
+                        var p=Path();let r=Double(n+1)*h*0.10
+                        p.addEllipse(in:CGRect(x:center.x-r*1.7,y:center.y-r*0.56,width:r*3.4,height:r*1.12))
+                        var c=context;c.rotate(by:.degrees(-23));c.translateBy(x:-w*0.03,y:h*0.58)
+                        c.stroke(p,with:.linearGradient(Gradient(colors:[.clear,color(n,0.7),color(n+1,0.05)]),startPoint:.zero,endPoint:CGPoint(x:w,y:h)),lineWidth:Double(n%3+1))
+                    }
+                    context.fill(Path(ellipseIn:CGRect(x:center.x-4,y:center.y-4,width:8,height:8)),with:.color(color(0,0.9)))
+                } else if particles {
+                    for n in 0..<26 {
+                        let seed=Double(n),x=EffectMath.noise(seed+2)*w,y=EffectMath.noise(seed+15)*h
+                        let r=1.5+EffectMath.noise(seed+24)*4,alpha=0.2+0.7*EffectMath.spark(seed,time,0.65,0.6)
+                        var star=Path();star.move(to:CGPoint(x:x-r*2,y:y));star.addQuadCurve(to:CGPoint(x:x,y:y-r*2),control:CGPoint(x:x,y:y));star.addQuadCurve(to:CGPoint(x:x+r*2,y:y),control:CGPoint(x:x,y:y));star.addQuadCurve(to:CGPoint(x:x,y:y+r*2),control:CGPoint(x:x,y:y));star.addQuadCurve(to:CGPoint(x:x-r*2,y:y),control:CGPoint(x:x,y:y));context.fill(star,with:.color(color(n,alpha)))
+                    }
+                } else {
+                    // Layered ribbons evoke water, aurora curtains and flowing gradients.
+                    for n in 0..<8 {
+                        var p=Path();let offset=Double(n)*h*0.075
+                        for j in 0...40 {
+                            let x=Double(j)/40*w,y=h*0.25+offset+sin(Double(j)*0.12+Double(n)*0.35+time*0.12)*h*0.16
+                            if j==0 { p.move(to:CGPoint(x:x,y:y)) } else { p.addLine(to:CGPoint(x:x,y:y)) }
+                        }
+                        context.stroke(p,with:.linearGradient(Gradient(colors:[color(n,0.03),color(n,0.8),color(n+1,0.06)]),startPoint:.zero,endPoint:CGPoint(x:w,y:h)),style:StrokeStyle(lineWidth:2+Double(n%3)*3,lineCap:.round))
+                    }
+                    if ["aurora","sunset","fog","ocean"].contains(scene.mode) {
+                        for n in 0..<2 { var p=Path();p.move(to:CGPoint(x:0,y:h));for j in 0...14 { let x=Double(j)/14*w,y=h*(0.82+0.10*EffectMath.noise(Double(j+n*8)));p.addLine(to:CGPoint(x:x,y:y)) };p.addLine(to:CGPoint(x:w,y:h));p.closeSubpath();context.fill(p,with:.color(.black.opacity(n==0 ? 0.35:0.65))) }
+                    }
+                }
+            }
+            LinearGradient(colors:[.clear,.black.opacity(0.28)],startPoint:.top,endPoint:.bottom)
+        }.clipShape(RoundedRectangle(cornerRadius:12)).accessibilityHidden(true)
+    }
+}
+
 private struct GalleryEntry:Identifiable {
     let id:String
     let name:String
@@ -40,7 +103,7 @@ private struct GalleryCard:View {
         ZStack(alignment:.topTrailing) {
             Button(action:choose) {
                 VStack(alignment:.leading,spacing:12) {
-                    EffectTexture(scene:entry.scene,time:time).frame(height:96)
+                    EffectArtwork(scene:entry.scene,time:time).frame(height:152)
                     HStack(spacing:8) {
                         Image(systemName:entry.effect.symbol).foregroundStyle(CenterTheme.aqua)
                         Text(verbatim:entry.id.hasPrefix("saved:") ? entry.name:L10n.text(entry.name)).font(.system(size:13,weight:.semibold)).lineLimit(1)
@@ -118,8 +181,8 @@ struct EffectGallery:View {
     var body:some View {
         VStack(alignment:.leading,spacing:24) {
             HStack(alignment:.top) {
-                VStack(alignment:.leading,spacing:10) { Text(L10n.text("EXPLORE / CREATE")).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.accent);Text(L10n.text("Effect Gallery")).font(.system(size:35,weight:.semibold,design:.rounded));Text(L10n.text("40 effects. 80 curated looks. Select a card to control your selected devices.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
-                Spacer();VStack(alignment:.trailing,spacing:6) { Text(L10n.text("120")).font(.system(size:36,weight:.light,design:.rounded)).foregroundStyle(CenterTheme.accent);Text(L10n.text("BUILT-IN OPTIONS")).font(.system(size:8,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted) }
+                VStack(alignment:.leading,spacing:10) { Text(L10n.text("EXPLORE / CREATE")).font(.system(size:9,weight:.semibold,design:.monospaced)).tracking(2).foregroundStyle(CenterTheme.accent);Text(L10n.text("Effect Gallery")).font(.system(size:35,weight:.semibold,design:.rounded));Text(L10n.text("41 effects. 82 curated looks. Select a card to control your selected devices.")).font(.system(size:12)).foregroundStyle(CenterTheme.muted) }
+                Spacer();VStack(alignment:.trailing,spacing:6) { Text(verbatim:String(EffectLibrary.catalog.effects.count+EffectLibrary.catalog.looks.count)).font(.system(size:36,weight:.light,design:.rounded)).foregroundStyle(CenterTheme.accent);Text(L10n.text("BUILT-IN OPTIONS")).font(.system(size:8,design:.monospaced)).tracking(1).foregroundStyle(CenterTheme.muted) }
             }
             tuning
             filterBar
